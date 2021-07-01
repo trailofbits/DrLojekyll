@@ -28,6 +28,46 @@ struct ColumnProvenance {
   // From either `src_vec` or `src_generator`
   VAR *src_var{nullptr};
   unsigned index_of_src_var{0};
+
+  TABLE *induction_table{nullptr};
+  TABLEJOIN *join{nullptr};
+  TABLEPRODUCT *product{nullptr};
+  TABLESCAN *scan{nullptr};
+  VECTORLOOP *loop{nullptr};
+  GENERATOR *generator{nullptr};
+
+  unsigned EstimateSizeInBits(const ParsedModule &module, Language lang) const {
+    TypeLoc type = input_var->Type();
+
+    switch (type.UnderlyingKind()) {
+      case TypeKind::kInvalid:
+        assert(false);
+        return 64u;  // Hrmm.
+      case TypeKind::kBoolean: return 1u;
+      case TypeKind::kSigned8: return 8u;
+      case TypeKind::kSigned16: return 16u;
+      case TypeKind::kSigned32: return 32u;
+      case TypeKind::kSigned64: return 64u;
+      case TypeKind::kUnsigned8: return 8u;
+      case TypeKind::kUnsigned16: return 16u;
+      case TypeKind::kUnsigned32: return 32u;
+      case TypeKind::kUnsigned64: return 64u;
+      case TypeKind::kFloat: return 32u;
+      case TypeKind::kDouble: return 64u;
+      case TypeKind::kBytes: return 64u;  // It's not transparent.
+
+      // TODO(pag): Maybe add a way to communicate expected size into the
+      //            language?
+      case TypeKind::kForeignType:
+        if (type.IsReferentiallyTransparent(module, lang)) {
+          return 8u;  // Be really generous.
+        } else {
+          return 64u;  // Pointer-sized for a `Ref<T>`.
+        }
+    }
+
+    return 64u;
+  }
 };
 
 struct RowProvenance {
@@ -68,6 +108,8 @@ class AnalysisContext {
   // this to drill down through vector appends to find the provenance of those
   // columns.
   std::unordered_map<VECTOR *, std::vector<VECTORAPPEND *>> vector_appends;
+
+  std::unordered_set<std::string> seen_rows;
 
   std::unordered_map<TABLE *, UpdateList> table_updates;
   std::unordered_map<TABLE *, std::vector<RowProvenance>> table_sources;
@@ -129,10 +171,14 @@ class AnalysisContext {
 
  public:
 
+  // Convert state transitions and state checks on induction tables into
+  // state emplacements (for records) and record getters.
+  void ConvertInductionsToRecords(ProgramImpl *impl);
+
   // Analyze all tables.
   void AnalyzeTables(ProgramImpl *impl);
 
-  void Dump(void);
+  void Dump(const ParsedModule &module, Language lang);
 };
 
 // Go find every transition state, and organize it by table, so that we can
@@ -142,6 +188,9 @@ void AnalysisContext::CollectMetadata(ProgramImpl *impl) {
   for (OP *op : impl->operation_regions) {
     if (CHANGESTATE *transition = op->AsTransitionState()) {
       table_updates[transition->table.get()].push_back(transition);
+
+    } else if (CHANGERECORD *emplace = op->AsChangeRecord()) {
+      assert(false);  // TODO!
 
     } else if (VECTORAPPEND *append = op->AsVectorAppend()) {
       vector_appends[append->vector.get()].push_back(append);
@@ -195,6 +244,7 @@ void AnalysisContext::AnalyzeColumn(TABLE *table, unsigned table_col_index,
 found:
 
   ColumnProvenance provenance;
+  provenance.join = src;
   provenance.input_var = var;
   provenance.col = table->columns[table_col_index];
   provenance.src_table = src->tables[src_table_index];
@@ -226,6 +276,7 @@ void AnalysisContext::AnalyzeColumn(TABLE *table, unsigned table_col_index,
 found:
 
   ColumnProvenance provenance;
+  provenance.product = src;
   provenance.input_var = var;
   provenance.col = table->columns[table_col_index];
   provenance.src_table = src->tables[src_table_index];
@@ -252,6 +303,7 @@ void AnalysisContext::AnalyzeColumn(TABLE *table, unsigned table_col_index,
 found:
 
   ColumnProvenance provenance;
+  provenance.scan = src;
   provenance.input_var = var;
   provenance.col = table->columns[table_col_index];
   provenance.src_table = src->table.get();
@@ -278,11 +330,13 @@ void AnalysisContext::AnalyzeColumn(TABLE *table, unsigned table_col_index,
 found:
 
   ColumnProvenance provenance;
+  provenance.loop = src;
   provenance.input_var = var;
   provenance.col = table->columns[table_col_index];
   provenance.index_of_src_var = src_column_index;
 
   if (auto src_table = src->induction_table.get()) {
+    provenance.induction_table = src_table;
     provenance.src_table = src_table;
     provenance.src_col = src_table->columns[src_column_index];
     row.num_merges++;
@@ -310,6 +364,7 @@ void AnalysisContext::AnalyzeColumn(TABLE *table, unsigned table_col_index,
   for (auto out_var : src->defined_vars) {
     if (var == out_var) {
       ColumnProvenance provenance;
+      provenance.generator = src;
       provenance.input_var = var;
       provenance.col = table->columns[table_col_index];
       provenance.src_generator = src;
@@ -405,17 +460,21 @@ void AnalysisContext::AnalyzeVectorAppends(void) {
         }
 
         // Now analyze the source variable of the vector append.
-        AnalyzeVariable(row.table, c, append->tuple_vars[c], new_row);
+        AnalyzeVariable(
+            row.table, c, append->tuple_vars[col.index_of_src_var], new_row);
 
         for (auto i = c + 1u; i < c_max; ++i) {
           const ColumnProvenance &old_col = row.columns->at(c);
           AnalyzeVariable(row.table, i, old_col.input_var, new_row);
         }
 
-        if (new_row.num_appending_vectors) {
-          pending_table_sources.emplace_back(std::move(new_row));
-        } else {
-          table_sources[new_row.table].emplace_back(std::move(new_row));
+        auto row_key = row.Key();
+        if (auto [it, added] = seen_rows.emplace(std::move(row_key)); added) {
+          if (new_row.num_appending_vectors) {
+            pending_table_sources.emplace_back(std::move(new_row));
+          } else {
+            table_sources[new_row.table].emplace_back(std::move(new_row));
+          }
         }
       }
 
@@ -462,10 +521,13 @@ void AnalysisContext::AnalyzeTable(TABLE *table, CHANGESTATE *update) {
     AnalyzeVariable(table, i++, var, row);
   }
 
-  if (row.num_appending_vectors) {
-    pending_table_sources.emplace_back(std::move(row));
-  } else {
-    rows.emplace_back(std::move(row));
+  auto row_key = row.Key();
+  if (auto [it, added] = seen_rows.emplace(std::move(row_key)); added) {
+    if (row.num_appending_vectors) {
+      pending_table_sources.emplace_back(std::move(row));
+    } else {
+      rows.emplace_back(std::move(row));
+    }
   }
 }
 
@@ -476,9 +538,16 @@ void AnalysisContext::AnalyzeTable(TABLE *table, const UpdateList &updates) {
   }
 }
 
+// Convert state transitions and state checks on induction tables into
+// state emplacements (for records) and record getters.
+void AnalysisContext::ConvertInductionsToRecords(ProgramImpl *impl) {
+
+}
+
 // Analyze all tables.
 void AnalysisContext::AnalyzeTables(ProgramImpl *impl) {
   table_updates.clear();
+  seen_rows.clear();
   CollectMetadata(impl);
   for (const auto &[table, updates] : table_updates) {
     AnalyzeTable(table, updates);
@@ -498,7 +567,13 @@ std::string RowProvenance::Key(void) const {
       ss << sep << "col" << col.src_col->id;
 
     } else if (col.src_var) {
-      ss << sep << "var" << col.src_var->id;
+      if (col.src_var->IsConstant()) {
+        ss << sep << "const" << col.src_var->id;
+      } else if (col.src_var->IsGlobal()) {
+        ss << sep << "global" << col.src_var->id;
+      } else {
+        ss << sep << "var" << col.src_var->id;
+      }
     }
     sep = "_";
   }
@@ -506,7 +581,7 @@ std::string RowProvenance::Key(void) const {
   return ss.str();
 }
 
-void AnalysisContext::Dump(void) {
+void AnalysisContext::Dump(const ParsedModule &module, Language lang) {
   std::ofstream os("/tmp/tables.dot");
 
   static constexpr auto kTable = "<TABLE cellpadding=\"0\" cellspacing=\"0\" border=\"1\">";
@@ -566,7 +641,13 @@ void AnalysisContext::Dump(void) {
           os << "COL " << col.src_col->id << kEndCell;
 
         } else if (col.src_var) {
-          os << "VAR " << col.src_var->id << kEndCell;
+          if (col.src_var->IsConstant()) {
+            os << "CONST " << col.src_var->id << kEndCell;
+          } else if (col.src_var->IsGlobal()) {
+            os << "GLOBL " << col.src_var->id << kEndCell;
+          } else {
+            os << "VAR " << col.src_var->id << kEndCell;
+          }
         }
         ++i;
       }
@@ -626,9 +707,89 @@ void AnalysisContext::Dump(void) {
   }
 
 
+  std::unordered_set<TABLE *> inductions;
+  std::unordered_set<TABLEJOIN *> joins;
+  std::unordered_set<TABLEPRODUCT *> products;
+  std::unordered_set<TABLESCAN *> scans;
+  std::unordered_set<VECTORLOOP *> loops;
+  std::unordered_set<GENERATOR *> generators;
+
   for (auto &[key, row_ptr] : key_to_provenance) {
     std::cerr << "struct record_" << key << " {\n";
 
+    inductions.clear();
+    joins.clear();
+    products.clear();
+    scans.clear();
+    loops.clear();
+    generators.clear();
+
+    auto estimated_tuple_size = 0u;
+
+    const RowProvenance *row = row_ptr;
+    for (const ColumnProvenance &col : *row->columns) {
+      inductions.insert(col.induction_table);
+      joins.insert(col.join);
+      products.insert(col.product);
+      scans.insert(col.scan);
+      loops.insert(col.loop);
+      generators.insert(col.generator);
+
+      estimated_tuple_size += col.EstimateSizeInBits(module, lang);
+    }
+
+    inductions.erase(nullptr);
+    joins.erase(nullptr);
+    products.erase(nullptr);
+    scans.erase(nullptr);
+    loops.erase(nullptr);
+    generators.erase(nullptr);
+
+    std::cerr
+        << "  // Num inductions: " << inductions.size() << "\n"
+        << "  // Num joins: " << joins.size() << "\n"
+        << "  // Num products: " << products.size() << "\n"
+        << "  // Num scans: " << scans.size() << "\n"
+        << "  // Num vector loops: " << loops.size() << "\n"
+        << "  // Num generators: " << generators.size() << "\n"
+        << "  // Estimated tuple size in bits: " << estimated_tuple_size << "\n"
+        << "  // Estimated tuple size in bytes: "
+        << ((estimated_tuple_size + 7) / 8) << "\n";
+
+    size_t num_needed_pointers = 0u;
+    num_needed_pointers += scans.size();
+    num_needed_pointers += inductions.size();
+
+    for (TABLEJOIN *join : joins) {
+      for (auto &out_var_list : join->output_vars) {
+
+        // If one table only contributes pivots, then we don't need to
+        // store a pointer to its data.
+        if (out_var_list.Size() > join->pivot_vars.Size()) {
+          ++num_needed_pointers;
+        }
+      }
+    }
+
+    for (TABLEPRODUCT *product : products) {
+      num_needed_pointers += product->tables.Size();
+    }
+
+    auto estimated_record_size = num_needed_pointers * 64;
+    for (const ColumnProvenance &col : *row->columns) {
+      if (col.join || col.product || col.induction_table || col.scan) {
+        continue;
+      } else {
+        estimated_record_size += col.EstimateSizeInBits(module, lang);
+      }
+    }
+
+
+    std::cerr
+        << "  // Estimated record size in bits: "
+        << estimated_record_size << "\n"
+        << "  // Estimated record size in bytes: "
+        << ((estimated_record_size + 7) / 8) << "\n";
 
     std::cerr << "};\n\n";
   }
@@ -643,12 +804,13 @@ void AnalysisContext::Dump(void) {
 // of copy propagation, which gives us the ability to "hop backward" to the
 // provenance of some data, as opposed to having to jump one `QueryView` at
 // a time.
-void ProgramImpl::Analyze(void) {
-  return;
+void ProgramImpl::Analyze(Language lang) {
+
   AnalysisContext context;
 
+  context.ConvertInductionsToRecords(this);
   context.AnalyzeTables(this);
-  context.Dump();
+  context.Dump(query.ParsedModule(), lang);
 
 }
 

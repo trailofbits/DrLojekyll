@@ -396,8 +396,6 @@ bool Node<QueryCompare>::TrySinkThroughNegate(
   lowered_cmp->color = this->color;
   lowered_cmp->created_from_sinking = true;
 
-  lowered_cmp->color = 0xff00;
-
 #ifndef NDEBUG
   lifted_negate->producer = "LIFTED-NEG:" + lifted_negate->producer;
   lowered_cmp->producer = "SUNK-CMP-NEG:" + this->producer;

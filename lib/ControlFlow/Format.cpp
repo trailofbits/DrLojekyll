@@ -508,9 +508,104 @@ OutputStream &operator<<(OutputStream &os,
   return os;
 }
 
+OutputStream &operator<<(OutputStream &os,
+                         ProgramChangeRecordRegion region) {
+
+  os << os.Indent();
+  auto sep = "{";
+  for (auto var : region.RecordVariables()) {
+    os << sep << var;
+    sep = ", ";
+  }
+  os << "} = change-regord {";
+
+  sep = "";
+  for (auto var : region.TupleVariables()) {
+    os << sep << var;
+    sep = ", ";
+  }
+  os << "} in " << region.Table() << " from ";
+
+  switch (region.FromState()) {
+    case TupleState::kPresent: os << "present to "; break;
+    case TupleState::kAbsent: os << "absent to "; break;
+    case TupleState::kUnknown: os << "unknown to "; break;
+    case TupleState::kAbsentOrUnknown: os << "absent|unknown to "; break;
+  }
+
+  switch (region.ToState()) {
+    case TupleState::kPresent: os << "present"; break;
+    case TupleState::kAbsent: os << "absent"; break;
+    case TupleState::kUnknown:
+    case TupleState::kAbsentOrUnknown: os << "unknown"; break;
+  }
+
+  if (auto maybe_body = region.BodyIfSucceeded(); maybe_body) {
+    os << '\n';
+    os.PushIndent();
+    os << os.Indent() << "if-transitioned\n";
+    os.PushIndent();
+    os << (*maybe_body);
+    os.PopIndent();
+    os.PopIndent();
+  }
+
+  if (auto maybe_failed_body = region.BodyIfFailed(); maybe_failed_body) {
+    os << '\n';
+    os.PushIndent();
+    os << os.Indent() << "if-failed\n";
+    os.PushIndent();
+    os << (*maybe_failed_body);
+    os.PopIndent();
+    os.PopIndent();
+  }
+  return os;
+}
+
 OutputStream &operator<<(OutputStream &os, ProgramCheckStateRegion region) {
   os << os.Indent() << "check-state {";
   auto sep = "";
+  for (auto var : region.TupleVariables()) {
+    os << sep << var;
+    sep = ", ";
+  }
+  os << "} in " << region.Table();
+
+  os.PushIndent();
+  if (auto maybe_body = region.IfPresent(); maybe_body) {
+    os << '\n';
+    os << os.Indent() << "if-present\n";
+    os.PushIndent();
+    os << (*maybe_body);
+    os.PopIndent();
+  }
+  if (auto maybe_body = region.IfAbsent(); maybe_body) {
+    os << '\n';
+    os << os.Indent() << "if-absent\n";
+    os.PushIndent();
+    os << (*maybe_body);
+    os.PopIndent();
+  }
+  if (auto maybe_body = region.IfUnknown(); maybe_body) {
+    os << '\n';
+    os << os.Indent() << "if-unknown\n";
+    os.PushIndent();
+    os << (*maybe_body);
+    os.PopIndent();
+  }
+  os.PopIndent();
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ProgramGetRecordRegion region) {
+  auto sep = "{";
+  os << os.Indent();
+  for (auto var : region.RecordVariables()) {
+    os << sep << var;
+    sep = ", ";
+  }
+  os << "} = get-record {";
+  sep = "";
   for (auto var : region.TupleVariables()) {
     os << sep << var;
     sep = ", ";

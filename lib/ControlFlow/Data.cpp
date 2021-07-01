@@ -60,6 +60,41 @@ TypeLoc Node<DataVariable>::Type(void) const noexcept {
   return TypeKind::kInvalid;
 }
 
+
+bool Node<DataVariable>::IsGlobal(void) const noexcept {
+  switch (role) {
+    case VariableRole::kConditionRefCount:
+    case VariableRole::kInitGuard:
+    case VariableRole::kConstant:
+    case VariableRole::kConstantTag:
+    case VariableRole::kConstantZero:
+    case VariableRole::kConstantOne:
+    case VariableRole::kConstantFalse:
+    case VariableRole::kConstantTrue: return true;
+    default: return false;
+  }
+}
+
+bool Node<DataVariable>::IsConstant(void) const noexcept {
+  switch (role) {
+    case VariableRole::kConstant:
+    case VariableRole::kConstantTag:
+    case VariableRole::kConstantZero:
+    case VariableRole::kConstantOne:
+    case VariableRole::kConstantFalse:
+    case VariableRole::kConstantTrue: return true;
+    default:
+      if (query_const.has_value()) {
+        return true;
+      } else if (query_column.has_value() &&
+                 query_column->IsConstantOrConstantRef()) {
+        return true;
+      } else {
+        return false;
+      }
+  }
+}
+
 Node<DataColumn>::~Node(void) {}
 Node<DataIndex>::~Node(void) {}
 Node<DataTable>::~Node(void) {}

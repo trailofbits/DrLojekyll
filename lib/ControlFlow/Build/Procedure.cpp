@@ -294,9 +294,16 @@ static void FixupContainingProcedure(REGION *region, REGION *parent) {
     } else if (auto update = op->AsTransitionState(); update) {
       FixupContainingProcedure(update->failed_body.get(), region);
 
+    } else if (auto emplace = op->AsChangeRecord(); emplace) {
+      FixupContainingProcedure(emplace->failed_body.get(), region);
+
     } else if (auto check = op->AsCheckState(); check) {
       FixupContainingProcedure(check->absent_body.get(), region);
       FixupContainingProcedure(check->unknown_body.get(), region);
+
+    } else if (auto get = op->AsGetRecord(); get) {
+      FixupContainingProcedure(get->absent_body.get(), region);
+      FixupContainingProcedure(get->unknown_body.get(), region);
 
     } else if (auto cmp = op->AsTupleCompare(); cmp) {
       FixupContainingProcedure(cmp->false_body.get(), region);
@@ -320,15 +327,15 @@ static void FixupContainingProcedure(REGION *region, REGION *parent) {
   }
 }
 
-static void FixupContainingProcedure(ProgramImpl *impl) {
+}  // namespace
+
+void FixupContainingProcedure(ProgramImpl *impl) {
   for (auto proc : impl->procedure_regions) {
     proc->containing_procedure = proc;
     proc->parent = proc;
     FixupContainingProcedure(proc->body.get(), proc);
   }
 }
-
-}  // namespace
 
 // Builds an I/O procedure, which goes and invokes the entry data flow
 // procedure.

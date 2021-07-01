@@ -525,6 +525,10 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context, Query query);
 // Build the entry data flow procedures.
 PROC *BuildEntryProcedure(ProgramImpl *impl, Context &context, Query query);
 
+// Fix the `containing_procedure` and region `parent` pointers. Useful to find
+// bugs as well.
+void FixupContainingProcedure(ProgramImpl *impl);
+
 // Builds an I/O procedure, which goes and invokes the entry data flow
 // procedure.
 void BuildIOProcedure(ProgramImpl *impl, Query query, QueryIO io,

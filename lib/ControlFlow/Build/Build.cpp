@@ -1035,9 +1035,22 @@ static void MapVariables(REGION *region) {
     } else if (auto update = op->AsTransitionState(); update) {
       MapVariables(update->failed_body.get());
 
+    } else if (auto emplace = op->AsChangeRecord(); emplace) {
+      for (auto var : emplace->record_vars) {
+        var->defining_region = region;
+      }
+      MapVariables(emplace->failed_body.get());
+
     } else if (auto check = op->AsCheckState(); check) {
       MapVariables(check->absent_body.get());
       MapVariables(check->unknown_body.get());
+
+    } else if (auto get = op->AsGetRecord(); get) {
+      for (auto var : get->record_vars) {
+        var->defining_region = region;
+      }
+      MapVariables(get->absent_body.get());
+      MapVariables(get->unknown_body.get());
 
     } else if (auto cmp = op->AsTupleCompare(); cmp) {
       MapVariables(cmp->false_body.get());
@@ -2156,7 +2169,11 @@ std::optional<Program> Program::Build(const ::hyde::Query &query) {
     }
   }
 
+  FixupContainingProcedure(impl.get());
+
   impl->Optimize();
+
+  FixupContainingProcedure(impl.get());
 
   // Assign defining regions to each variable.
   //
@@ -2167,7 +2184,7 @@ std::optional<Program> Program::Build(const ::hyde::Query &query) {
     MapVariables(proc);
   }
 
-  impl->Analyze();
+  impl->Analyze(Language::kCxx);
 
 //  ExtractPrimaryProcedure(impl.get(), entry_proc, context);
 //
