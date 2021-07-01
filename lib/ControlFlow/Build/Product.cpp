@@ -28,9 +28,10 @@ static unsigned ContinueProductOrder(QueryView view) {
   // way back to the JOIN via `B`, so we will treat the initial appends to the
   // JOIN's pivot vector from A as an inductive input vector to the UNION.
   if (auto ind_depth = view.InductionDepth(); ind_depth.has_value()) {
-    order = WorkItem::kContinueInductionOrder;
+    order = WorkItem::kContinueInductionOrder |
+            (ind_depth.value() << WorkItem::kInductionDepthShift);
     assert(0u < depth);  // Achieves priority inversion w.r.t. induction.
-    depth += 1u + ind_depth.value();
+    depth += 1u;
 
   } else {
     order = WorkItem::kContinueJoinOrder;

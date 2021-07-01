@@ -273,7 +273,8 @@ class StdTable
     if constexpr (TableDesc::kHasCoveringIndex) {
       return FindRecordInFirstIndex(tuple, hash);
 
-    // The first index operates on a subset of the
+    // The first index operates on a subset of the columns, so we need to
+    // send along the tuple and hash a subset of those columns.
     } else {
       using FirstIndexDesc = IndexDescriptor<TableDesc::kFirstIndexId>;
       using FirstIndexKeyColumnOffsets =
@@ -310,11 +311,12 @@ class StdTable
       return nullptr;
     }
 
-    RecordType *record = it->second;
-    assert(record != nullptr);
+    // NOTE(pag): Records can still be null, as our index scans eagerly
+    //            create hash table entries so that they can observe the
+    //            updates, if any.
 
     // We've got a tuple for this hash, go traverse the linked list.
-    while (record) {
+    for (RecordType *record = it->second; record; ) {
 
       // The tuple matches what we're looking for.
       if (std::get<kTupleIndex>(*record) == tuple) {

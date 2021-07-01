@@ -28,6 +28,11 @@ static std::string ColumnSpec(const std::vector<unsigned> &col_ids) {
 
 }  // namespace
 
+Node<DataVariable>::Node(unsigned id_, VariableRole role_)
+    : Def<Node<DataVariable>>(this),
+      role(role_),
+      id(id_) {}
+
 TypeLoc Node<DataVariable>::Type(void) const noexcept {
   switch (role) {
     case VariableRole::kConditionRefCount:

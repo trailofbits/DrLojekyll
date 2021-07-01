@@ -26,7 +26,9 @@ bool NeedsInductionOutputVector(QueryView view) {
 ContinueInductionWorkItem::ContinueInductionWorkItem(Context &context,
                                                      QueryView merge,
                                                      INDUCTION *induction_)
-    : WorkItem(context, (kContinueInductionOrder | *(merge.InductionDepth()))),
+    : WorkItem(context,
+               (kContinueInductionOrder |
+                (merge.InductionDepth().value() << kInductionDepthShift))),
       induction(induction_) {}
 
 // A work item whose `Run` method is invoked after all initialization and
@@ -38,7 +40,8 @@ class FinalizeInductionWorkItem final : public WorkItem {
   FinalizeInductionWorkItem(Context &context, QueryView merge,
                             INDUCTION *induction_)
       : WorkItem(context,
-                 (kFinalizeInductionOrder | *(merge.InductionDepth()))),
+                 (kContinueInductionOrder | kFinalizeInductionOrder |
+                  (merge.InductionDepth().value() << kInductionDepthShift))),
         induction(induction_) {}
 
   void Run(ProgramImpl *impl, Context &context) override;
@@ -566,6 +569,7 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   }
 
   auto ancestor_of_inits = FindCommonAncestorOfInitRegions(regions);
+
   induction->parent = ancestor_of_inits->parent;
   ancestor_of_inits->ReplaceAllUsesWith(induction);
   ancestor_of_inits->parent = induction;
@@ -795,6 +799,14 @@ INDUCTION *GetOrInitInduction(ProgramImpl *impl, QueryView view,
     induction = pending_action->induction;
   } else {
     induction = impl->induction_regions.Create(impl, parent);
+
+#ifndef NDEBUG
+    const auto merge_group = *(view.InductionGroupId());
+    std::stringstream ss;
+    ss << "set " << merge_group << " depth " << merge_depth;
+    induction->comment = ss.str();
+#endif
+
     action = new ContinueInductionWorkItem(context, view, induction);
     pending_action = action;
     context.work_list.emplace_back(action);

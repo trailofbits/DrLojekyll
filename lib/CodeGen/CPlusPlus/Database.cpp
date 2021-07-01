@@ -599,6 +599,9 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     os.PushIndent();
 
+    os << os.Indent() << "DumpStats();\n"
+       << os.Indent() << "if constexpr (false) {\n";
+    os.PushIndent();
     os << os.Indent() << "fprintf(stderr, \"";
 
     sep = "";
@@ -612,6 +615,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       sep = ", ";
     }
     os << ");\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n\n";
 
     region.FixpointLoop().Accept(*this);
 
@@ -1729,7 +1734,55 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   //    DeclareTable(os, module, table);
   //  }
 
-  os << "\n";
+  os << "\n"
+     << os.Indent() << "template <typename Printer>\n"
+     << os.Indent() << "void DumpSizes(Printer _print) const {\n";
+  os.PushIndent();
+
+  for (auto table : program.Tables()) {
+    os << os.Indent() << "_print(" << table.Id() << ", "
+       << Table(os, table) << ".Size());\n";
+  }
+
+  os.PopIndent();
+  os << os.Indent() << "}\n\n"
+     << os.Indent() << "void DumpStats(void) const {\n";
+  os.PushIndent();
+  os << os.Indent() << "if constexpr (true) {\n";
+  os.PushIndent();
+  os << os.Indent() << "return;  /* change to false to enable */\n";
+  os.PopIndent();
+
+  os << os.Indent() << "}\n"
+     << os.Indent() << "static FILE *tables = nullptr;\n"
+     << os.Indent() << "  if (!tables) {\n";
+  os.PushIndent();
+  os << os.Indent() << "tables = fopen(\"/tmp/tables.csv\", \"w\");\n"
+     << os.Indent() << "fprintf(tables, \"";
+
+  auto sep = "";
+  for (auto table : program.Tables()) {
+    os << sep << "table " << table.Id();
+    sep = ",";
+  }
+  os << "\\n\");\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n";
+  os.PopIndent();
+  os << os.Indent() << "fprintf(tables, \"";
+  sep = "";
+  for (auto table : program.Tables()) {
+    (void) table;
+    os << sep << "%\" PRIu64 \"";
+    sep = ",";
+  }
+  os << "\\n\"";
+  for (auto table : program.Tables()) {
+    os << ", " << Table(os, table) << ".Size()";
+  }
+  os << ");\n";
+
+  os << os.Indent() << "}\n\n";
 
   for (auto proc : program.Procedures()) {
     if (proc.Kind() != ProcedureKind::kMessageHandler) {

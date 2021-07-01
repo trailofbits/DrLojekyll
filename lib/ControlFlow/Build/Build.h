@@ -35,9 +35,47 @@ class Context;
 // until `Run` is invoked.
 class WorkItem {
  public:
+
+  // The ordering is inscrutable, but we get roughly the following behavior:
+  //
+  //      continuing induction group 2 depth 1
+  //      continuing join group 2 depth 1
+  //      continuing join group 2 depth 1
+  //      continuing join group 2 depth 1
+  //      continuing join group 2 depth 1
+  //      continuing join group 2 depth 1
+  //      continuing join group 2 depth 1
+  //      continuing join group 2 depth 1
+  //      finalizing induction group 2 depth 1
+  //      continuing induction group 3 depth 2
+  //      continuing join group 3 depth 2
+  //      continuing join group 3 depth 2
+  //      continuing join group 3 depth 2
+  //      continuing join group 3 depth 2
+  //      finalizing induction group 3 depth 2
+  //      continuing induction group 0 depth 3
+  //      enclosed by depth 2
+  //      continuing join group 0 depth 3
+  //      continuing join group 0 depth 3
+  //      finalizing induction group 0 depth 3
+  //      continuing induction group 1 depth 4
+  //      continuing join group 1 depth 4
+  //      continuing join group 1 depth 4
+  //      continuing join group 1 depth 4
+  //      continuing join group 1 depth 4
+  //      finalizing induction group 1 depth 4
+  //
+  // We have induction finalizations of one depth happen before induction
+  // continues of the next depth. We also do a priority inversion between
+  // induction and join continues within the same group, such that the join
+  // continues follow the induction continues, but precede the induction
+  // finalizations. This only happens for inductive joins/products, and not
+  // for normal ones.
+
   static constexpr unsigned kContinueJoinOrder = 0u;
-  static constexpr unsigned kContinueInductionOrder = 1u << 30;  // (~0u) >> 2u;
-  static constexpr unsigned kFinalizeInductionOrder = 2u << 30;  // (~0u) >> 1u;
+  static constexpr unsigned kInductionDepthShift = 17u;
+  static constexpr unsigned kContinueInductionOrder = 1u << 30;
+  static constexpr unsigned kFinalizeInductionOrder = 1u << 16u;
 
   virtual ~WorkItem(void);
   virtual void Run(ProgramImpl *program, Context &context) = 0;

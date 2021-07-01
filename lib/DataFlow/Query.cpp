@@ -566,6 +566,14 @@ void QueryColumn::ForEachUser(std::function<void(QueryView)> user_cb) const {
       [&user_cb](VIEW *view, COL *) { user_cb(QueryView(view)); });
 }
 
+std::optional<QueryColumn> QueryColumn::AsConstantColumn(void) const noexcept {
+  if (auto const_col = impl->TryResolveToConstant()) {
+    return QueryColumn(const_col);
+  } else {
+    return std::nullopt;
+  }
+}
+
 std::optional<ParsedVariable> QueryColumn::Variable(void) const noexcept {
   return impl->var;
 }
