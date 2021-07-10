@@ -35,7 +35,7 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
       }
 
       const auto table_insert =
-          impl->operation_regions.CreateDerived<CHANGESTATE>(
+          impl->operation_regions.CreateDerived<CHANGETUPLE>(
               parent, from_state, TupleState::kPresent);
 
       for (auto col : cols) {

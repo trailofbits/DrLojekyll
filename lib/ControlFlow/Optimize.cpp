@@ -762,7 +762,7 @@ static bool OptimizeImpl(ProgramImpl *impl, GENERATOR *gen) {
 }
 
 // Try to eliminate unnecessary children of a transition state regions.
-static bool OptimizeImpl(ProgramImpl *impl, CHANGESTATE *transition) {
+static bool OptimizeImpl(ProgramImpl *impl, CHANGETUPLE *transition) {
   auto changed = false;
 
   if (auto done_body = transition->body.get()) {
@@ -824,7 +824,7 @@ static bool OptimizeImpl(ProgramImpl *impl, CHANGERECORD *emplace) {
 }
 
 // Try to eliminate unnecessary children of a check state region.
-static bool OptimizeImpl(ProgramImpl *impl, CHECKSTATE *check) {
+static bool OptimizeImpl(ProgramImpl *impl, CHECKTUPLE *check) {
   auto changed = false;
 
   if (auto present_body = check->body.get()) {
@@ -869,7 +869,7 @@ static bool OptimizeImpl(ProgramImpl *impl, CHECKSTATE *check) {
 }
 
 // Try to eliminate unnecessary children of a check state / get record region.
-static bool OptimizeImpl(ProgramImpl *impl, GETRECORD *check) {
+static bool OptimizeImpl(ProgramImpl *impl, CHECKRECORD *check) {
   auto changed = false;
 
   if (auto present_body = check->body.get()) {
@@ -1028,15 +1028,15 @@ void ProgramImpl::Optimize(void) {
         changed = OptimizeImpl(this, gen) | changed;
         CheckProcedures(this);
 
-      } else if (auto check = op->AsCheckState(); check) {
+      } else if (auto check = op->AsCheckTuple(); check) {
         changed = OptimizeImpl(this, check) | changed;
         CheckProcedures(this);
 
-      } else if (auto get = op->AsGetRecord(); get) {
+      } else if (auto get = op->AsCheckRecord(); get) {
         changed = OptimizeImpl(this, get) | changed;
         CheckProcedures(this);
 
-      } else if (auto transition = op->AsTransitionState(); transition) {
+      } else if (auto transition = op->AsChangeTuple(); transition) {
         changed = OptimizeImpl(this, transition) | changed;
         CheckProcedures(this);
 

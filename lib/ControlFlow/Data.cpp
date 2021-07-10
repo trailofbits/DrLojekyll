@@ -28,6 +28,19 @@ static std::string ColumnSpec(const std::vector<unsigned> &col_ids) {
 
 }  // namespace
 
+Node<DataRecordCase>::Node(unsigned id_)
+    : Def<Node<DataRecordCase>>(this),
+      User(this),
+      id(id_),
+      derived_from(this) {}
+
+Node<DataRecord>::Node(unsigned id_, TABLE *table_)
+    : Def<Node<DataRecord>>(this),
+      User(this),
+      id(id_),
+      cases(this),
+      table(this, table_) {}
+
 Node<DataVariable>::Node(unsigned id_, VariableRole role_)
     : Def<Node<DataVariable>>(this),
       role(role_),
@@ -54,6 +67,9 @@ TypeLoc Node<DataVariable>::Type(void) const noexcept {
     default:
       if (query_column) {
         return query_column->Type();
+      }
+      if (query_const) {
+        return query_const->Type();
       }
   }
   assert(false);
@@ -83,6 +99,8 @@ bool Node<DataVariable>::IsConstant(void) const noexcept {
     case VariableRole::kConstantOne:
     case VariableRole::kConstantFalse:
     case VariableRole::kConstantTrue: return true;
+    case VariableRole::kConditionRefCount:
+    case VariableRole::kRecordElement: return false;
     default:
       if (query_const.has_value()) {
         return true;
@@ -98,6 +116,14 @@ bool Node<DataVariable>::IsConstant(void) const noexcept {
 Node<DataColumn>::~Node(void) {}
 Node<DataIndex>::~Node(void) {}
 Node<DataTable>::~Node(void) {}
+
+Node<DataTable>::Node(unsigned id_)
+    : Def<Node<DataTable>>(this),
+      User(this),
+      id(id_),
+      columns(this),
+      indices(this),
+      records(this) {}
 
 Node<DataColumn>::Node(unsigned id_, TypeKind type_, Node<DataTable> *table_)
     : Def<Node<DataColumn>>(this),

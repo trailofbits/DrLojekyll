@@ -38,15 +38,39 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
     parent->AddRegion(loop);
     loop->vector.Emplace(loop, vec);
 
-    for (auto col : receive.Columns()) {
-      const auto var = loop->defined_vars.Create(impl->next_id++,
-                                                 VariableRole::kVectorVariable);
-      var->query_column = col;
-      loop->col_id_to_var.emplace(col.Id(), var);
+    DataModel *model = impl->view_to_model[receive]->FindAs<DataModel>();
+    TABLE *table = model->table;
+    CHANGERECORD *insert = nullptr;
+
+    // If this message receive has a corresponding table, then save it as
+    // a record here.
+    if (table) {
+      insert = impl->operation_regions.CreateDerived<CHANGERECORD>(
+          impl->next_id++, loop, TupleState::kAbsent, TupleState::kPresent);
+      insert->table.Emplace(insert, table);
+      loop->body.Emplace(loop, insert);
     }
 
-    BuildEagerInsertionRegions(impl, receive, context, loop,
-                               receive.Successors(), nullptr);
+    for (auto col : receive.Columns()) {
+      VAR * const var = loop->defined_vars.Create(
+          impl->next_id++, VariableRole::kVectorVariable);
+      var->query_column = col;
+      loop->col_id_to_var.emplace(col.Id(), var);
+
+      if (insert) {
+        insert->col_values.AddUse(var);
+        const auto record_var = insert->record_vars.Create(
+            impl->next_id++,VariableRole::kRecordElement);
+        record_var->defining_region = insert;
+        record_var->query_column = col;
+        insert->col_id_to_var.emplace(col.Id(), record_var);
+      }
+    }
+
+    OP *next_parent = insert ? insert : static_cast<OP *>(loop);
+
+    BuildEagerInsertionRegions(impl, receive, context, next_parent,
+                               receive.Successors(), table);
   }
 
   if (!removal_vec) {
@@ -67,15 +91,39 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
     parent->AddRegion(loop);
     loop->vector.Emplace(loop, removal_vec);
 
+    DataModel *model = impl->view_to_model[receive]->FindAs<DataModel>();
+    TABLE *table = model->table;
+    CHANGERECORD *remove = nullptr;
+
+    // If this message receive has a corresponding table, then save it as
+    // a record here.
+    if (table) {
+      remove = impl->operation_regions.CreateDerived<CHANGERECORD>(
+          impl->next_id++, loop, TupleState::kPresent, TupleState::kAbsent);
+      remove->table.Emplace(remove, table);
+      loop->body.Emplace(loop, remove);
+    }
+
     for (auto col : receive.Columns()) {
       const auto var = loop->defined_vars.Create(impl->next_id++,
                                                  VariableRole::kVectorVariable);
       var->query_column = col;
       loop->col_id_to_var.emplace(col.Id(), var);
+
+      if (remove) {
+        remove->col_values.AddUse(var);
+        const auto record_var = remove->record_vars.Create(
+            impl->next_id++,VariableRole::kRecordElement);
+        record_var->defining_region = remove;
+        record_var->query_column = col;
+        remove->col_id_to_var.emplace(col.Id(), record_var);
+      }
     }
 
-    BuildEagerRemovalRegions(impl, receive, context, loop, receive.Successors(),
-                             nullptr);
+    OP *next_parent = remove ? remove : static_cast<OP *>(loop);
+
+    BuildEagerRemovalRegions(
+        impl, receive, context, next_parent, receive.Successors(), table);
   }
 }
 
@@ -281,6 +329,7 @@ static void FixupContainingProcedure(REGION *region, REGION *parent) {
   }
 
   assert(region->parent == parent);
+  region->cached_depth = 0;
   region->parent = parent;
   region->containing_procedure = parent->containing_procedure;
 
@@ -291,17 +340,17 @@ static void FixupContainingProcedure(REGION *region, REGION *parent) {
     } else if (auto call = op->AsCall(); call) {
       FixupContainingProcedure(call->false_body.get(), region);
 
-    } else if (auto update = op->AsTransitionState(); update) {
+    } else if (auto update = op->AsChangeTuple(); update) {
       FixupContainingProcedure(update->failed_body.get(), region);
 
     } else if (auto emplace = op->AsChangeRecord(); emplace) {
       FixupContainingProcedure(emplace->failed_body.get(), region);
 
-    } else if (auto check = op->AsCheckState(); check) {
+    } else if (auto check = op->AsCheckTuple(); check) {
       FixupContainingProcedure(check->absent_body.get(), region);
       FixupContainingProcedure(check->unknown_body.get(), region);
 
-    } else if (auto get = op->AsGetRecord(); get) {
+    } else if (auto get = op->AsCheckRecord(); get) {
       FixupContainingProcedure(get->absent_body.get(), region);
       FixupContainingProcedure(get->unknown_body.get(), region);
 

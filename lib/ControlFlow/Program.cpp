@@ -55,7 +55,7 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto vec_unique = op->AsVectorUnique(); vec_unique) {
       vec_unique->vector.ClearWithoutErasure();
 
-    } else if (auto view_insert = op->AsTransitionState(); view_insert) {
+    } else if (auto view_insert = op->AsChangeTuple(); view_insert) {
       view_insert->table.ClearWithoutErasure();
       view_insert->col_values.ClearWithoutErasure();
       view_insert->failed_body.ClearWithoutErasure();
@@ -107,13 +107,13 @@ ProgramImpl::~ProgramImpl(void) {
       call->called_proc.ClearWithoutErasure();
       call->false_body.ClearWithoutErasure();
 
-    } else if (auto check = op->AsCheckState(); check) {
+    } else if (auto check = op->AsCheckTuple(); check) {
       check->col_values.ClearWithoutErasure();
       check->table.ClearWithoutErasure();
       check->absent_body.ClearWithoutErasure();
       check->unknown_body.ClearWithoutErasure();
 
-    } else if (auto get = op->AsGetRecord(); get) {
+    } else if (auto get = op->AsCheckRecord(); get) {
       get->col_values.ClearWithoutErasure();
       get->table.ClearWithoutErasure();
       get->absent_body.ClearWithoutErasure();
@@ -130,7 +130,44 @@ ProgramImpl::~ProgramImpl(void) {
   for (auto proc : procedure_regions) {
     proc->body.ClearWithoutErasure();
   }
+
+  for (DATARECORDCASE *record_case : record_cases) {
+    record_case->derived_from.ClearWithoutErasure();
+    record_case->columns.clear();
+    record_case->record.ClearWithoutErasure();
+  }
+
+  for (TABLE *table : tables) {
+    for (TABLEINDEX *index : table->indices) {
+      index->columns.ClearWithoutErasure();
+      index->mapped_columns.ClearWithoutErasure();
+      index->table.ClearWithoutErasure();
+    }
+    for (DATARECORD *record : table->records) {
+      record->table.ClearWithoutErasure();
+      record->cases.ClearWithoutErasure();
+    }
+  }
 }
+
+ProgramImpl::ProgramImpl(Query query_)
+    : User(this),
+      query(query_),
+      query_checkers(this),
+      procedure_regions(this),
+      series_regions(this),
+      parallel_regions(this),
+      induction_regions(this),
+      operation_regions(this),
+      join_regions(this),
+      tables(this),
+      record_cases(this),
+      global_vars(this),
+      const_vars(this),
+      zero(const_vars.Create(next_id++, VariableRole::kConstantZero)),
+      one(const_vars.Create(next_id++, VariableRole::kConstantOne)),
+      false_(const_vars.Create(next_id++, VariableRole::kConstantFalse)),
+      true_(const_vars.Create(next_id++, VariableRole::kConstantTrue)) {}
 
 Program::Program(std::shared_ptr<ProgramImpl> impl_) : impl(std::move(impl_)) {}
 
@@ -204,12 +241,13 @@ IS_OP(Call)
 IS_OP(Return)
 IS_OP(TestAndSet)
 IS_OP(Generate)
+IS_OP(ModeSwitch)
 IS_OP(LetBinding)
 IS_OP(Publish)
-IS_OP(TransitionState)
+IS_OP(ChangeTuple)
 IS_OP(ChangeRecord)
-IS_OP(CheckState)
-IS_OP(GetRecord)
+IS_OP(CheckTuple)
+IS_OP(CheckRecord)
 IS_OP(TableJoin)
 IS_OP(TableProduct)
 IS_OP(TableScan)
@@ -234,6 +272,10 @@ ProgramParallelRegion::From(ProgramRegion region) noexcept {
   const auto derived_impl = region.impl->AsParallel();
   assert(derived_impl != nullptr);
   return ProgramParallelRegion(derived_impl);
+}
+
+Mode ProgramModeSwitchRegion::NewMode(void) const noexcept {
+  return impl->new_mode;
 }
 
 bool ProgramTestAndSetRegion::IsAdd(void) const noexcept {
@@ -274,9 +316,10 @@ OPTIONAL_BODY(Body, ProgramTestAndSetRegion, body)
 OPTIONAL_BODY(BodyIfResults, ProgramGenerateRegion, body)
 OPTIONAL_BODY(BodyIfEmpty, ProgramGenerateRegion, empty_body)
 OPTIONAL_BODY(Body, ProgramLetBindingRegion, body)
+OPTIONAL_BODY(Body, ProgramModeSwitchRegion, body)
 OPTIONAL_BODY(Body, ProgramVectorLoopRegion, body)
-OPTIONAL_BODY(BodyIfSucceeded, ProgramTransitionStateRegion, body)
-OPTIONAL_BODY(BodyIfFailed, ProgramTransitionStateRegion, failed_body)
+OPTIONAL_BODY(BodyIfSucceeded, ProgramChangeTupleRegion, body)
+OPTIONAL_BODY(BodyIfFailed, ProgramChangeTupleRegion, failed_body)
 OPTIONAL_BODY(BodyIfSucceeded, ProgramChangeRecordRegion, body)
 OPTIONAL_BODY(BodyIfFailed, ProgramChangeRecordRegion, failed_body)
 OPTIONAL_BODY(Body, ProgramTableJoinRegion, body)
@@ -304,11 +347,12 @@ FROM_OP(ProgramReturnRegion, AsReturn)
 FROM_OP(ProgramTestAndSetRegion, AsTestAndSet)
 FROM_OP(ProgramGenerateRegion, AsGenerate)
 FROM_OP(ProgramLetBindingRegion, AsLetBinding)
+FROM_OP(ProgramModeSwitchRegion, AsModeSwitch)
 FROM_OP(ProgramPublishRegion, AsPublish)
-FROM_OP(ProgramTransitionStateRegion, AsTransitionState)
+FROM_OP(ProgramChangeTupleRegion, AsChangeTuple)
 FROM_OP(ProgramChangeRecordRegion, AsChangeRecord)
-FROM_OP(ProgramCheckStateRegion, AsCheckState)
-FROM_OP(ProgramGetRecordRegion, AsGetRecord)
+FROM_OP(ProgramCheckTupleRegion, AsCheckTuple)
+FROM_OP(ProgramCheckRecordRegion, AsCheckRecord)
 FROM_OP(ProgramTableJoinRegion, AsTableJoin)
 FROM_OP(ProgramTableProductRegion, AsTableProduct)
 FROM_OP(ProgramTableScanRegion, AsTableScan)
@@ -349,7 +393,7 @@ DEFINED_RANGE(Program, JoinRegions, ProgramTableJoinRegion, join_regions)
 DEFINED_RANGE(ProgramTableJoinRegion, OutputPivotVariables, DataVariable, pivot_vars)
 DEFINED_RANGE(ProgramTableScanRegion, OutputVariables, DataVariable, out_vars)
 DEFINED_RANGE(ProgramChangeRecordRegion, RecordVariables, DataVariable, record_vars)
-DEFINED_RANGE(ProgramGetRecordRegion, RecordVariables, DataVariable, record_vars)
+DEFINED_RANGE(ProgramCheckRecordRegion, RecordVariables, DataVariable, record_vars)
 
 USED_RANGE(ProgramCallRegion, VariableArguments, DataVariable, arg_vars)
 USED_RANGE(ProgramCallRegion, VectorArguments, DataVector, arg_vecs)
@@ -357,10 +401,10 @@ USED_RANGE(ProgramPublishRegion, VariableArguments, DataVariable, arg_vars)
 USED_RANGE(ProgramGenerateRegion, InputVariables, DataVariable, used_vars)
 USED_RANGE(ProgramLetBindingRegion, UsedVariables, DataVariable, used_vars)
 USED_RANGE(ProgramVectorAppendRegion, TupleVariables, DataVariable, tuple_vars)
-USED_RANGE(ProgramTransitionStateRegion, TupleVariables, DataVariable, col_values)
+USED_RANGE(ProgramChangeTupleRegion, TupleVariables, DataVariable, col_values)
 USED_RANGE(ProgramChangeRecordRegion, TupleVariables, DataVariable, col_values)
-USED_RANGE(ProgramCheckStateRegion, TupleVariables, DataVariable, col_values)
-USED_RANGE(ProgramGetRecordRegion, TupleVariables, DataVariable, col_values)
+USED_RANGE(ProgramCheckTupleRegion, TupleVariables, DataVariable, col_values)
+USED_RANGE(ProgramCheckRecordRegion, TupleVariables, DataVariable, col_values)
 USED_RANGE(DataIndex, KeyColumns, DataColumn, columns)
 USED_RANGE(DataIndex, ValueColumns, DataColumn, mapped_columns)
 USED_RANGE(ProgramTupleCompareRegion, LHS, DataVariable, lhs_vars)
@@ -478,24 +522,29 @@ ParsedFunctor ProgramGenerateRegion::Functor(void) const noexcept {
   return impl->functor;
 }
 
-unsigned ProgramTransitionStateRegion::Arity(void) const noexcept {
+unsigned ProgramChangeTupleRegion::Arity(void) const noexcept {
   return impl->col_values.Size();
 }
 
-DataTable ProgramTransitionStateRegion::Table(void) const {
+DataTable ProgramChangeTupleRegion::Table(void) const {
   return DataTable(impl->table.get());
 }
 
-TupleState ProgramTransitionStateRegion::FromState(void) const noexcept {
+TupleState ProgramChangeTupleRegion::FromState(void) const noexcept {
   return impl->from_state;
 }
 
-TupleState ProgramTransitionStateRegion::ToState(void) const noexcept {
+TupleState ProgramChangeTupleRegion::ToState(void) const noexcept {
   return impl->to_state;
 }
 
 unsigned ProgramChangeRecordRegion::Arity(void) const noexcept {
   return impl->col_values.Size();
+}
+
+// Returns a unique ID for this region.
+unsigned ProgramChangeRecordRegion::Id(void) const noexcept {
+  return impl->id;
 }
 
 DataTable ProgramChangeRecordRegion::Table(void) const {
@@ -510,16 +559,16 @@ TupleState ProgramChangeRecordRegion::ToState(void) const noexcept {
   return impl->to_state;
 }
 
-unsigned ProgramCheckStateRegion::Arity(void) const noexcept {
+unsigned ProgramCheckTupleRegion::Arity(void) const noexcept {
   return impl->col_values.Size();
 }
 
-DataTable ProgramCheckStateRegion::Table(void) const {
+DataTable ProgramCheckTupleRegion::Table(void) const {
   return DataTable(impl->table.get());
 }
 
 std::optional<ProgramRegion>
-ProgramCheckStateRegion::IfPresent(void) const noexcept {
+ProgramCheckTupleRegion::IfPresent(void) const noexcept {
   if (auto body = impl->body.get(); body) {
     return ProgramRegion(body);
   } else {
@@ -528,7 +577,7 @@ ProgramCheckStateRegion::IfPresent(void) const noexcept {
 }
 
 std::optional<ProgramRegion>
-ProgramCheckStateRegion::IfAbsent(void) const noexcept {
+ProgramCheckTupleRegion::IfAbsent(void) const noexcept {
   if (auto body = impl->absent_body.get(); body) {
     return ProgramRegion(body);
   } else {
@@ -537,7 +586,7 @@ ProgramCheckStateRegion::IfAbsent(void) const noexcept {
 }
 
 std::optional<ProgramRegion>
-ProgramCheckStateRegion::IfUnknown(void) const noexcept {
+ProgramCheckTupleRegion::IfUnknown(void) const noexcept {
   if (auto body = impl->unknown_body.get(); body) {
     return ProgramRegion(body);
   } else {
@@ -545,16 +594,21 @@ ProgramCheckStateRegion::IfUnknown(void) const noexcept {
   }
 }
 
-unsigned ProgramGetRecordRegion::Arity(void) const noexcept {
+// Returns a unique ID for this region.
+unsigned ProgramCheckRecordRegion::Id(void) const noexcept {
+  return impl->id;
+}
+
+unsigned ProgramCheckRecordRegion::Arity(void) const noexcept {
   return impl->col_values.Size();
 }
 
-DataTable ProgramGetRecordRegion::Table(void) const {
+DataTable ProgramCheckRecordRegion::Table(void) const {
   return DataTable(impl->table.get());
 }
 
 std::optional<ProgramRegion>
-ProgramGetRecordRegion::IfPresent(void) const noexcept {
+ProgramCheckRecordRegion::IfPresent(void) const noexcept {
   if (auto body = impl->body.get(); body) {
     return ProgramRegion(body);
   } else {
@@ -563,7 +617,7 @@ ProgramGetRecordRegion::IfPresent(void) const noexcept {
 }
 
 std::optional<ProgramRegion>
-ProgramGetRecordRegion::IfAbsent(void) const noexcept {
+ProgramCheckRecordRegion::IfAbsent(void) const noexcept {
   if (auto body = impl->absent_body.get(); body) {
     return ProgramRegion(body);
   } else {
@@ -572,7 +626,7 @@ ProgramGetRecordRegion::IfAbsent(void) const noexcept {
 }
 
 std::optional<ProgramRegion>
-ProgramGetRecordRegion::IfUnknown(void) const noexcept {
+ProgramCheckRecordRegion::IfUnknown(void) const noexcept {
   if (auto body = impl->unknown_body.get(); body) {
     return ProgramRegion(body);
   } else {

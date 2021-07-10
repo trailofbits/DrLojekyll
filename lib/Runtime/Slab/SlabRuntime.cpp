@@ -67,7 +67,7 @@ bool TableImpl::KeyExists(void) const {
 }
 
 std::pair<bool, bool>
-TableImpl::TryChangeStateFromAbsentOrUnknownToPresent(void) {
+TableImpl::TryChangeTupleFromAbsentOrUnknownToPresent(void) {
   auto [it, added] = backing_store.emplace(key_data, TupleState::kPresent);
   if (!added) {
     auto &state = it->second;
@@ -83,7 +83,7 @@ TableImpl::TryChangeStateFromAbsentOrUnknownToPresent(void) {
   }
 }
 
-std::pair<bool, bool> TableImpl::TryChangeStateFromAbsentToPresent(void) {
+std::pair<bool, bool> TableImpl::TryChangeTupleFromAbsentToPresent(void) {
   auto [it, added] = backing_store.emplace(key_data, TupleState::kPresent);
   if (!added) {
     auto &state = it->second;
@@ -99,7 +99,7 @@ std::pair<bool, bool> TableImpl::TryChangeStateFromAbsentToPresent(void) {
   }
 }
 
-bool TableImpl::TryChangeStateFromPresentToUnknown(void) {
+bool TableImpl::TryChangeTupleFromPresentToUnknown(void) {
   auto it = backing_store.find(key_data);
   if (it == backing_store.end() || it->second != TupleState::kPresent) {
     return false;
@@ -109,7 +109,7 @@ bool TableImpl::TryChangeStateFromPresentToUnknown(void) {
   }
 }
 
-bool TableImpl::TryChangeStateFromUnknownToAbsent(void) {
+bool TableImpl::TryChangeTupleFromUnknownToAbsent(void) {
   auto it = backing_store.find(key_data);
   if (it == backing_store.end() || it->second != TupleState::kUnknown) {
     return false;

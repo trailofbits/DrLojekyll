@@ -594,7 +594,7 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
       //          impl, context, parent, view, view_cols, pred_view, nullptr);
 
       OP *parent_out = nullptr;
-      CHECKSTATE *const check = BuildTopDownCheckerStateCheck(
+      CHECKTUPLE *const check = BuildTopDownCheckerStateCheck(
           impl, parent, pred_table, pred_view.Columns(),
           [&parent_out](ProgramImpl *impl_, REGION *in_check) {
             parent_out = impl_->operation_regions.CreateDerived<LET>(in_check);

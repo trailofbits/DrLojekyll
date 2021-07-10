@@ -638,8 +638,8 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     }
   }
 
-  void Visit(ProgramTransitionStateRegion region) override {
-    os << Comment(os, region, "Program TransitionState Region");
+  void Visit(ProgramChangeTupleRegion region) override {
+    os << Comment(os, region, "Program ChangeTuple Region");
 
     const auto tuple_vars = region.TupleVariables();
 
@@ -773,8 +773,8 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     }
   }
 
-  void Visit(ProgramCheckStateRegion region) override {
-    os << Comment(os, region, "Program CheckState Region");
+  void Visit(ProgramCheckTupleRegion region) override {
+    os << Comment(os, region, "Program CheckTuple Region");
     const auto table = region.Table();
     const auto vars = region.TupleVariables();
     os << os.Indent() << "state = " << Table(os, table) << "[";

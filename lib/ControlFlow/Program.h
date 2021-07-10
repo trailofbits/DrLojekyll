@@ -90,12 +90,7 @@ class Node<DataTable> final : public Def<Node<DataTable>>, public User {
  public:
   virtual ~Node(void);
 
-  inline Node(unsigned id_)
-      : Def<Node<DataTable>>(this),
-        User(this),
-        id(id_),
-        columns(this),
-        indices(this) {}
+  Node(unsigned id_);
 
   void Accept(ProgramVisitor &visitor);
 
@@ -114,6 +109,9 @@ class Node<DataTable> final : public Def<Node<DataTable>>, public User {
   // Indexes that should be created on this table. By default, all tables have
   // a UNIQUE index.
   DefList<TABLEINDEX> indices;
+
+  // Records associated with this table.
+  DefList<Node<DataRecord>> records;
 
   // All views sharing this table.
   std::vector<QueryView> views;
@@ -198,6 +196,70 @@ class Node<DataVariable> final : public Def<Node<DataVariable>> {
 };
 
 using VAR = Node<DataVariable>;
+
+
+struct RecordColumn {
+  RecordColumn(void) = default;
+
+  RecordColumn &operator=(RecordColumn &&that) noexcept {
+    derived_index = that.derived_index;
+    derived_offset = that.derived_offset;
+    column.Swap(that.column);
+    var.Swap(that.var);
+    return *this;
+  }
+
+  RecordColumn(RecordColumn &&that) noexcept
+      : derived_index(that.derived_index),
+        derived_offset(that.derived_offset) {
+    column.Swap(that.column);
+    var.Swap(that.var);
+  }
+
+  // If this column is derived from another record, then what index in
+  // `derived_from` is it from, and then what offset (column) within that
+  // record.
+  unsigned derived_index{~0u};
+  unsigned derived_offset{~0u};
+
+  UseRef<TABLECOLUMN> column;
+  UseRef<VAR> var;
+};
+
+// A record case is a particular instantiation or variant of a record.
+// A record might have multiple cases.
+template <>
+class Node<DataRecordCase> : public Def<Node<DataRecordCase>>, public User {
+ public:
+  Node(unsigned id_);
+
+  const unsigned id;
+
+  UseList<Node<DataRecord>> derived_from;
+
+  std::vector<RecordColumn> columns;
+
+  WeakUseRef<Node<DataRecord>> record;
+};
+
+using DATARECORDCASE = Node<DataRecordCase>;
+
+// A record is an abstraction over a persisted tuple. The storage for the
+// record is implemented in terms of one or more cases.
+template <>
+class Node<DataRecord> : public Def<Node<DataRecord>>, public User {
+ public:
+  explicit Node(unsigned id_, TABLE *table_);
+
+  const unsigned id;
+  UseList<DATARECORDCASE> cases;
+  WeakUseRef<TABLE> table;
+
+ private:
+  Node(void) = delete;
+};
+
+using DATARECORD = Node<DataRecord>;
 
 // A lexically scoped region in the program.
 template <>
@@ -326,8 +388,8 @@ enum class ProgramOperation {
   // Check the state of a tuple from a table. This executes one of three
   // bodies: `body` if the tuple is present, `absent_body` if the tuple is
   // absent, and `unknown_body` if the tuple may have been deleted.
-  kCheckStateInTable,
-  kGetRecordFromTable,
+  kCheckTupleInTable,
+  kCheckRecordFromTable,
 
   // When dealing with MERGE/UNION nodes with an inductive cycle.
   kAppendToInductionVector,
@@ -394,6 +456,9 @@ enum class ProgramOperation {
   kPublishMessage,
   kPublishMessageRemoval,
 
+  // Switch modes, telling us the general intention of the containing code.
+  kModeSwitch,
+
   // Creates a let binding, which assigns uses of variables to definitions of
   // variables. In practice, let bindings are eliminated during the process
   // of optimization.
@@ -438,12 +503,13 @@ class Node<ProgramOperationRegion> : public REGION {
   virtual Node<ProgramReturnRegion> *AsReturn(void) noexcept;
   virtual Node<ProgramTestAndSetRegion> *AsTestAndSet(void) noexcept;
   virtual Node<ProgramGenerateRegion> *AsGenerate(void) noexcept;
+  virtual Node<ProgramModeSwitchRegion> *AsModeSwitch(void) noexcept;
   virtual Node<ProgramLetBindingRegion> *AsLetBinding(void) noexcept;
   virtual Node<ProgramPublishRegion> *AsPublish(void) noexcept;
-  virtual Node<ProgramTransitionStateRegion> *AsTransitionState(void) noexcept;
+  virtual Node<ProgramChangeTupleRegion> *AsChangeTuple(void) noexcept;
   virtual Node<ProgramChangeRecordRegion> *AsChangeRecord(void) noexcept;
-  virtual Node<ProgramCheckStateRegion> *AsCheckState(void) noexcept;
-  virtual Node<ProgramGetRecordRegion> *AsGetRecord(void) noexcept;
+  virtual Node<ProgramCheckTupleRegion> *AsCheckTuple(void) noexcept;
+  virtual Node<ProgramCheckRecordRegion> *AsCheckRecord(void) noexcept;
   virtual Node<ProgramTableJoinRegion> *AsTableJoin(void) noexcept;
   virtual Node<ProgramTableProductRegion> *AsTableProduct(void) noexcept;
   virtual Node<ProgramTableScanRegion> *AsTableScan(void) noexcept;
@@ -468,6 +534,36 @@ class Node<ProgramOperationRegion> : public REGION {
 };
 
 using OP = Node<ProgramOperationRegion>;
+
+// A region which semantically tells us we're swithing modes, e.g. to removing
+// data, or to adding data.
+template <>
+class Node<ProgramModeSwitchRegion> final : public OP {
+ public:
+  virtual ~Node(void);
+
+  void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(uint32_t depth) const override;
+  bool IsNoOp(void) const noexcept override;
+
+  // Returns `true` if `this` and `that` are structurally equivalent (after
+  // variable renaming).
+  bool Equals(EqualitySet &eq, REGION *that,
+              uint32_t depth) const noexcept override;
+
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<REGION *> &merges) override;
+
+  inline Node(REGION *parent_, Mode new_mode_)
+      : OP(parent_, ProgramOperation::kModeSwitch),
+        new_mode(new_mode_) {}
+
+  const Mode new_mode;
+
+  Node<ProgramModeSwitchRegion> *AsModeSwitch(void) noexcept override;
+};
+
+using MODESWITCH = Node<ProgramModeSwitchRegion>;
 
 // A let binding, i.e. an assignment of zero or more variables. Variables
 // are assigned pairwise from `used_vars` into `defined_vars`.
@@ -713,15 +809,14 @@ using VECTORUNIQUE = Node<ProgramVectorUniqueRegion>;
 // needs to be re-proven in order via alternate means in order for it to be
 // used.
 template <>
-class Node<ProgramTransitionStateRegion> final
+class Node<ProgramChangeTupleRegion> final
     : public OP {
  public:
   virtual ~Node(void);
 
   inline Node(REGION *parent_, TupleState from_state_,
               TupleState to_state_)
-      : OP(parent_,
-                                     ProgramOperation::kInsertIntoTable),
+      : OP(parent_, ProgramOperation::kInsertIntoTable),
         col_values(this),
         failed_body(this),
         from_state(from_state_),
@@ -729,7 +824,7 @@ class Node<ProgramTransitionStateRegion> final
 
   void Accept(ProgramVisitor &visitor) override;
 
-  Node<ProgramTransitionStateRegion> *AsTransitionState(void) noexcept override;
+  Node<ProgramChangeTupleRegion> *AsChangeTuple(void) noexcept override;
 
   uint64_t Hash(uint32_t depth) const override;
   bool IsNoOp(void) const noexcept override;
@@ -758,9 +853,9 @@ class Node<ProgramTransitionStateRegion> final
   const TupleState to_state;
 };
 
-using CHANGESTATE = Node<ProgramTransitionStateRegion>;
+using CHANGETUPLE = Node<ProgramChangeTupleRegion>;
 
-// This is similar to a `ProgramTransitionStateRegion`; however, it also
+// This is similar to a `ProgramChangeTupleRegion`; however, it also
 // creates new definitions for the variables which it is updating. The key
 // idea is that this gets us the "record" associated with some tuple data,
 // rather than us keeping with the tuple data itself.
@@ -769,10 +864,10 @@ class Node<ProgramChangeRecordRegion> final : public OP {
  public:
   virtual ~Node(void);
 
-  inline Node(REGION *parent_, TupleState from_state_,
+  inline Node(unsigned id_, REGION *parent_, TupleState from_state_,
               TupleState to_state_)
-      : OP(parent_,
-                                     ProgramOperation::kEmplaceIntoTable),
+      : OP(parent_, ProgramOperation::kEmplaceIntoTable),
+        id(id_),
         col_values(this),
         record_vars(this),
         failed_body(this),
@@ -796,6 +891,8 @@ class Node<ProgramChangeRecordRegion> final : public OP {
 
   // Returns `true` if all paths through `this` ends with a `return` region.
   bool EndsWithReturn(void) const noexcept override;
+
+  const unsigned id;
 
   // Variables that make up the tuple.
   UseList<VAR> col_values;
@@ -822,14 +919,14 @@ using CHANGERECORD = Node<ProgramChangeRecordRegion>;
 // not sure if the tuple is present or absent, because it has been marked
 // as a candidate for deletion, and thus we need to re-prove it.
 template <>
-class Node<ProgramCheckStateRegion> final
+class Node<ProgramCheckTupleRegion> final
     : public OP {
  public:
   virtual ~Node(void);
 
   inline Node(REGION *parent_)
       : OP(parent_,
-                                     ProgramOperation::kCheckStateInTable),
+                                     ProgramOperation::kCheckTupleInTable),
         col_values(this),
         absent_body(this),
         unknown_body(this) {}
@@ -838,7 +935,7 @@ class Node<ProgramCheckStateRegion> final
   uint64_t Hash(uint32_t depth) const override;
   bool IsNoOp(void) const noexcept override;
 
-  Node<ProgramCheckStateRegion> *AsCheckState(void) noexcept override;
+  Node<ProgramCheckTupleRegion> *AsCheckTuple(void) noexcept override;
 
   // Returns `true` if all paths through `this` ends with a `return` region.
   bool EndsWithReturn(void) const noexcept override;
@@ -865,17 +962,18 @@ class Node<ProgramCheckStateRegion> final
   RegionRef unknown_body;
 };
 
-using CHECKSTATE = Node<ProgramCheckStateRegion>;
+using CHECKTUPLE = Node<ProgramCheckTupleRegion>;
 
-// This is like `ProgramCheckStateRegion`, except that it operates on records,
+// This is like `ProgramCheckTupleRegion`, except that it operates on records,
 // i.e. it defines new variables for what is being returned.
 template <>
-class Node<ProgramGetRecordRegion> final : public OP {
+class Node<ProgramCheckRecordRegion> final : public OP {
  public:
   virtual ~Node(void);
 
-  inline Node(REGION *parent_)
-      : OP(parent_, ProgramOperation::kGetRecordFromTable),
+  inline Node(unsigned id_, REGION *parent_)
+      : OP(parent_, ProgramOperation::kCheckRecordFromTable),
+        id(id_),
         col_values(this),
         record_vars(this),
         absent_body(this),
@@ -885,7 +983,7 @@ class Node<ProgramGetRecordRegion> final : public OP {
   uint64_t Hash(uint32_t depth) const override;
   bool IsNoOp(void) const noexcept override;
 
-  Node<ProgramGetRecordRegion> *AsGetRecord(void) noexcept override;
+  Node<ProgramCheckRecordRegion> *AsCheckRecord(void) noexcept override;
 
   // Returns `true` if all paths through `this` ends with a `return` region.
   bool EndsWithReturn(void) const noexcept override;
@@ -897,6 +995,8 @@ class Node<ProgramGetRecordRegion> final : public OP {
 
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
+
+  const unsigned id;
 
   // Variables that make up the tuple.
   UseList<VAR> col_values;
@@ -915,7 +1015,7 @@ class Node<ProgramGetRecordRegion> final : public OP {
   RegionRef unknown_body;
 };
 
-using GETRECORD = Node<ProgramGetRecordRegion>;
+using CHECKRECORD = Node<ProgramCheckRecordRegion>;
 
 // Calls another IR procedure. All IR procedures return `true` or `false`. This
 // return value can be tested, and if it is, a body can be conditionally
@@ -1523,23 +1623,7 @@ class ProgramImpl : public User {
  public:
   ~ProgramImpl(void);
 
-  inline explicit ProgramImpl(Query query_)
-      : User(this),
-        query(query_),
-        query_checkers(this),
-        procedure_regions(this),
-        series_regions(this),
-        parallel_regions(this),
-        induction_regions(this),
-        operation_regions(this),
-        join_regions(this),
-        tables(this),
-        global_vars(this),
-        const_vars(this),
-        zero(const_vars.Create(next_id++, VariableRole::kConstantZero)),
-        one(const_vars.Create(next_id++, VariableRole::kConstantOne)),
-        false_(const_vars.Create(next_id++, VariableRole::kConstantFalse)),
-        true_(const_vars.Create(next_id++, VariableRole::kConstantTrue)) {}
+  explicit ProgramImpl(Query query_);
 
   void Optimize(void);
 
@@ -1549,7 +1633,7 @@ class ProgramImpl : public User {
   // of copy propagation, which gives us the ability to "hop backward" to the
   // provenance of some data, as opposed to having to jump one `QueryView` at
   // a time.
-  void Analyze(Language lang);
+  void Analyze(void);
 
   // The data flow representation from which this was created.
   const Query query;
@@ -1568,6 +1652,7 @@ class ProgramImpl : public User {
   DefList<OP> operation_regions;
   DefList<TABLEJOIN> join_regions;
   DefList<TABLE> tables;
+  DefList<DATARECORDCASE> record_cases;
 
   // List of variables associated with globals (e.g. reference counts).
   DefList<VAR> global_vars;

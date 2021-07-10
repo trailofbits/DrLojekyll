@@ -389,6 +389,28 @@ OutputStream &operator<<(OutputStream &os, ProgramLetBindingRegion region) {
   return os;
 }
 
+OutputStream &operator<<(OutputStream &os, ProgramModeSwitchRegion region) {
+  if (auto maybe_body = region.Body(); maybe_body) {
+    if (region.NewMode() == Mode::kBottomUpAddition) {
+      os << os.Indent() << "mode-switch-to-add\n";
+      os.PushIndent();
+      os << (*maybe_body);
+      os.PopIndent();
+    } else if (region.NewMode() == Mode::kBottomUpRemoval) {
+      os << os.Indent() << "mode-switch-to-remove\n";
+      os.PushIndent();
+      os << (*maybe_body);
+      os.PopIndent();
+    } else {
+      assert(false);
+      os << (*maybe_body);
+    }
+  } else {
+    os << os.Indent() << "empty-mode-switch";
+  }
+  return os;
+}
+
 OutputStream &operator<<(OutputStream &os, ProgramVectorLoopRegion region) {
   if (auto maybe_body = region.Body(); maybe_body) {
     os << os.Indent() << "vector-loop {";
@@ -461,9 +483,9 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorSwapRegion region) {
 }
 
 OutputStream &operator<<(OutputStream &os,
-                         ProgramTransitionStateRegion region) {
+                         ProgramChangeTupleRegion region) {
 
-  os << os.Indent() << "transition-state {";
+  os << os.Indent() << "change-tuple {";
 
   auto sep = "";
   for (auto var : region.TupleVariables()) {
@@ -517,7 +539,7 @@ OutputStream &operator<<(OutputStream &os,
     os << sep << var;
     sep = ", ";
   }
-  os << "} = change-regord {";
+  os << "} = change-record {";
 
   sep = "";
   for (auto var : region.TupleVariables()) {
@@ -562,8 +584,8 @@ OutputStream &operator<<(OutputStream &os,
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os, ProgramCheckStateRegion region) {
-  os << os.Indent() << "check-state {";
+OutputStream &operator<<(OutputStream &os, ProgramCheckTupleRegion region) {
+  os << os.Indent() << "check-tuple {";
   auto sep = "";
   for (auto var : region.TupleVariables()) {
     os << sep << var;
@@ -597,14 +619,14 @@ OutputStream &operator<<(OutputStream &os, ProgramCheckStateRegion region) {
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os, ProgramGetRecordRegion region) {
+OutputStream &operator<<(OutputStream &os, ProgramCheckRecordRegion region) {
   auto sep = "{";
   os << os.Indent();
   for (auto var : region.RecordVariables()) {
     os << sep << var;
     sep = ", ";
   }
-  os << "} = get-record {";
+  os << "} = check-record {";
   sep = "";
   for (auto var : region.TupleVariables()) {
     os << sep << var;
@@ -840,6 +862,7 @@ class FormatDispatcher final : public ProgramVisitor {
   MAKE_VISITOR(ProgramTestAndSetRegion)
   MAKE_VISITOR(ProgramGenerateRegion)
   MAKE_VISITOR(ProgramInductionRegion)
+  MAKE_VISITOR(ProgramModeSwitchRegion)
   MAKE_VISITOR(ProgramLetBindingRegion)
   MAKE_VISITOR(ProgramParallelRegion)
   MAKE_VISITOR(ProgramProcedure)
@@ -850,8 +873,10 @@ class FormatDispatcher final : public ProgramVisitor {
   MAKE_VISITOR(ProgramVectorLoopRegion)
   MAKE_VISITOR(ProgramVectorSwapRegion)
   MAKE_VISITOR(ProgramVectorUniqueRegion)
-  MAKE_VISITOR(ProgramTransitionStateRegion)
-  MAKE_VISITOR(ProgramCheckStateRegion)
+  MAKE_VISITOR(ProgramChangeTupleRegion)
+  MAKE_VISITOR(ProgramCheckTupleRegion)
+  MAKE_VISITOR(ProgramChangeRecordRegion)
+  MAKE_VISITOR(ProgramCheckRecordRegion)
   MAKE_VISITOR(ProgramTableJoinRegion)
   MAKE_VISITOR(ProgramTableProductRegion)
   MAKE_VISITOR(ProgramTableScanRegion)

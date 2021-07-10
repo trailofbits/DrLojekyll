@@ -54,8 +54,12 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
     }
   });
 
-  for (auto view : query.Selects()) {
-    (void) TABLE::GetOrCreate(impl, context, view);
+  // We will always unique all input data into records, to help kick off
+  // all later record-based analysis.
+  for (auto io : query.IOs()) {
+    for (auto receive : io.Receives()) {
+      (void) TABLE::GetOrCreate(impl, context, receive);
+    }
   }
 
   for (auto view : query.Inserts()) {
@@ -604,7 +608,7 @@ static void BuildTopDownChecker(ProgramImpl *impl, Context &context,
             // Change the tuple's state to mark it as absent so that we can't
             // use it as its own base case.
             const auto table_remove =
-                BuildChangeState(impl, table, parent, view_cols,
+                BuildChangeTuple(impl, table, parent, view_cols,
                                  TupleState::kUnknown, TupleState::kAbsent);
 
             already_checked = model->table;
@@ -612,10 +616,9 @@ static void BuildTopDownChecker(ProgramImpl *impl, Context &context,
             table_remove->body.Emplace(table_remove, recursive_call_if_changed);
 
             // If we're proven the tuple, then try to mark it as present.
-            const auto table_add = BuildChangeState(
+            const auto table_add = BuildChangeTuple(
                 impl, table, recursive_call_if_changed, view_cols,
                 TupleState::kAbsent, TupleState::kPresent);
-
             recursive_call_if_changed->body.Emplace(recursive_call_if_changed,
                                                     table_add);
 
@@ -1032,7 +1035,7 @@ static void MapVariables(REGION *region) {
       for (auto var : scan->out_vars) {
         var->defining_region = region;
       }
-    } else if (auto update = op->AsTransitionState(); update) {
+    } else if (auto update = op->AsChangeTuple(); update) {
       MapVariables(update->failed_body.get());
 
     } else if (auto emplace = op->AsChangeRecord(); emplace) {
@@ -1041,11 +1044,11 @@ static void MapVariables(REGION *region) {
       }
       MapVariables(emplace->failed_body.get());
 
-    } else if (auto check = op->AsCheckState(); check) {
+    } else if (auto check = op->AsCheckTuple(); check) {
       MapVariables(check->absent_body.get());
       MapVariables(check->unknown_body.get());
 
-    } else if (auto get = op->AsGetRecord(); get) {
+    } else if (auto get = op->AsCheckRecord(); get) {
       for (auto var : get->record_vars) {
         var->defining_region = region;
       }
@@ -1461,7 +1464,7 @@ InTryInsert(ProgramImpl *impl, Context &context, QueryView view, OP *parent,
       }
 
       // Do the marking.
-      const auto table_remove = BuildChangeState(
+      const auto table_remove = BuildChangeTuple(
           impl, table, parent, cols, from_state, TupleState::kPresent);
 
       parent->body.Emplace(parent, table_remove);
@@ -1505,7 +1508,7 @@ InTryMarkUnknown(ProgramImpl *impl, Context &context, QueryView view,
 
       // Do the marking.
       const auto table_remove =
-          BuildChangeState(impl, table, parent, cols, TupleState::kPresent,
+          BuildChangeTuple(impl, table, parent, cols, TupleState::kPresent,
                            TupleState::kUnknown);
 
       parent->body.Emplace(parent, table_remove);
@@ -1709,8 +1712,8 @@ void BuildEagerRemovalRegionsImpl(ProgramImpl *impl, QueryView view,
   parent->body.Emplace(parent, par);
 
   // Proving this `view` might set a condition. If we set a condition, then
-  // we need to make sure than a CHANGESTATE actually happened. That could
-  // mean re-parenting all successors within a CHANGESTATE.
+  // we need to make sure than a CHANGETUPLE actually happened. That could
+  // mean re-parenting all successors within a CHANGETUPLE.
   //
   // NOTE(pag): Above we made certain to call the top-down checker to make
   //            sure the data is actually gone.
@@ -1773,8 +1776,8 @@ void BuildEagerInsertionRegionsImpl(ProgramImpl *impl, QueryView view,
   parent->body.Emplace(parent, par);
 
   // Proving this `view` might set a condition. If we set a condition, then
-  // we need to make sure than a CHANGESTATE actually happened. That could
-  // mean re-parenting all successors within a CHANGESTATE.
+  // we need to make sure than a CHANGETUPLE actually happened. That could
+  // mean re-parenting all successors within a CHANGETUPLE.
   if (auto set_cond = view.SetCondition(); set_cond) {
     assert(table != nullptr);
     BuildEagerUpdateCondAndNotify(impl, context, *set_cond, par,
@@ -2184,7 +2187,7 @@ std::optional<Program> Program::Build(const ::hyde::Query &query) {
     MapVariables(proc);
   }
 
-  impl->Analyze(Language::kCxx);
+  impl->Analyze();
 
 //  ExtractPrimaryProcedure(impl.get(), entry_proc, context);
 //

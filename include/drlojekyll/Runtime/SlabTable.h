@@ -118,7 +118,7 @@ class SlabTableBase {
   // tuple.
   template <typename TupleType, typename TupleBuilderType>
   HYDE_RT_FLATTEN HYDE_RT_NEVER_INLINE
-  std::tuple<bool, uint64_t, bool> TryChangeState(
+  std::tuple<bool, uint64_t, bool> TryChangeTuple(
       const TupleType &tuple, TupleState a_state, TupleState b_state) noexcept {
     const auto [hash, num_bytes] = HashAndSizeColumns(tuple);
     for (auto [it, end] = assoc_data[0].equal_range(hash);
@@ -143,7 +143,7 @@ class SlabTableBase {
   // Try to change the state of a tuple which should already be present.
   template <typename TupleType, typename TupleBuilderType>
   HYDE_RT_FLATTEN HYDE_RT_NEVER_INLINE
-  bool ChangeState(const TupleType &tuple, TupleState from_state,
+  bool ChangeTuple(const TupleType &tuple, TupleState from_state,
                    TupleState to_state) noexcept {
     const auto [hash, num_bytes] = HashAndSizeColumns(tuple);
     for (auto [it, end] = assoc_data[0].equal_range(hash);
@@ -367,10 +367,10 @@ class SlabTable
 
   template <typename... Ts>
   HYDE_RT_ALWAYS_INLINE
-  bool TryChangeStateFromAbsentToPresent(const Ts&... cols) noexcept {
+  bool TryChangeTupleFromAbsentToPresent(const Ts&... cols) noexcept {
     const TupleType tuple(cols...);
     const auto [ret, hash, add] =
-        this->template TryChangeState<TupleType, TupleBuilderType>(
+        this->template TryChangeTuple<TupleType, TupleBuilderType>(
             tuple, TupleState::kAbsent, TupleState::kAbsent);
     if (add) {
       return AddTuple(tuple, hash);
@@ -380,10 +380,10 @@ class SlabTable
 
   template <typename... Ts>
   HYDE_RT_ALWAYS_INLINE
-  bool TryChangeStateFromAbsentOrUnknownToPresent(const Ts&... cols) noexcept {
+  bool TryChangeTupleFromAbsentOrUnknownToPresent(const Ts&... cols) noexcept {
     const TupleType tuple(cols...);
     const auto [ret, hash, add] =
-        this->template TryChangeState<TupleType, TupleBuilderType>(
+        this->template TryChangeTuple<TupleType, TupleBuilderType>(
             tuple, TupleState::kAbsent, TupleState::kUnknown);
     if (add) {
       return AddTuple(tuple, hash);
@@ -393,17 +393,17 @@ class SlabTable
 
   template <typename... Ts>
   HYDE_RT_ALWAYS_INLINE
-  bool TryChangeStateFromPresentToUnknown(const Ts&... cols) noexcept {
+  bool TryChangeTupleFromPresentToUnknown(const Ts&... cols) noexcept {
     const TupleType tuple(cols...);
-    return this->template ChangeState<TupleType, TupleBuilderType>(
+    return this->template ChangeTuple<TupleType, TupleBuilderType>(
         tuple, TupleState::kPresent, TupleState::kUnknown);
   }
 
   template <typename... Ts>
   HYDE_RT_ALWAYS_INLINE
-  bool TryChangeStateFromUnknownToAbsent(const Ts&... cols) noexcept {
+  bool TryChangeTupleFromUnknownToAbsent(const Ts&... cols) noexcept {
     const TupleType tuple(cols...);
-    return this->template ChangeState<TupleType, TupleBuilderType>(
+    return this->template ChangeTuple<TupleType, TupleBuilderType>(
         tuple, TupleState::kUnknown, TupleState::kAbsent);
   }
 

@@ -194,10 +194,10 @@ class SlabReference;
 // protected:
 //  TableBase(void);
 //
-//  std::pair<bool, bool> TryChangeStateFromAbsentOrUnknownToPresent(void);
-//  std::pair<bool, bool> TryChangeStateFromAbsentToPresent(void);
-//  bool TryChangeStateFromPresentToUnknown(void);
-//  bool TryChangeStateFromUnknownToAbsent(void);
+//  std::pair<bool, bool> TryChangeTupleFromAbsentOrUnknownToPresent(void);
+//  std::pair<bool, bool> TryChangeTupleFromAbsentToPresent(void);
+//  bool TryChangeTupleFromPresentToUnknown(void);
+//  bool TryChangeTupleFromUnknownToAbsent(void);
 //  bool KeyExists(void) const;
 //  TupleState GetState(void) const;
 //
@@ -225,38 +225,38 @@ class SlabReference;
 //    return TableImpl::GetState();
 //  }
 //
-//  inline bool TryChangeStateFromAbsentOrUnknownToPresent(
+//  inline bool TryChangeTupleFromAbsentOrUnknownToPresent(
 //      const typename ValueType<Columns>::type &... cols) {
 //    SerializeKey(cols...);
 //    const auto [transitioned, added] =
-//        TableImpl::TryChangeStateFromAbsentOrUnknownToPresent();
+//        TableImpl::TryChangeTupleFromAbsentOrUnknownToPresent();
 //    if (added) {
 //      UpdateIndices(cols...);
 //    }
 //    return transitioned;
 //  }
 //
-//  inline bool TryChangeStateFromAbsentToPresent(
+//  inline bool TryChangeTupleFromAbsentToPresent(
 //      const typename ValueType<Columns>::type &... cols) {
 //    SerializeKey(cols...);
 //    const auto [transitioned, added] =
-//        TableImpl::TryChangeStateFromAbsentToPresent();
+//        TableImpl::TryChangeTupleFromAbsentToPresent();
 //    if (added) {
 //      UpdateIndices(cols...);
 //    }
 //    return transitioned;
 //  }
 //
-//  inline bool TryChangeStateFromPresentToUnknown(
+//  inline bool TryChangeTupleFromPresentToUnknown(
 //      const typename ValueType<Columns>::type &... cols) {
 //    SerializeKey(cols...);
-//    return TableImpl::TryChangeStateFromPresentToUnknown();
+//    return TableImpl::TryChangeTupleFromPresentToUnknown();
 //  }
 //
-//  inline bool TryChangeStateFromUnknownToAbsent(
+//  inline bool TryChangeTupleFromUnknownToAbsent(
 //      const typename ValueType<Columns>::type &... cols) {
 //    SerializeKey(cols...);
-//    return TableImpl::TryChangeStateFromUnknownToAbsent();
+//    return TableImpl::TryChangeTupleFromUnknownToAbsent();
 //  }
 //
 //  using ReadOnlySerializedVectorType = ReadOnlySerializedVector<

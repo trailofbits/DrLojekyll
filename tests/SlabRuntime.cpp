@@ -743,7 +743,7 @@
 //  num_iters = 0;
 //  for (auto [s] : strings) {
 //    for (auto [n] : numbers) {
-//      RC_ASSERT(table.TryChangeStateFromAbsentOrUnknownToPresent(s, n));
+//      RC_ASSERT(table.TryChangeTupleFromAbsentOrUnknownToPresent(s, n));
 //      ++num_iters;
 //    }
 //  }
