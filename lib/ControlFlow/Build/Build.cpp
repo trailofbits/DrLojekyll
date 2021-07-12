@@ -415,11 +415,16 @@ static REGION *MaybeRemoveFromNegatedView(ProgramImpl *impl, Context &context,
   TABLE *const source_view_table = source_view_model->table;
   assert(source_view_table != nullptr);
 
-  return PivotAroundNegation(
-      impl, context, view, negate, parent, [&](OP *if_present_in_source) {
+  auto ret = impl->operation_regions.CreateDerived<MODESWITCH>(
+      parent, Mode::kBottomUpRemoval);
+
+  ret->body.Emplace(ret, PivotAroundNegation(
+      impl, context, view, negate, ret, [&](OP *if_present_in_source) {
         BuildEagerRemovalRegion(impl, source_view, negate, context,
                                 if_present_in_source, source_view_table);
-      });
+      }));
+
+  return ret;
 }
 
 static REGION *MaybeReAddToNegatedView(ProgramImpl *impl, Context &context,
@@ -432,14 +437,19 @@ static REGION *MaybeReAddToNegatedView(ProgramImpl *impl, Context &context,
   TABLE *const source_view_table = source_view_model->table;
   assert(source_view_table != nullptr);
 
+  auto ret = impl->operation_regions.CreateDerived<MODESWITCH>(
+      parent, Mode::kBottomUpAddition);
+
   // If we don't have a table for the negation, then we need to pivot from the
   // negated view, up to the negation, and down to the source view of the
   // negation.
-  return PivotAroundNegation(
-      impl, context, view, negate, parent, [&](OP *if_present_in_source) {
+  ret->body.Emplace(ret, PivotAroundNegation(
+      impl, context, view, negate, ret, [&](OP *if_present_in_source) {
         BuildEagerRegion(impl, source_view, negate, context,
                          if_present_in_source, source_view_table);
-      });
+      }));
+
+  return ret;
 }
 
 static void MaybeRemoveFromNegatedView(ProgramImpl *impl, Context &context,

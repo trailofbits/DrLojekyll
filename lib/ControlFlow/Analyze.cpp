@@ -234,7 +234,20 @@ void AnalysisContext::CollectMetadata(ProgramImpl *impl) {
       table_updates[change_record->table.get()].push_back(change_record);
 
     } else if (VECTORAPPEND *append = op->AsVectorAppend()) {
-      vector_appends[append->vector.get()].push_back(append);
+      auto found_switch = false;
+      for (auto region = append->parent; region && region != region->parent;
+           region = region->parent) {
+        if (auto op = region->AsOperation()) {
+          if (op->AsModeSwitch()) {
+            found_switch = true;
+            break;
+          }
+        }
+      }
+
+      if (!found_switch) {
+        vector_appends[append->vector.get()].push_back(append);
+      }
     }
   }
 

@@ -220,8 +220,8 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
           BuildStateCheckCaseNothing,
           [&](ProgramImpl *impl_, REGION *in_check) -> OP * {
             if (!for_add) {
-              parent_out =
-                  impl_->operation_regions.CreateDerived<LET>(in_check);
+              parent_out = impl_->operation_regions.CreateDerived<MODESWITCH>(
+                  in_check, Mode::kBottomUpRemoval);
               return parent_out;
             } else {
               return nullptr;
@@ -779,7 +779,12 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
     DataModel *const model = impl->view_to_model[merge]->FindAs<DataModel>();
     TABLE *const table = model->table;
 
-    BuildEagerRemovalRegions(impl, merge, context, cycle,
+    auto mode = impl->operation_regions.CreateDerived<MODESWITCH>(
+        cycle, Mode::kBottomUpRemoval);
+
+    cycle->body.Emplace(cycle, mode);
+
+    BuildEagerRemovalRegions(impl, merge, context, mode,
                              merge.NonInductiveSuccessors(), table);
   }
 
