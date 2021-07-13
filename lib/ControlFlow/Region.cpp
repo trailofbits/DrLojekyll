@@ -24,6 +24,20 @@ Node<ProgramRegion>::Node(Node<ProgramRegion> *parent_)
   assert(containing_procedure == parent->parent->containing_procedure);
 }
 
+// Find the nearest containing mode switch.
+Node<ProgramModeSwitchRegion> *
+Node<ProgramRegion>::ContainingModeSwitch(void) noexcept {
+  for (auto region = this->parent; region && region != region->parent;
+       region = region->parent) {
+    if (auto op = region->AsOperation()) {
+      if (auto ret = op->AsModeSwitch()) {
+        return ret;
+      }
+    }
+  }
+  return nullptr;
+}
+
 Node<ProgramProcedure> *Node<ProgramRegion>::AsProcedure(void) noexcept {
   return nullptr;
 }

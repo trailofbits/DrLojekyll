@@ -362,7 +362,6 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     assert(!view->AsInsert());
 
     MERGE *const new_union = merges.Create();
-    new_union->color = 0xff00;
 
     auto col_index = 0u;
     for (auto col : view->columns) {

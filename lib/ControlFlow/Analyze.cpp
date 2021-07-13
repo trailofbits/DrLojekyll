@@ -78,19 +78,6 @@ struct RowProvenance {
 
   TABLE *table{nullptr};
 
-  // Counters of how many columns in this row are derived from various kinds
-  // of sources.
-  unsigned num_joins{0};
-  unsigned num_products{0};
-  unsigned num_merges{0};
-  unsigned num_scans{0};
-  unsigned num_changes{0};
-  unsigned num_checks{0};
-  unsigned num_globals{0};
-  unsigned num_generators{0};
-  unsigned num_appending_vectors{0};
-  unsigned num_vectors{0};
-
   // If the generator has a range of `zero-or-more`, or `one-or-more` then
   // it is "expanding", i.e. it might take a given input and then convert it
   // to many outputs. A generator dependency of this kind cannot be folded
@@ -125,6 +112,9 @@ class AnalysisContext {
   // Go find every transition state, and organize it by table, so that we can
   // analyze a table all at once.
   void CollectMetadata(ProgramImpl *impl);
+
+  // Does `row` still have dependencies on `vector-append`s?
+  bool HasAppendingVectors(const RowProvenance &row) const;
 
   // Analyze a particular variable.
   void AnalyzeVariable(TABLE *table, unsigned table_col_index, VAR *var,
@@ -234,17 +224,7 @@ void AnalysisContext::CollectMetadata(ProgramImpl *impl) {
       table_updates[change_record->table.get()].push_back(change_record);
 
     } else if (VECTORAPPEND *append = op->AsVectorAppend()) {
-      auto found_switch = false;
-      for (auto region = append->parent; region && region != region->parent;
-           region = region->parent) {
-        if (auto op = region->AsOperation()) {
-          if (op->AsModeSwitch()) {
-            found_switch = true;
-            break;
-          }
-        }
-      }
-
+      auto found_switch = append->ContainingModeSwitch();
       if (!found_switch) {
         vector_appends[append->vector.get()].push_back(append);
       }
@@ -290,7 +270,6 @@ void AnalysisContext::AnalyzeGlobalColumn(
   provenance.src_var = nullptr;
 
   row.columns->emplace_back(std::move(provenance));
-  row.num_globals++;
 }
 
 // Analyze `var`, which can be the source of the `table_col_index`th column
@@ -333,7 +312,6 @@ found:
   provenance.index_of_src_var = src_column_index;
   provenance.index_of_src_table = src_table_index;
   row.columns->emplace_back(std::move(provenance));
-  row.num_joins++;
 }
 
 // Analyze `var`, which can be the source of the `table_col_index`th column
@@ -367,7 +345,6 @@ found:
   provenance.index_of_src_var = src_column_index;
   provenance.index_of_src_table = src_table_index;
   row.columns->emplace_back(std::move(provenance));
-  row.num_products++;
 }
 
 // Analyze `var`, which can be the source of the `table_col_index`th column
@@ -395,7 +372,6 @@ found:
   provenance.src_col = provenance.src_table->columns[src_column_index];
 
   row.columns->emplace_back(std::move(provenance));
-  row.num_scans++;
 
   auto i = 0u;
   for (auto input_col : src->in_cols) {
@@ -434,7 +410,6 @@ found:
   provenance.src_var = src->col_values[src_column_index];
   provenance.index_of_src_var = src_column_index;
   row.columns->emplace_back(std::move(provenance));
-  row.num_changes++;
 }
 
 // Analyze `var`, which can be the source of the `table_col_index`th column
@@ -463,7 +438,6 @@ found:
   provenance.src_var = src->col_values[src_column_index];
   provenance.index_of_src_var = src_column_index;
   row.columns->emplace_back(std::move(provenance));
-  row.num_checks++;
 }
 
 // Analyze `var`, which can be the source of the `table_col_index`th column
@@ -493,18 +467,21 @@ found:
   if (TABLE *src_table = src->induction_table.get()) {
     provenance.src_table = src_table;
     provenance.src_col = src_table->columns[src_column_index];
-    row.num_merges++;
 
   } else {
     provenance.src_vec = src->vector.get();
-    if (vector_appends.count(provenance.src_vec)) {
-      row.num_appending_vectors++;
-    } else {
-      row.num_vectors++;
-    }
   }
 
   row.columns->emplace_back(std::move(provenance));
+}
+
+bool AnalysisContext::HasAppendingVectors(const RowProvenance &row) const {
+  for (const ColumnProvenance &col : *(row.columns)) {
+    if (col.src_vec && vector_appends.count(col.src_vec)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // Analyze `var`, which can be the source of the `table_col_index`th column
@@ -524,7 +501,6 @@ void AnalysisContext::AnalyzeColumn(TABLE *table, unsigned table_col_index,
       provenance.src_var = nullptr;
       provenance.index_of_src_var = i;
       row.columns->emplace_back(std::move(provenance));
-      row.num_generators++;
 
       ParsedFunctor functor = src->functor;
       switch (functor.Range()) {
@@ -637,15 +613,15 @@ void AnalysisContext::AnalyzeVectorAppends(void) {
     for (auto &col : *(row.columns)) {
       std::cerr << "  input_var: " << col.input_var->id << "\n";
     }
-    std::cerr << "\n";
 
     const auto c_max = row.columns->size();
     for (auto c = 0u; c < c_max; ++c) {
       const ColumnProvenance &col = row.columns->at(c);
-
       if (!col.src_vec || !vector_appends.count(col.src_vec)) {
         continue;
       }
+
+      std::cerr << "    focusing on " << col.input_var->id << "\n";
 
       // Analyze this column in the context of each append into the
       // vector. This will produce a new row provenance for each such
@@ -668,6 +644,7 @@ void AnalysisContext::AnalyzeVectorAppends(void) {
 
         // Maintain the original provenance.
         auto &fixed_col = new_row.columns->back();
+        std::cerr << "       deriving from " << fixed_col.input_var->id << "\n";
         fixed_col.input_var = col.input_var;
         fixed_col.input_var_use = col.input_var_use;
 
@@ -677,7 +654,7 @@ void AnalysisContext::AnalyzeVectorAppends(void) {
           new_row.columns->push_back(old_col);
         }
 
-        if (new_row.num_appending_vectors) {
+        if (HasAppendingVectors(new_row)) {
           pending_table_sources.emplace_back(std::move(new_row));
         } else {
           table_sources[new_row.table].emplace_back(std::move(new_row));
@@ -687,6 +664,7 @@ void AnalysisContext::AnalyzeVectorAppends(void) {
       // Handle any subsequent columns in future work list iterations.
       break;
     }
+    std::cerr << "\n";
   }
 }
 
@@ -722,7 +700,7 @@ void AnalysisContext::AnalyzeTable(TABLE *table, const UseList<VAR> &col_values,
 
   auto row_key = row.Key();
   if (auto [it, added] = seen_rows.emplace(std::move(row_key)); added) {
-    if (row.num_appending_vectors) {
+    if (HasAppendingVectors(row)) {
       pending_table_sources.emplace_back(std::move(row));
     } else {
       rows.emplace_back(std::move(row));
@@ -979,16 +957,16 @@ bool AnalysisContext::ConvertTablesToRecords(
   auto changed = false;
   for (TABLE *table : tables) {
 
-    // Order deepest first.
-    auto &checkers = check_states[table];
-    std::sort(checkers.begin(), checkers.end(), OrderDeepestRegionFirst);
-
-    // Check states often contain change states, so we want change states to
-    // see the record variables of check states, if possible.
-    for (CHECKTUPLE *check : checkers) {
-      changed = true;
-      ConvertToCheckRecord(impl, check);
-    }
+//    // Order deepest first.
+//    auto &checkers = check_states[table];
+//    std::sort(checkers.begin(), checkers.end(), OrderDeepestRegionFirst);
+//
+//    // Check states often contain change states, so we want change states to
+//    // see the record variables of check states, if possible.
+//    for (CHECKTUPLE *check : checkers) {
+//      changed = true;
+//      ConvertToCheckRecord(impl, check);
+//    }
 
     auto &changers = change_states[table];
     std::sort(changers.begin(), changers.end(), OrderDeepestRegionFirst);
@@ -1398,221 +1376,7 @@ void AnalysisContext::Dump(ProgramImpl *impl) {
 
   }
 
-//  for (const auto &[table, rows] : table_sources) {
-//    os << "t" << table->id << " [label=<" << kTable << kRow
-//       << kCell << kBold << "TABLE " << table->id << kEndBold << kEndCell;
-//
-//    for (TABLECOLUMN *col : table->columns) {
-//      os << "<TD port=\"c" << col->id << "\">" << col->id << kEndCell;
-//    }
-//
-//    os << kEndRow << kEndTable << ">];\n";
-//
-//    auto r = 0;
-//    for (const RowProvenance &row : rows) {
-//      os << "r" << table->id << "_" << r << " [label=<"
-//         << kTable << kRow;
-//
-//      if (row.num_joins) {
-//        os << kCell << "JOINS=" << row.num_joins << kEndCell;
-//      }
-//      if (row.num_products) {
-//        os << kCell << "PRODUCTS=" << row.num_products << kEndCell;
-//      }
-//      if (row.num_merges) {
-//        os << kCell << "MERGES=" << row.num_merges << kEndCell;
-//      }
-//      if (row.num_scans) {
-//        os << kCell << "SCANS=" << row.num_scans << kEndCell;
-//      }
-//      if (row.num_changes) {
-//        os << kCell << "CHANGES=" << row.num_changes << kEndCell;
-//      }
-//      if (row.num_checks) {
-//        os << kCell << "CHECKS=" << row.num_checks << kEndCell;
-//      }
-//      if (row.num_globals) {
-//        os << kCell << "GLOBALS=" << row.num_globals << kEndCell;
-//      }
-//      if (row.num_vectors) {
-//        os << kCell << "VECTORS=" << row.num_vectors << kEndCell;
-//      }
-//      if (row.num_generators) {
-//        os << kCell << "GENERATORS=" << row.num_generators << kEndCell;
-//      }
-//
-//      auto i = 0u;
-//      for (auto &col : *(row.columns)) {
-//        os << "<TD port=\"c" << i << "\">";
-//        if (col.src_col) {
-//          os << "COL " << col.src_col->id << kEndCell;
-//
-//        } else if (col.src_var) {
-//          if (col.src_var->IsConstant()) {
-//            os << "CONST " << col.src_var->id << kEndCell;
-//          } else if (col.src_var->IsGlobal()) {
-//            os << "GLOBL " << col.src_var->id << kEndCell;
-//          } else {
-//            os << "VAR " << col.src_var->id << kEndCell;
-//          }
-//        }
-//        ++i;
-//      }
-//      os << kEndRow << kEndTable << ">];\n";
-//
-//      // Linke the record columns to the tables that feed the record.
-//      i = 0;
-//      for (auto &col : *(row.columns)) {
-//        if (col.src_col) {
-//          os << "r" << table->id << "_" << r << ":c" << i
-//             << " -> " << "t" << col.src_table->id << ":c" << col.src_col->id
-//             << ";\n";
-//        }
-//        ++i;
-//      }
-//
-//      i = 0;
-//
-//      // Link table columns to the record columns that feed the tables.
-//      for (auto col : table->columns) {
-//        assert(col->index == i);
-//        os << "t" << table->id << ":c" << col->id << " -> r"
-//           << table->id << "_" << r << ":c" << i << ";\n";
-//        ++i;
-//      }
-//
-//      ++r;
-//    }
-//  }
   os << "}\n";
-//
-//  for (auto &[table_, rows] : unique_table_sources) {
-//    TABLE *table = table_;
-//    std::cerr << "struct table_" << table->id << ";\n";
-//  }
-//
-//  for (auto &[key, row_ptr] : key_to_provenance) {
-//    std::cerr << "struct record_" << key << ";\n";
-//  }
-//
-//  for (auto &[table_, rows] : unique_table_sources) {
-//    TABLE *table = table_;
-//    std::cerr
-//        << "struct table_" << table->id << " {\n"
-//        << "  union {\n";
-//
-//    auto r = 0u;
-//    for (RowProvenance *row : rows) {
-//      auto key = row->Key();
-//      std::cerr << "    struct record_" << key << " r" << r << ";\n";
-//      ++r;
-//    }
-//
-//    std::cerr
-//        << "  } u;\n";
-//    std::cerr << "};\n\n";
-//  }
-//
-//  std::unordered_set<TABLE *> inductions;
-//  std::unordered_set<TABLEJOIN *> joins;
-//  std::unordered_set<TABLEPRODUCT *> products;
-//  std::unordered_set<TABLESCAN *> scans;
-//  std::unordered_set<CHANGERECORD *> changes;
-//  std::unordered_set<CHECKRECORD *> checks;
-//  std::unordered_set<VECTORLOOP *> loops;
-//  std::unordered_set<GENERATOR *> generators;
-//
-//  for (auto &[key, row_ptr] : key_to_provenance) {
-//    std::cerr << "struct record_" << key << " {\n";
-//
-//    inductions.clear();
-//    joins.clear();
-//    products.clear();
-//    scans.clear();
-//    changes.clear();
-//    checks.clear();
-//    loops.clear();
-//    generators.clear();
-//
-//    auto estimated_tuple_size = 0u;
-//
-//    const RowProvenance *row = row_ptr;
-//    for (const ColumnProvenance &col : *row->columns) {
-//      inductions.insert(col.induction_table);
-//      joins.insert(col.join);
-//      products.insert(col.product);
-//      scans.insert(col.scan);
-//      changes.insert(col.change);
-//      checks.insert(col.check);
-//      loops.insert(col.loop);
-//      generators.insert(col.generator);
-//
-//      estimated_tuple_size += col.EstimateSizeInBits();
-//    }
-//
-//    inductions.erase(nullptr);
-//    joins.erase(nullptr);
-//    products.erase(nullptr);
-//    scans.erase(nullptr);
-//    changes.erase(nullptr);
-//    checks.erase(nullptr);
-//    loops.erase(nullptr);
-//    generators.erase(nullptr);
-//
-//    std::cerr
-//        << "  // Num inductions: " << inductions.size() << "\n"
-//        << "  // Num joins: " << joins.size() << "\n"
-//        << "  // Num products: " << products.size() << "\n"
-//        << "  // Num scans: " << scans.size() << "\n"
-//        << "  // Num changes: " << changes.size() << "\n"
-//        << "  // Num checks: " << checks.size() << "\n"
-//        << "  // Num vector loops: " << loops.size() << "\n"
-//        << "  // Num generators: " << generators.size() << "\n"
-//        << "  // Estimated tuple size in bits: " << estimated_tuple_size << "\n"
-//        << "  // Estimated tuple size in bytes: "
-//        << ((estimated_tuple_size + 7) / 8) << "\n";
-//
-//    size_t num_needed_pointers = 0u;
-//    num_needed_pointers += scans.size();
-//    num_needed_pointers += inductions.size();
-//    num_needed_pointers += changes.size();
-//    num_needed_pointers += checks.size();
-//
-//    for (TABLEJOIN *join : joins) {
-//      for (auto &out_var_list : join->output_vars) {
-//
-//        // If one table only contributes pivots, then we don't need to
-//        // store a pointer to its data.
-//        if (out_var_list.Size() > join->pivot_vars.Size()) {
-//          ++num_needed_pointers;
-//        }
-//      }
-//    }
-//
-//    for (TABLEPRODUCT *product : products) {
-//      num_needed_pointers += product->tables.Size();
-//    }
-//
-//    auto estimated_record_size = num_needed_pointers * 64;
-//    for (const ColumnProvenance &col : *row->columns) {
-//      if (col.join || col.product || col.induction_table || col.scan ||
-//          col.change || col.check) {
-//        continue;
-//      } else {
-//        estimated_record_size += col.EstimateSizeInBits();
-//      }
-//    }
-//
-//
-//    std::cerr
-//        << "  // Estimated record size in bits: "
-//        << estimated_record_size << "\n"
-//        << "  // Estimated record size in bytes: "
-//        << ((estimated_record_size + 7) / 8) << "\n";
-//
-//    std::cerr << "};\n\n";
-//  }
-
 }
 
 }  // namespace

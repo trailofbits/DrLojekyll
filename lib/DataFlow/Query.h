@@ -275,7 +275,7 @@ using TAG = Node<QueryTag>;
 
 // Input, i.e. a messsage.
 template <>
-class Node<QueryIO> final : public Node<QueryStream>, public User {
+class Node<QueryIO> final : public STREAM, public User {
  public:
   virtual ~Node(void);
 
@@ -724,7 +724,7 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 using VIEW = Node<QueryView>;
 
 template <>
-class Node<QuerySelect> final : public Node<QueryView> {
+class Node<QuerySelect> final : public VIEW {
  public:
   inline Node(Node<QueryRelation> *relation_, ParsedPredicate pred_)
       : pred(pred_),
@@ -788,7 +788,7 @@ class Node<QuerySelect> final : public Node<QueryView> {
 using SELECT = Node<QuerySelect>;
 
 template <>
-class Node<QueryTuple> final : public Node<QueryView> {
+class Node<QueryTuple> final : public VIEW {
  public:
   virtual ~Node(void);
 
@@ -816,7 +816,7 @@ using TUPLE = Node<QueryTuple>;
 // The KV index will have the `input_columns` as the keys, and the
 // `attached_columns` as the values.
 template <>
-class Node<QueryKVIndex> final : public Node<QueryView> {
+class Node<QueryKVIndex> final : public VIEW {
  public:
   Node(void) : Node<QueryView>() {
     can_produce_deletions = true;
@@ -843,7 +843,7 @@ class Node<QueryKVIndex> final : public Node<QueryView> {
 using KVINDEX = Node<QueryKVIndex>;
 
 template <>
-class Node<QueryJoin> final : public Node<QueryView> {
+class Node<QueryJoin> final : public VIEW {
  public:
   virtual ~Node(void);
 
@@ -890,7 +890,7 @@ class Node<QueryJoin> final : public Node<QueryView> {
 using JOIN = Node<QueryJoin>;
 
 template <>
-class Node<QueryMap> final : public Node<QueryView> {
+class Node<QueryMap> final : public VIEW {
  public:
   virtual ~Node(void);
 
@@ -933,7 +933,7 @@ class Node<QueryMap> final : public Node<QueryView> {
 using MAP = Node<QueryMap>;
 
 template <>
-class Node<QueryAggregate> : public Node<QueryView> {
+class Node<QueryAggregate> : public VIEW {
  public:
   inline explicit Node(ParsedFunctor functor_)
       : functor(functor_),
@@ -978,7 +978,7 @@ class Node<QueryAggregate> : public Node<QueryView> {
 using AGG = Node<QueryAggregate>;
 
 template <>
-class Node<QueryMerge> : public Node<QueryView> {
+class Node<QueryMerge> : public VIEW {
  public:
   Node(void) : merged_views(this) {}
 
@@ -1026,7 +1026,7 @@ class Node<QueryMerge> : public Node<QueryView> {
 using MERGE = Node<QueryMerge>;
 
 template <>
-class Node<QueryCompare> : public Node<QueryView> {
+class Node<QueryCompare> : public VIEW {
  public:
   Node(ComparisonOperator op_) : op(op_) {}
 
@@ -1071,7 +1071,7 @@ using CMP = Node<QueryCompare>;
 
 // Represents the check of the absence of a tuple from a relation.
 template <>
-class Node<QueryNegate> : public Node<QueryView> {
+class Node<QueryNegate> : public VIEW {
  public:
   virtual ~Node(void);
 
@@ -1100,7 +1100,7 @@ using NEGATION = Node<QueryNegate>;
 // Inserts are technically views as that makes some things easier, but they
 // are not exposed as such.
 template <>
-class Node<QueryInsert> : public Node<QueryView> {
+class Node<QueryInsert> : public VIEW {
  public:
   virtual ~Node(void);
 

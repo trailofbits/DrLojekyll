@@ -7,6 +7,44 @@
 namespace hyde {
 namespace {
 
+static bool OptimizeImpl(ProgramImpl *prog, MODESWITCH *ms) {
+  if (!ms->IsUsed() || !ms->parent) {
+    return false;
+  }
+
+  if (auto parent_op = ms->parent->AsOperation()) {
+    if (auto parent_ms = parent_op->AsModeSwitch()) {
+      ms->parent = parent_ms->parent;
+      parent_ms->body.Clear();
+      parent_ms->ReplaceAllUsesWith(ms);
+      return true;
+    }
+  }
+
+  auto containing_ms = ms->ContainingModeSwitch();
+
+  // We're switching into the same mode.
+  if (containing_ms && containing_ms->new_mode == ms->new_mode) {
+    if (auto body = ms->body.get()) {
+      ms->body.Clear();
+      ms->ReplaceAllUsesWith(body);
+      return true;
+    }
+  }
+
+  // This mode switch to addition is not itself embedded within another mode
+  // switch, so the default mode is add, so the switch to add is redundant.
+  if (ms->new_mode == Mode::kBottomUpAddition && !containing_ms) {
+    if (auto body = ms->body.get()) {
+      ms->body.Clear();
+      ms->ReplaceAllUsesWith(body);
+      return true;
+    }
+  }
+
+  return false;
+}
+
 // TODO(pag): Find all ending returns in the children of the par, and if there
 //            are any, check that they all match, and if so, create a sequence
 //            that moves the `return <X>` to after the parallel, and also
@@ -1042,6 +1080,10 @@ void ProgramImpl::Optimize(void) {
 
       } else if (auto emplace = op->AsChangeRecord(); emplace) {
         changed = OptimizeImpl(this, emplace) | changed;
+        CheckProcedures(this);
+
+      } else if (auto ms = op->AsModeSwitch(); ms) {
+        changed = OptimizeImpl(this, ms) | changed;
         CheckProcedures(this);
 
       // All other operations check to see if they are no-ops and if so

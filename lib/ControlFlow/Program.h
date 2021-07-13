@@ -278,6 +278,9 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   virtual Node<ProgramParallelRegion> *AsParallel(void) noexcept;
   virtual Node<ProgramInductionRegion> *AsInduction(void) noexcept;
 
+  // Find the nearest containing mode switch.
+  Node<ProgramModeSwitchRegion> *ContainingModeSwitch(void) noexcept;
+
   // Returns `true` if all paths through `this` ends with a `return` region.
   virtual bool EndsWithReturn(void) const noexcept = 0;
 
