@@ -64,8 +64,16 @@ static void DeclareDescriptors(OutputStream &os, Program program,
          << ";\n"
          << os.Indent() << "static constexpr unsigned kOffset = " << col.Index()
          << ";\n"
-         << os.Indent() << "using Type = " << TypeName(module, col.Type())
-         << ";\n";
+         << os.Indent() << "using Type = ";
+
+      TypeLoc col_type(col.Type());
+      if (col_type.IsReferentiallyTransparent(module, Language::kCxx)) {
+        os << TypeName(module, col_type);
+      } else {
+        os << "::hyde::rt::InternRef<" << TypeName(module, col_type) << ">";
+      }
+
+      os   << ";\n";
       os.PopIndent();
       os << os.Indent() << "};\n";
     }
@@ -600,7 +608,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os.PushIndent();
 
     os << os.Indent() << "DumpStats();\n"
-       << os.Indent() << "if constexpr (false) {\n";
+       << os.Indent() << "if constexpr (true) {\n";
     os.PushIndent();
     os << os.Indent() << "fprintf(stderr, \"";
 
@@ -659,35 +667,16 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
   void Visit(ProgramPublishRegion region) override {
     os << Comment(os, region, "ProgramPublishRegion");
     auto message = region.Message();
-//    auto id = region.Id();
-
-//    // We will want to use `std::move`, but we might need to synthesize
-//    // copies.
-//    auto index = 0u;
-//    for (auto var : region.VariableArguments()) {
-//      if (var.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
-//        continue;
-//      } else if (var.IsConstant() || var.IsGlobal() || 1u < var.NumUses()) {
-//        os << os.Indent() << "auto var_" << id << "_" << (index++) << " = "
-//           << Var(os, var) << ";\n";
-//      } else {
-//        continue;
-//      }
-//    }
 
     os << os.Indent() << "log." << message.Name() << '_' << message.Arity();
 
     auto sep = "(";
-//    index = 0u;
     for (auto var : region.VariableArguments()) {
-//      if (var.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
-//        os << sep << Var(os, var);
-//      } else if (var.IsConstant() || var.IsGlobal() || 1u < var.NumUses()) {
-//        os << sep << "std::move(var_" << id << "_" << (index++) << ")";
-//      } else {
-//        os << sep << "std::move(" << Var(os, var) << ")";
-//      }
-      os << sep << Var(os, var);
+      if (var.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+        os << sep << Var(os, var);
+      } else {
+        os << sep << "*" << Var(os, var);
+      }
       sep = ", ";
     }
 
@@ -750,7 +739,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       os << sep << Var(os, var);
       sep = ", ";
     }
-    // Need to differentiate between our SerializedVector and regular
+    // Need to differentiate between our Vector and regular
     os << "] : " << Vector(os, vec) << ") {\n";
 
     os.PushIndent();
@@ -967,7 +956,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         if (var.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
           os << ", " << TypeName(module, var.Type());
         } else {
-          os << ", const " << TypeName(module, var.Type()) << " &";
+          os << ", ::hyde::rt::InternRef<" << TypeName(module, var.Type())
+             << ">";
         }
       }
     }
@@ -1324,27 +1314,14 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   // First, declare all vector parameters.
   auto sep = "";
   for (auto vec : vec_params) {
-    os << sep;
-    bool is_local = false;
-    if (proc.Kind() == ProcedureKind::kMessageHandler ||
-        proc.Kind() == ProcedureKind::kEntryDataFlowFunc ||
-        proc.Kind() == ProcedureKind::kPrimaryDataFlowFunc) {
-      os << "::hyde::rt::SerializedVector<StorageT";
-    } else {
-      os << "::hyde::rt::Vector<StorageT";
-      is_local = true;
-    }
+    os << sep << "::hyde::rt::Vector<StorageT";
     const auto &col_types = vec.ColumnTypes();
     for (auto type : col_types) {
       auto type_loc = TypeLoc(type);
-      if (is_local) {
-        if (type_loc.IsReferentiallyTransparent(module, Language::kCxx)) {
-          os << ", " << TypeName(module, type);
-        } else {
-          os << ", const " << TypeName(module, type) << " &";
-        }
-      } else {
+      if (type_loc.IsReferentiallyTransparent(module, Language::kCxx)) {
         os << ", " << TypeName(module, type);
+      } else {
+        os << ", ::hyde::rt::InternRef<" << TypeName(module, type) << ">";
       }
     }
     os << "> ";
@@ -1360,7 +1337,12 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
 
   // Then, declare all variable parameters.
   for (auto param : var_params) {
-    os << sep << TypeName(module, param.Type()) << ' ' << Var(os, param);
+    if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+      os << sep << TypeName(module, param.Type()) << ' ' << Var(os, param);
+    } else {
+      os << sep << "::hyde::rt::InternRef<" << TypeName(module, param.Type())
+         << "> " << Var(os, param);
+    }
     sep = ", ";
   }
 
@@ -1370,26 +1352,14 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   // Define the vectors that will be created and used within this procedure.
   // These vectors exist to support inductions, joins (pivot vectors), etc.
   for (auto vec : proc.DefinedVectors()) {
-    bool is_local = false;
-    if (proc.Kind() == ProcedureKind::kMessageHandler ||
-        proc.Kind() == ProcedureKind::kInitializer ||
-        proc.Kind() == ProcedureKind::kEntryDataFlowFunc) {
-      os << os.Indent() << "::hyde::rt::SerializedVector<StorageT";
-    } else {
-      os << os.Indent() << "::hyde::rt::Vector<StorageT";
-      is_local = true;
-    }
+    os << os.Indent() << "::hyde::rt::Vector<StorageT";
 
     for (auto type : vec.ColumnTypes()) {
       auto type_loc = TypeLoc(type);
-      if (is_local) {
-        if (type_loc.IsReferentiallyTransparent(module, Language::kCxx)) {
-          os << ", " << TypeName(module, type);
-        } else {
-          os << ", const " << TypeName(module, type) << " &";
-        }
-      } else {
+      if (type_loc.IsReferentiallyTransparent(module, Language::kCxx)) {
         os << ", " << TypeName(module, type);
+      } else {
+        os << ", ::hyde::rt::InternRef<" << TypeName(module, type) << ">";
       }
     }
 
@@ -1575,7 +1545,11 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     os << os.Indent() << "if (!_generator(";
     sep = "";
     for (auto param : params) {
-      os << sep << "param_" << param.Index();
+      if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+        os << sep << "param_" << param.Index();
+      } else {
+        os << sep << "*param_" << param.Index();
+      }
       sep = ", ";
     }
     os << ")) {\n";
