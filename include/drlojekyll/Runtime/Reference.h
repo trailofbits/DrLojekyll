@@ -29,7 +29,7 @@ struct InternRef {
   }
 
   HYDE_RT_ALWAYS_INLINE bool operator<(InternRef<T> that) const noexcept {
-    return std::less<T>{}(*ref, *(that.ref));
+    return ref < that.ref;
   }
 
   HYDE_RT_ALWAYS_INLINE bool operator<(const T &that) const noexcept {
@@ -37,7 +37,7 @@ struct InternRef {
   }
 
   HYDE_RT_ALWAYS_INLINE bool operator==(InternRef<T> that) const noexcept {
-    return std::equal_to<T>{}(*ref, *(that.ref));
+    return ref == that.ref;
   }
 
   HYDE_RT_ALWAYS_INLINE bool operator==(const T &that) const noexcept {
@@ -45,7 +45,7 @@ struct InternRef {
   }
 
   HYDE_RT_ALWAYS_INLINE bool operator!=(InternRef<T> that) const noexcept {
-    return !std::equal_to<T>{}(*ref, *(that.ref));
+    return ref != that.ref;
   }
 
   HYDE_RT_ALWAYS_INLINE bool operator!=(const T &that) const noexcept {

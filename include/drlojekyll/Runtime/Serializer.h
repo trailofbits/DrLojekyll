@@ -1432,8 +1432,8 @@ struct Serializer<Reader, Writer, InternRef<DataT>> {
   }
 
   HYDE_RT_INLINE
-  static void Read(Reader &reader, RefT ref) {
-    Serializer<Reader, Writer, DataT>::Read(reader, *(ref.ref));
+  static void Read(Reader &reader, RefT) {
+    abort();
   }
 };
 

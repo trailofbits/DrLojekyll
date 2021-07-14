@@ -10,15 +10,23 @@
 namespace hyde {
 namespace rt {
 
-void DestroyTemporary(void *);
-
-template <typename T>
-void DestroyPersistent(void *opaque) {
-  delete reinterpret_cast<T *>(opaque);
-}
-
 struct InternedValue {
  public:
+
+  template <typename T>
+  static bool CompareValues(void *a_opaque, void *b_opaque) {
+    const T &a = *reinterpret_cast<const T *>(a_opaque);
+    const T &b = *reinterpret_cast<const T *>(b_opaque);
+    return a == b;
+  }
+
+  static void DestroyTemporary(void *);
+
+  template <typename T>
+  static void DestroyPersistent(void *opaque) {
+    delete reinterpret_cast<T *>(opaque);
+  }
+
   mutable void *data{nullptr};
   mutable void (*destroy_data)(void *);
   uint64_t hash{0};
@@ -37,30 +45,19 @@ struct HashInternedValue {
   }
 };
 
-template <typename T>
-bool CompareValues(void *a_opaque, void *b_opaque) {
-  const T &a = *reinterpret_cast<const T *>(a_opaque);
-  const T &b = *reinterpret_cast<const T *>(b_opaque);
-  return a == b;
-}
-
 struct CompareInternedValues {
  public:
   inline bool operator()(const InternedValue &a,
                          const InternedValue &b) const noexcept {
     if (a.data == b.data) {
       return true;
-    }
-    if (a.hash != b.hash) {
+    } else if (a.hash != b.hash ||
+               a.compare_values != b.compare_values ||
+               a.serialized_length != b.serialized_length) {
       return false;
+    } else {
+      return (a.compare_values)(a.data, b.data);
     }
-    if (a.compare_values != b.compare_values) {  // Types are different.
-      return false;
-    }
-    if (a.serialized_length != b.serialized_length) {
-      return false;
-    }
-    return (a.compare_values)(a.data, b.data);
   }
 };
 
@@ -69,6 +66,7 @@ class StdStorage {
   StdStorage(void);
   ~StdStorage(void);
 
+  // Intern a value.
   template <typename T>
   const T &Intern(T &&val) {
     using Writer = ByteCountingWriterProxy<HashingWriter>;
@@ -77,16 +75,16 @@ class StdStorage {
 
     InternedValue dummy_val;
     dummy_val.data = &val;
-    dummy_val.destroy_data = &DestroyTemporary;
+    dummy_val.destroy_data = &InternedValue::DestroyTemporary;
     dummy_val.hash = writer.Digest();
     dummy_val.serialized_length = writer.num_bytes;
-    dummy_val.compare_values = &CompareValues<T>;
+    dummy_val.compare_values = &InternedValue::CompareValues<T>;
 
     auto [it, added] = interned_data.emplace(std::move(dummy_val));
     if (added) {
       const InternedValue &persist_val = *it;
       persist_val.data = new T(std::forward<T>(val));
-      persist_val.destroy_data = &DestroyPersistent<T>;
+      persist_val.destroy_data = &InternedValue::DestroyPersistent<T>;
     }
 
     return *reinterpret_cast<const T *>(it->data);

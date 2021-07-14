@@ -608,7 +608,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os.PushIndent();
 
     os << os.Indent() << "DumpStats();\n"
-       << os.Indent() << "if constexpr (true) {\n";
+       << os.Indent() << "if constexpr (false) {\n";
     os.PushIndent();
     os << os.Indent() << "fprintf(stderr, \"";
 
@@ -731,7 +731,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     os << Comment(os, region, "ProgramVectorLoopRegion");
     auto vec = region.Vector();
-    os << os.Indent() << "for (auto && [";
+    os << os.Indent() << "for (auto [";
 
     const auto tuple_vars = region.TupleVariables();
     auto sep = "";
@@ -863,7 +863,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     // Nested loop join
     auto vec = region.PivotVector();
-    os << os.Indent() << "for (auto && [";
+    os << os.Indent() << "for (auto [";
 
     std::vector<std::string> var_names;
     auto sep = "";
@@ -909,7 +909,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     for (auto i = 0u; i < tables.size(); ++i) {
       auto out_vars = region.OutputVariables(i);
       assert(out_vars.size() == region.SelectedColumns(i).size());
-      os << os.Indent() << "for (auto && [";
+      os << os.Indent() << "for (auto [";
       sep = "";
       for (auto var : out_vars) {
         os << sep << Var(os, var);
@@ -1045,7 +1045,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     }
 
     os << os.Indent();
-    auto sep = "for (auto && [";
+    auto sep = "for (auto [";
     auto k = 0u;
     for (auto table : region.Tables()) {
       (void) table;
@@ -1087,7 +1087,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     }
     os << ");\n";
 
-    os << os.Indent() << "for (auto && [";
+    os << os.Indent() << "for (auto [";
     auto sep = "";
     for (auto var : region.OutputVariables()) {
       os << sep << Var(os, var);
@@ -1460,7 +1460,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
       }
     }
     os << ");\n"
-       << os.Indent() << "for (auto && [";
+       << os.Indent() << "for (auto [";
     sep = "";
     for (auto param : params) {
       if (param.Binding() != ParameterBinding::kBound) {
@@ -1726,10 +1726,9 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os.PushIndent();
   os << os.Indent() << "return;  /* change to false to enable */\n";
   os.PopIndent();
-
   os << os.Indent() << "}\n"
      << os.Indent() << "static FILE *tables = nullptr;\n"
-     << os.Indent() << "  if (!tables) {\n";
+     << os.Indent() << "if (!tables) {\n";
   os.PushIndent();
   os << os.Indent() << "tables = fopen(\"/tmp/tables.csv\", \"w\");\n"
      << os.Indent() << "fprintf(tables, \"";
