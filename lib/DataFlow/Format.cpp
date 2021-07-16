@@ -129,6 +129,17 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     return os;
   };
 
+  for (auto subgraph : query.Subgraphs()) {
+    os << "subgraph sub_" << *(subgraph.SubgraphId()) << " { ";
+    os << "color=blue3; edge [color=blue3];";
+
+    for (auto view : subgraph.SubgraphTree()) {
+
+    }
+
+    os << "label = \"Subgraph " << *(subgraph.SubgraphId()) << "\"; }";
+  }
+
   for (auto relation : query.Relations()) {
     const auto decl = relation.Declaration();
     const auto arity = decl.Arity();

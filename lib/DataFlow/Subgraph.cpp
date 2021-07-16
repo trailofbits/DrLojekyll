@@ -167,12 +167,13 @@ void QueryImpl::BuildSubgraphs(void) {
     (void) ProxySubgraphs(this, view, view->predecessors[0], subgraph_id++);
   }
 
-  LinkViews();
-
+  // Build Each Subgraph Tree
   auto can_be_child = [&](QueryView view) {
     return view.Successors().size() == 1 && !view.IsNegate()
         && !is_conditional(view) && is_candidate_view_type(view);
   };
+
+  LinkViews();
 
   for (auto subgraph : subgraphs) {
     auto info = subgraph->subgraph_info;

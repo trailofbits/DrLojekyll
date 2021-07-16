@@ -258,15 +258,6 @@ UsedNodeRange<QueryView> QueryView::EquivalenceSetViews(void) const {
   }
 }
 
-//std::optional<QuerySubgraph> QueryView::SubgraphRoot(void) const noexcept {
-//  if (auto sub = impl->subgraph_root.get()) {
-//    assert(sub->AsSubgraph());
-//    return QuerySubgraph(sub->AsSubgraph());
-//  } else {
-//    return {};
-//  }
-//}
-
 bool QueryView::IsConstantAfterInitialization(void) const noexcept {
   return impl->is_const_after_init;
 }
@@ -1268,6 +1259,26 @@ std::optional<unsigned> QueryView::SubgraphId(void) const {
   }
 }
 
+// If a view is a member of a subgraph get the root view
+std::optional<QuerySubgraph> QueryView::SubgraphRoot(void) const {
+  if (auto info = impl->subgraph_info.get()) {
+    auto subgraph = info->root->AsSubgraph();
+    assert(subgraph);
+    return QuerySubgraph(subgraph);
+  } else {
+    return {};
+  }
+}
+
+// If a view is a member of a subgraph get the tree
+UsedNodeRange<QueryView> QueryView::SubgraphTree(void) const {
+  if (auto info = impl->subgraph_info.get()) {
+    return {UsedNodeIterator<QueryView>(info->tree.begin()),
+            UsedNodeIterator<QueryView>(info->tree.end())};
+  } else {
+    return {};
+  }
+}
 
 // A unique integer that labels all UNIONs in the same induction.
 std::optional<unsigned> QueryView::InductionGroupId(void) const {
@@ -1786,6 +1797,36 @@ void QuerySubgraph::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
                                    std::optional<QueryColumn> /* out_col */)>
                     with_col) const {
   // TODO(sonya)
+}
+
+// A unique integer that labels all VIEWs in the same subgraph.
+std::optional<unsigned> QuerySubgraph::SubgraphId(void) const noexcept {
+  if (auto info = impl->subgraph_info.get()) {
+    return info->id;
+  } else {
+    return std::nullopt;
+  }
+}
+
+// If a view is a member of a subgraph get the root view
+std::optional<QuerySubgraph> QuerySubgraph::SubgraphRoot(void) const noexcept {
+  if (auto info = impl->subgraph_info.get()) {
+    auto subgraph = info->root->AsSubgraph();
+    assert(subgraph);
+    return QuerySubgraph(subgraph);
+  } else {
+    return {};
+  }
+}
+
+// If a view is a member of a subgraph get the tree
+UsedNodeRange<QueryView> QuerySubgraph::SubgraphTree(void) const noexcept {
+  if (auto info = impl->subgraph_info.get()) {
+    return {UsedNodeIterator<QueryView>(info->tree.begin()),
+            UsedNodeIterator<QueryView>(info->tree.end())};
+  } else {
+    return {};
+  }
 }
 
 DefinedNodeRange<QueryCondition> Query::Conditions(void) const {
