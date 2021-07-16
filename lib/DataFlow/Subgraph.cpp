@@ -9,10 +9,10 @@
 
 namespace hyde {
 
-SubgraphInfo::SubgraphInfo(Node<QueryView> *owner)
-    : predecessor_subgraph_view(owner, nullptr),
-      successor_subgraph_view(owner, nullptr),
-      tree(owner) {}
+SubgraphInfo::SubgraphInfo(Node<QueryView> *root_, unsigned id_)
+    : id(id_),
+      root(root_, root_),
+      tree(root_) { this->tree.AddUse(root_); }
 
 Node<QuerySubgraph>::~Node(void) {}
 
@@ -66,20 +66,10 @@ bool Node<QuerySubgraph>::Canonicalize(QueryImpl *query,
 
 namespace {
 
-static SUBGRAPH *ProxySubgraphs(QueryImpl *impl, VIEW *view, VIEW *incoming_view, std::shared_ptr<SubgraphInfo> info) {
+static SUBGRAPH *ProxySubgraphs(QueryImpl *impl, VIEW *view, VIEW *incoming_view, unsigned id) {
   SUBGRAPH *subgraph = impl->subgraphs.Create();
 
-  if (!info) {
-    subgraph->subgraph_info.reset(new SubgraphInfo(view));
-    info = subgraph->subgraph_info;
-    info.get()->predecessor_subgraph_view.Emplace(subgraph, subgraph);
-  } else {
-    assert(info.get()->predecessor_subgraph_view);
-    subgraph->subgraph_info = info;
-    info.get()->successor_subgraph_view.Emplace(info.get()->predecessor_subgraph_view.get(), subgraph);
-  }
-  info->tree.AddUse(subgraph);
-
+  subgraph->subgraph_info.reset(new SubgraphInfo(subgraph, id));
 
   if (incoming_view) {
     subgraph->color = incoming_view->color;
@@ -117,37 +107,6 @@ static SUBGRAPH *ProxySubgraphs(QueryImpl *impl, VIEW *view, VIEW *incoming_view
   view->TransferSetConditionTo(subgraph);
   view->TransferTestedConditionsTo(subgraph);
   return subgraph;
-}
-
-void BuildGraph(QueryImpl *impl, SUBGRAPH * subgraph) {
-  assert(subgraph->subgraph_info.get());
-  auto info = subgraph->subgraph_info;
-
-  auto is_conditional = +[](QueryView view) {
-    return view.SetCondition() || !view.PositiveConditions().empty() ||
-           !view.NegativeConditions().empty();
-  };
-
-  auto is_candidate_view_type  = +[](QueryView view) {
-    return view.IsMap() || view.IsTuple() || view.IsCompare();
-  };
-
-  auto can_be_child = [&](QueryView view) {
-    return view.Successors().size() == 1 && !view.IsNegate()
-        && !is_conditional(view) && is_candidate_view_type(view);
-  };
-
-  auto child = subgraph->successors[0];
-
-  for (;
-      can_be_child(child) && (!child->AsTuple() ||
-          can_be_child(child->successors[0]));
-      child = child->successors[0]) {
-    child->subgraph_info = info;
-    info.get()->tree.AddUse(child);
-  }
-
-  (void) ProxySubgraphs(impl, child, child->predecessors[0], info);
 }
 
 }  // namespace
@@ -205,14 +164,26 @@ void QueryImpl::BuildSubgraphs(void) {
   auto subgraph_id = 1u;
   for (auto view : subgraph_roots) {
     assert(view->predecessors.Size() == 1);
-    auto subgraph = ProxySubgraphs(this, view, view->predecessors[0], nullptr);
-    subgraph->subgraph_info->id = subgraph_id++;
+    (void) ProxySubgraphs(this, view, view->predecessors[0], subgraph_id++);
   }
 
   LinkViews();
 
+  auto can_be_child = [&](QueryView view) {
+    return view.Successors().size() == 1 && !view.IsNegate()
+        && !is_conditional(view) && is_candidate_view_type(view);
+  };
+
   for (auto subgraph : subgraphs) {
-    BuildGraph(this, subgraph);
+    auto info = subgraph->subgraph_info;
+
+    for (auto child = subgraph->successors[0];
+        can_be_child(child) && (!child->AsTuple() ||
+            can_be_child(child->successors[0]));
+        child = child->successors[0]) {
+      child->subgraph_info = info;
+      info.get()->tree.AddUse(child);
+    }
   }
 
 }

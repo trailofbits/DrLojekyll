@@ -337,16 +337,12 @@ struct InductionInfo {
 //
 struct SubgraphInfo {
  public:
-  explicit SubgraphInfo(Node<QueryView> *owner);
+  explicit SubgraphInfo(Node<QueryView> *root_, unsigned id_);
 
-//  std::vector<Node<QueryView> *> predecessors;
-//  std::vector<Node<QueryView> *> successors;
+  unsigned const id;
 
-  WeakUseRef<Node<QueryView>> predecessor_subgraph_view;
-  WeakUseRef<Node<QueryView>> successor_subgraph_view;
-
-  unsigned id{0};
-  WeakUseList<Node<QueryView>> tree; // Return the list of views in this graph
+  WeakUseRef<Node<QueryView>> root;
+  WeakUseList<Node<QueryView>> tree;
 };
 
 // A view "owns" its the columns pointed to by `columns`.
@@ -1121,8 +1117,6 @@ class Node<QuerySubgraph> : public Node<QueryView> {
  public:
   virtual ~Node(void);
 
- // inline Node(void) : Node<QueryView>(), subgraph_tree(this) {}
-
   const char *KindName(void) const noexcept override;
   Node<QuerySubgraph> *AsSubgraph(void) noexcept override;
 
@@ -1130,13 +1124,6 @@ class Node<QuerySubgraph> : public Node<QueryView> {
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
                     const ErrorLog &) override;
-  bool IsPredecessorView();
-  bool IsSuccessorView();
-
-//  unsigned subgraph_id{0};
-//  UseList<VIEW> subgraph_tree; // Return the list of views in this graph
-//  std::unique_ptr<SubgraphInfo> subgraph_info;
-
 };
 
 using SUBGRAPH = Node<QuerySubgraph>;
