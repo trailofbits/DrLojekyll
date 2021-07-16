@@ -487,6 +487,9 @@ class QueryView : public query::QueryNode<QueryView> {
                                      std::optional<QueryColumn> /* out_col */)>
                       with_col) const;
 
+  // A unique integer that labels all VIEWs in the same subgraph.
+  std::optional<unsigned> SubgraphId(void) const;
+
   // A unique integer that labels all UNIONs in the same induction.
   std::optional<unsigned> InductionGroupId(void) const;
 
@@ -963,6 +966,8 @@ class QuerySubgraph : public query::QueryNode<QuerySubgraph> {
   void ForEachUse(std::function<void(QueryColumn, InputColumnRole,
                                      std::optional<QueryColumn> /* out_col */)>
                       with_col) const;
+
+  unsigned SubgraphId(void) const noexcept;
 
  private:
   using query::QueryNode<QuerySubgraph>::QueryNode;

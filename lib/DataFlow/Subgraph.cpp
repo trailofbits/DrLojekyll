@@ -1,11 +1,18 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
+#include <drlojekyll/Util/EqualitySet.h>
+
 #include "Query.h"
 
 #include <unordered_set>
 #include <iostream>
 
 namespace hyde {
+
+SubgraphInfo::SubgraphInfo(Node<QueryView> *owner)
+    : predecessor_subgraph_view(owner, nullptr),
+      successor_subgraph_view(owner, nullptr),
+      tree(owner) {}
 
 Node<QuerySubgraph>::~Node(void) {}
 
@@ -40,41 +47,63 @@ uint64_t Node<QuerySubgraph>::Hash(void) noexcept {
 }
 
 // TODO(sonya)
+// Equality over Subgraphs is structral to the set of subgraph nodes
 bool Node<QuerySubgraph>::Equals(EqualitySet &eq,
-                                 Node<QueryView> *that) noexcept { return false; }
+                                 Node<QueryView> *that_) noexcept {
+  if (eq.Contains(this, that_)) {
+    return true;
+  }
+
+  return false;
+}
+
 // TODO(sonya)
 bool Node<QuerySubgraph>::Canonicalize(QueryImpl *query,
                                        const OptimizationContext &opt,
-                                       const ErrorLog&) { return true; }
+                                       const ErrorLog&) {
+  return true;
+}
 
 namespace {
-static VIEW *ProxySubgraphs(QueryImpl *impl, VIEW *view, VIEW *incoming_view) {
-  SUBGRAPH *proxy = impl->subgraphs.Create();
-  if (incoming_view) {
-    proxy->color = incoming_view->color;
-    proxy->can_receive_deletions = incoming_view->can_produce_deletions;
+
+static SUBGRAPH *ProxySubgraphs(QueryImpl *impl, VIEW *view, VIEW *incoming_view, std::shared_ptr<SubgraphInfo> info) {
+  SUBGRAPH *subgraph = impl->subgraphs.Create();
+
+  if (!info) {
+    subgraph->subgraph_info.reset(new SubgraphInfo(view));
+    info = subgraph->subgraph_info;
+  } else {
+    subgraph->subgraph_info = info;
   }
-  proxy->can_produce_deletions = proxy->can_receive_deletions;
+  info->tree.AddUse(subgraph);
+
+
+  if (incoming_view) {
+    subgraph->color = incoming_view->color;
+    subgraph->can_receive_deletions = incoming_view->can_produce_deletions;
+  }
+  subgraph->can_produce_deletions = subgraph->can_receive_deletions;
 
   auto col_index = 0u;
   for (COL *col : view->input_columns) {
     COL *const proxy_col =
-        proxy->columns.Create(col->var, col->type, proxy, col->id, col_index++);
-    proxy->input_columns.AddUse(col);
+        subgraph->columns.Create(col->var, col->type, subgraph, col->id, col_index++);
+    subgraph->input_columns.AddUse(col);
     proxy_col->CopyConstantFrom(col);
   }
 
   for (COL *col : view->attached_columns) {
     COL *const proxy_col =
-        proxy->columns.Create(col->var, col->type, proxy, col->id, col_index++);
-    proxy->input_columns.AddUse(col);
+        subgraph->columns.Create(col->var, col->type, subgraph, col->id, col_index++);
+    subgraph->input_columns.AddUse(col);
     proxy_col->CopyConstantFrom(col);
+
   }
 
   auto input_columns_size = view->input_columns.Size();
   view->input_columns.Clear();
   view->attached_columns.Clear();
-  for (COL *col : proxy->columns) {
+  for (COL *col : subgraph->columns) {
     if (input_columns_size > view->input_columns.Size()) {
       view->input_columns.AddUse(col);
     } else {
@@ -82,13 +111,45 @@ static VIEW *ProxySubgraphs(QueryImpl *impl, VIEW *view, VIEW *incoming_view) {
     }
   }
 
-  view->TransferSetConditionTo(proxy);
-  view->TransferTestedConditionsTo(proxy);
-  return proxy;
+  view->TransferSetConditionTo(subgraph);
+  view->TransferTestedConditionsTo(subgraph);
+  return subgraph;
 }
+
+void BuildGraph(QueryImpl *impl, SUBGRAPH * subgraph) {
+  assert(subgraph->subgraph_info.get());
+  auto info = subgraph->subgraph_info;
+
+  auto is_conditional = +[](QueryView view) {
+    return view.SetCondition() || !view.PositiveConditions().empty() ||
+           !view.NegativeConditions().empty();
+  };
+
+  auto is_candidate_view_type  = +[](QueryView view) {
+    return view.IsMap() || view.IsTuple() || view.IsCompare();
+  };
+
+  auto can_be_child = [&](QueryView view) {
+    return view.Successors().size() == 1 && !view.IsNegate()
+        && !is_conditional(view) && is_candidate_view_type(view);
+  };
+
+  auto child = subgraph->successors[0];
+
+  for (;
+      can_be_child(child) && (!child->AsTuple() ||
+          can_be_child(child->successors[0]));
+      child = child->successors[0]) {
+    child->subgraph_info = info;
+    info.get()->tree.AddUse(child);
+  }
+
+  (void) ProxySubgraphs(impl, child, child->predecessors[0], info);
+}
+
 }  // namespace
 
-// Identify sets of nodes that compose a subgraph and proxy the SubgraphSet
+// IdentifyGraph sets of nodes that compose a subgraph and proxy the SubgraphSet
 // with a SUBGRAPH node.
 void QueryImpl::BuildSubgraphs(void) {
   std::unordered_set<VIEW *> possible_subgraphs;
@@ -98,12 +159,26 @@ void QueryImpl::BuildSubgraphs(void) {
            !view.NegativeConditions().empty();
   };
 
+  auto is_candidate_view_type  = +[](QueryView view) {
+    return view.IsMap() || view.IsTuple() || view.IsCompare();
+  };
+
+  auto can_be_subgraph = [&](QueryView view) {
+    return view.Successors().size() == 1 && !view.IsNegate()
+        && !is_conditional(view) && is_candidate_view_type(view);
+  };
+
+
   ForEachView([&](QueryView view){
     //  1) find all nodes with only a single user
     //  2) make sure none of them are conditional (set a condition, or test a condition)
     //  3) make sure none of them are negations (eventually you can permit "never" negations)
-        if (view.Successors().size() == 1 && !view.IsNegate()
-            && !is_conditional(view)) {
+    //  4) Make sure they're a candidate view type (TUPLE, MAP/FILTER, COMPARE)
+        if (can_be_subgraph(view) &&
+            can_be_subgraph(view.Successors()[0]) &&
+            (!view.Successors()[0].IsTuple() ||
+                can_be_subgraph(view.Successors()[0].Successors()[0]))
+                      ) {
           //  5) add them all to a set
           possible_subgraphs.insert(view.impl);
         }
@@ -111,6 +186,7 @@ void QueryImpl::BuildSubgraphs(void) {
 
   //  6) make a new set, the candidate set, that is a copy of (5)
   std::unordered_set<VIEW *> subgraph_roots(possible_subgraphs);
+
 
   //  7) for each view in (5), if it has a single predecessor, and that
   //  predecessor that is also in (5), then remove it from (6)
@@ -122,20 +198,19 @@ void QueryImpl::BuildSubgraphs(void) {
     }
   }
 
-
   //  now you have a candidate set of "roots" for your subgraphs, and you can grow them from there
+  auto subgraph_id = 1u;
   for (auto view : subgraph_roots) {
-    //for (auto pred : view->predecessors) {
-    if (view->predecessors.Size() == 1) {
-      //auto incoming_view = VIEW::GetIncomingView(view->input_columns);
-      (void) ProxySubgraphs(this, view, view->predecessors[0]);
-      // (void) ProxySubgraphs(this, view, pred);
-    } else if (!view->predecessors.Size()) {
-      // TODO(ss): decide what to do with RECEIVEs in ProxySubgraphs
-      //(void) ProxySubgraphs(this, view, NULL);
-    } else {
-      // TODO(ss): handle multiple predecessors in ProxySubgraphs
-    }
+    assert(view->predecessors.Size() == 1);
+    auto subgraph = ProxySubgraphs(this, view, view->predecessors[0], nullptr);
+    subgraph->subgraph_info->id = subgraph_id++;
   }
+
+  LinkViews(); //
+
+  for (auto subgraph : subgraphs) {
+    BuildGraph(this, subgraph);
+  }
+
 }
 }  // namespace hyde

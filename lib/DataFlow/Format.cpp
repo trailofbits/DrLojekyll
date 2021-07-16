@@ -63,7 +63,11 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       sep = "<BR />";
     }
 
-    os << sep << "EQ SET " << view.EquivalenceSetId() << "</TD>";
+    os << sep << "EQ SET " << view.EquivalenceSetId();
+    if (auto subgraph_id = view.SubgraphId(); subgraph_id) {
+      os << "<BR /> SUB " << *subgraph_id;
+    }
+    os << "</TD>";
   };
 
   auto do_conds = [&](int row_span, auto view_) {
@@ -504,7 +508,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << kEndTable << ">];\n";
 
     auto color = QueryView(map).CanReceiveDeletions() ? " [color=purple]" : "";
-    color =  QueryView(map).Predecessors()[0].IsSubgraph() ? " [color=aquamarine]" : color;
+    color =  QueryView(map).Predecessors()[0].IsSubgraph() ? " [color=cadetblue3]" : color;
 
     for (auto i = 0u; i < num_copied; ++i) {
       auto col = map.NthInputCopiedColumn(i);
@@ -706,7 +710,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     auto color =
         QueryView::From(view).CanReceiveDeletions() ? " [color=purple]" : "";
-    color = QueryView::From(view).Predecessors()[0].IsSubgraph() ? " [color=aquamarine]" : color;
+    color = QueryView::From(view).Predecessors()[0].IsSubgraph() ? " [color=cadetblue3]" : color;
 
     // Link the input columns to their sources.
     for (auto i = 0u; i < view.NumInputColumns(); ++i) {

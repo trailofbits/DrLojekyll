@@ -334,6 +334,20 @@ struct InductionInfo {
   unsigned merge_depth{0};
 };
 
+//
+struct SubgraphInfo {
+ public:
+  explicit SubgraphInfo(Node<QueryView> *owner);
+
+//  std::vector<Node<QueryView> *> predecessors;
+//  std::vector<Node<QueryView> *> successors;
+
+  WeakUseRef<Node<QueryView>> predecessor_subgraph_view;
+  WeakUseRef<Node<QueryView>> successor_subgraph_view;
+
+  unsigned id{0};
+  WeakUseList<Node<QueryView>> tree; // Return the list of views in this graph
+};
 
 // A view "owns" its the columns pointed to by `columns`.
 template <>
@@ -647,6 +661,9 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 
   // Equivalence set of views sharing the same data model
   std::unique_ptr<EquivalenceSet> equivalence_set;
+
+  // Root view of a subgraph if this view is a subgraph
+  std::shared_ptr<SubgraphInfo> subgraph_info;
 
   // Check that all non-constant views in `cols1` and `cols2` match.
   //
@@ -1099,11 +1116,12 @@ class Node<QueryInsert> : public Node<QueryView> {
 
 using INSERT = Node<QueryInsert>;
 
-// TODO(sonya)
 template <>
 class Node<QuerySubgraph> : public Node<QueryView> {
  public:
   virtual ~Node(void);
+
+ // inline Node(void) : Node<QueryView>(), subgraph_tree(this) {}
 
   const char *KindName(void) const noexcept override;
   Node<QuerySubgraph> *AsSubgraph(void) noexcept override;
@@ -1112,6 +1130,13 @@ class Node<QuerySubgraph> : public Node<QueryView> {
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
                     const ErrorLog &) override;
+  bool IsPredecessorView();
+  bool IsSuccessorView();
+
+//  unsigned subgraph_id{0};
+//  UseList<VIEW> subgraph_tree; // Return the list of views in this graph
+//  std::unique_ptr<SubgraphInfo> subgraph_info;
+
 };
 
 using SUBGRAPH = Node<QuerySubgraph>;

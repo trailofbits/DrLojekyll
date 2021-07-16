@@ -50,6 +50,14 @@ QueryImpl::~QueryImpl(void) {
       info->noninductive_predecessors.ClearWithoutErasure();
       view->induction_info.reset();
     }
+
+    if (auto info = view->subgraph_info) {
+        if (info->tree.Owner() == view) {
+          info->tree.ClearWithoutErasure();
+        }
+        view->subgraph_info.reset();
+    }
+
   });
 
   for (auto join : joins) {
@@ -91,6 +99,7 @@ QueryImpl::~QueryImpl(void) {
   for (auto negation : negations) {
     negation->negated_view.ClearWithoutErasure();
   }
+
 }
 
 QueryStream QueryStream::From(const QuerySelect &sel) noexcept {
@@ -248,6 +257,15 @@ UsedNodeRange<QueryView> QueryView::EquivalenceSetViews(void) const {
     return {};
   }
 }
+
+//std::optional<QuerySubgraph> QueryView::SubgraphRoot(void) const noexcept {
+//  if (auto sub = impl->subgraph_root.get()) {
+//    assert(sub->AsSubgraph());
+//    return QuerySubgraph(sub->AsSubgraph());
+//  } else {
+//    return {};
+//  }
+//}
 
 bool QueryView::IsConstantAfterInitialization(void) const noexcept {
   return impl->is_const_after_init;
@@ -1241,6 +1259,16 @@ bool QueryMerge::CanProduceDeletions(void) const {
   return impl->can_produce_deletions;
 }
 
+// A unique integer that labels all VIEWs in the same subgraph.
+std::optional<unsigned> QueryView::SubgraphId(void) const {
+  if (auto info = impl->subgraph_info.get()) {
+    return info->id;
+  } else {
+    return std::nullopt;
+  }
+}
+
+
 // A unique integer that labels all UNIONs in the same induction.
 std::optional<unsigned> QueryView::InductionGroupId(void) const {
   if (auto info = impl->induction_info.get()) {
@@ -1759,7 +1787,6 @@ void QuerySubgraph::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
                     with_col) const {
   // TODO(sonya)
 }
-
 
 DefinedNodeRange<QueryCondition> Query::Conditions(void) const {
   return {DefinedNodeIterator<QueryCondition>(impl->conditions.begin()),
