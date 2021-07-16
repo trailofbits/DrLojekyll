@@ -72,8 +72,11 @@ static SUBGRAPH *ProxySubgraphs(QueryImpl *impl, VIEW *view, VIEW *incoming_view
   if (!info) {
     subgraph->subgraph_info.reset(new SubgraphInfo(view));
     info = subgraph->subgraph_info;
+    info.get()->predecessor_subgraph_view.Emplace(subgraph, subgraph);
   } else {
+    assert(info.get()->predecessor_subgraph_view);
     subgraph->subgraph_info = info;
+    info.get()->successor_subgraph_view.Emplace(info.get()->predecessor_subgraph_view.get(), subgraph);
   }
   info->tree.AddUse(subgraph);
 
@@ -206,7 +209,7 @@ void QueryImpl::BuildSubgraphs(void) {
     subgraph->subgraph_info->id = subgraph_id++;
   }
 
-  LinkViews(); //
+  LinkViews();
 
   for (auto subgraph : subgraphs) {
     BuildGraph(this, subgraph);

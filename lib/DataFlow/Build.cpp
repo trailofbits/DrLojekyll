@@ -2151,7 +2151,7 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   impl->RemoveUnusedViews();
   impl->BuildSubgraphs();
   impl->LinkViews();
-  //impl->RemoveUnusedViews();
+  impl->RemoveUnusedViews();
   impl->IdentifyInductions(log);
   impl->FinalizeDepths();
   impl->FinalizeColumnIDs();
