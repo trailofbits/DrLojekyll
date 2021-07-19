@@ -14,10 +14,39 @@ namespace rt {
 
 class StdStorage;
 
+template <typename ElemType, typename ParamType>
+struct InternType;
+
+
+template <typename ElemType>
+struct InternType<ElemType, ElemType> {
+  static inline ElemType Intern(StdStorage &storage, ElemType &&val) {
+    return std::forward<ElemType>(val);
+  }
+};
+
+template <typename ValType>
+struct InternType<InternRef<ValType>, ValType> {
+  static inline InternRef<ValType> Intern(StdStorage &storage,
+                                          ValType val) {
+    return storage.Intern(std::move(val));
+  }
+};
+
+template <typename ValType>
+struct InternType<InternRef<ValType>, ValType &&> {
+  static inline InternRef<ValType> Intern(StdStorage &storage,
+                                          ValType &&val) {
+    return storage.Intern(std::forward<ValType>(val));
+  }
+};
+
 template <typename... ElemTypes>
 class StdVector {
  private:
   using SelfType = StdVector<ElemTypes...>;
+
+  StdStorage &storage;
 
   StdVector(const SelfType &) = delete;
   SelfType &operator=(const SelfType &) = delete;
@@ -28,14 +57,21 @@ class StdVector {
  public:
   using Self = StdVector<ElemTypes...>;
 
-  StdVector(void) = default;
+  explicit StdVector(StdStorage &storage_)
+      : storage(storage_) {}
+
   StdVector(SelfType &&that) noexcept
-      : entries(std::move(that.entries)) {}
+      : storage(that.storage),
+        entries(std::move(that.entries)) {}
 
   SelfType &operator=(SelfType &&) noexcept = default;
 
-  HYDE_RT_ALWAYS_INLINE void Add(ElemTypes... elems) noexcept {
-    entries.emplace_back(std::move(elems)...);
+  template <typename... ParamTypes>
+  HYDE_RT_ALWAYS_INLINE void Add(ParamTypes... params) noexcept {
+    entries.emplace_back(
+        std::move(
+            InternType<ElemTypes, ParamTypes>::Intern(
+                storage, std::move(params)))...);
   }
 
   HYDE_RT_ALWAYS_INLINE size_t Size(void) const noexcept {
@@ -79,31 +115,11 @@ class Vector<StdStorage, ElemTypes...>
       : BaseType(std::move(that_)) {}
 
   HYDE_RT_ALWAYS_INLINE
-  explicit Vector(StdStorage &, unsigned)
-      : BaseType() {}
+  explicit Vector(StdStorage &storage_, unsigned)
+      : BaseType(storage_) {}
 
  private:
   Vector(const SelfType &) = delete;
-  SelfType operator=(const SelfType &) = delete;
-};
-
-template <typename... ElemTypes>
-class SerializedVector<StdStorage, ElemTypes...>
-    : public StdVector<ElemTypes...> {
- public:
-
-  using BaseType = StdVector<ElemTypes...>;
-  using SelfType = SerializedVector<StdStorage, ElemTypes...>;
-
-  HYDE_RT_ALWAYS_INLINE SerializedVector(SelfType &&that_) noexcept
-      : BaseType(std::move(that_)) {}
-
-  HYDE_RT_ALWAYS_INLINE
-  explicit SerializedVector(StdStorage &, unsigned)
-      : BaseType() {}
-
- private:
-  SerializedVector(const SelfType &) = delete;
   SelfType operator=(const SelfType &) = delete;
 };
 

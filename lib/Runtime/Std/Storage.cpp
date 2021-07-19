@@ -5,6 +5,8 @@
 namespace hyde {
 namespace rt {
 
+void InternedValue::DestroyTemporary(void *) {}
+
 StdStorage::StdStorage(void) {}
 
 StdStorage::~StdStorage(void) {}
