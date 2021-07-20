@@ -813,13 +813,13 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
   // Subgraph Cluster
   for (auto subgraph : query.Subgraphs()) {
-    os << "subgraph sub_" << *(subgraph.SubgraphId()) << " {\n";
+    os << "subgraph cluster_" << *(subgraph.SubgraphId()) << " {\n";
     os << "color=blue3; edge [color=blue3];\n";
 
     // output the accumulated edge list
     os << subgraph_edges[*(subgraph.SubgraphId())];
 
-    os << "label = \"Subgraph " << *(subgraph.SubgraphId()) << "\";\n}\n";
+    os << "label = \"SUBGRAPH " << *(subgraph.SubgraphId()) << "\"; fontcolor = blue3;\n}\n";
   }
 
 
