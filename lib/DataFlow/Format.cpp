@@ -314,8 +314,11 @@ OutputStream &operator<<(OutputStream &os, Query query) {
                      ? " [color=purple]"
                      : "";
 
-    os << kEndTable << ">];\n"
-       << "v" << constraint.UniqueId() << ":p0 -> v"
+    os << kEndTable << ">];\n";
+
+    std::stringstream ss;
+
+    ss << "v" << constraint.UniqueId() << ":p0 -> v"
        << input_lhs_view.UniqueId() << ":c" << input_lhs.Id() << color << ";\n"
        << "v" << constraint.UniqueId() << ":p1 -> v"
        << input_rhs_view.UniqueId() << ":c" << input_rhs.Id() << color << ";\n";
@@ -323,8 +326,14 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     for (auto i = 0u; i < in_copied_cols.size(); ++i) {
       const auto col = in_copied_cols[i];
       const auto view = QueryView::Containing(col);
-      os << "v" << constraint.UniqueId() << ":g" << i << " -> v"
+      ss << "v" << constraint.UniqueId() << ":g" << i << " -> v"
          << view.UniqueId() << ":c" << col.Id() << color << ";\n";
+    }
+
+    if (auto sub_index = QueryView(constraint).SubgraphId(); sub_index) {
+      subgraph_edges[*sub_index] += ss.str();
+    } else {
+      os << ss.str();
     }
 
     link_conds(constraint);
@@ -515,7 +524,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << kEndTable << ">];\n";
 
     auto color = QueryView(map).CanReceiveDeletions() ? " [color=purple]" : "";
-    //color =  QueryView(map).Predecessors()[0].IsSubgraph() ? " [color=cadetblue3]" : color;
 
     std::stringstream ss;
 
@@ -726,12 +734,20 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     auto color =
         QueryView::From(view).CanReceiveDeletions() ? " [color=purple]" : "";
 
+    std::stringstream ss;
+
     // Link the input columns to their sources.
     for (auto i = 0u; i < view.NumInputColumns(); ++i) {
       auto col = view.NthInputColumn(i);
       auto input_view = QueryView::Containing(col);
-      os << "v" << view.UniqueId() << ":p" << i << " -> v"
+      ss << "v" << view.UniqueId() << ":p" << i << " -> v"
          << input_view.UniqueId() << ":c" << col.Id() << color << ";\n";
+    }
+
+    if (auto sub_index = QueryView(view).SubgraphId(); sub_index) {
+      subgraph_edges[*sub_index] += ss.str();
+    } else {
+      os << ss.str();
     }
 
     link_conds(view);
