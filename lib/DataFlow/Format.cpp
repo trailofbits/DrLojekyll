@@ -6,6 +6,9 @@
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
 
+#include <iostream>
+#include <sstream>
+
 #include "EquivalenceSet.h"
 
 #define DEBUG(...)
@@ -129,16 +132,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     return os;
   };
 
-  for (auto subgraph : query.Subgraphs()) {
-    os << "subgraph sub_" << *(subgraph.SubgraphId()) << " { ";
-    os << "color=blue3; edge [color=blue3];";
-
-    for (auto view : subgraph.SubgraphTree()) {
-
-    }
-
-    os << "label = \"Subgraph " << *(subgraph.SubgraphId()) << "\"; }";
-  }
+  // Note(sonya): Give the vector an additional entry to allow indexing by
+  // SubgraphId instead of SubgraphId - 1
+  std::vector<std::string> subgraph_edges(query.Subgraphs().size() + 1, "");
 
   for (auto relation : query.Relations()) {
     const auto decl = relation.Declaration();
@@ -519,12 +515,14 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << kEndTable << ">];\n";
 
     auto color = QueryView(map).CanReceiveDeletions() ? " [color=purple]" : "";
-    color =  QueryView(map).Predecessors()[0].IsSubgraph() ? " [color=cadetblue3]" : color;
+    //color =  QueryView(map).Predecessors()[0].IsSubgraph() ? " [color=cadetblue3]" : color;
+
+    std::stringstream ss;
 
     for (auto i = 0u; i < num_copied; ++i) {
       auto col = map.NthInputCopiedColumn(i);
       auto view = QueryView::Containing(col);
-      os << "v" << map.UniqueId() << ":g" << i << " -> v" << view.UniqueId()
+      ss << "v" << map.UniqueId() << ":g" << i << " -> v" << view.UniqueId()
          << ":c" << col.Id() << color << ";\n";
     }
 
@@ -532,8 +530,14 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     for (auto i = 0u; i < num_inputs; ++i) {
       auto col = map.NthInputColumn(i);
       auto view = QueryView::Containing(col);
-      os << "v" << map.UniqueId() << ":p" << i << " -> v" << view.UniqueId()
+      ss << "v" << map.UniqueId() << ":p" << i << " -> v" << view.UniqueId()
          << ":c" << col.Id() << color << ";\n";
+    }
+
+    if (auto sub_index = QueryView(map).SubgraphId(); sub_index) {
+      subgraph_edges[*sub_index] += ss.str();
+    } else {
+      os << ss.str();
     }
 
     link_conds(map);
@@ -721,7 +725,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     auto color =
         QueryView::From(view).CanReceiveDeletions() ? " [color=purple]" : "";
-    color = QueryView::From(view).Predecessors()[0].IsSubgraph() ? " [color=cadetblue3]" : color;
 
     // Link the input columns to their sources.
     for (auto i = 0u; i < view.NumInputColumns(); ++i) {
@@ -757,40 +760,51 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   }
 
   for (auto subgraph : query.Subgraphs()) {
-      os << "v" << subgraph.UniqueId() << " [" << do_color(subgraph) << "label=<"
-         << kBeginTable;
-      do_table(2, subgraph);
-      do_conds(2, subgraph);
-      os << "<TD rowspan=\"2\">" << QueryView(subgraph).KindName() << "</TD>";
-      for (auto col : subgraph.Columns()) {
-        os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
-      }
+    os << "v" << subgraph.UniqueId() << " [" << do_color(subgraph) << "label=<"
+       << kBeginTable;
+    do_table(2, subgraph);
+    do_conds(2, subgraph);
+    os << "<TD rowspan=\"2\">" << QueryView(subgraph).KindName() << "</TD>";
+    for (auto col : subgraph.Columns()) {
+      os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
+    }
 
-  if (subgraph.NumInputColumns()) {
-    os << "</TR><TR>";
-      for (auto i = 0u; i < subgraph.NumInputColumns(); ++i) {
-        os << "<TD port=\"p" << i << "\">" << do_col(subgraph.NthInputColumn(i))
-           << "</TD>";
-      }
+    if (subgraph.NumInputColumns()) {
+      os << "</TR><TR>";
+        for (auto i = 0u; i < subgraph.NumInputColumns(); ++i) {
+          os << "<TD port=\"p" << i << "\">" << do_col(subgraph.NthInputColumn(i))
+             << "</TD>";
+        }
+    }
+
+    DEBUG(os << "</TR><TR><TD colspan=\"10\">" << subgraph.DebugString(os)
+             << "</TD>";)
+
+    os << kEndTable << ">];\n";
+
+    auto color = "";
+
+    // Link the input columns to their sources.
+    for (auto i = 0u; i < subgraph.NumInputColumns(); ++i) {
+      auto col = subgraph.NthInputColumn(i);
+      auto input_view = QueryView::Containing(col);
+      os << "v" << subgraph.UniqueId() << ":p" << i << " -> v"
+         << input_view.UniqueId() << ":c" << col.Id() << color << ";\n";
+    }
+
+    link_conds(subgraph);
   }
 
-      DEBUG(os << "</TR><TR><TD colspan=\"10\">" << subgraph.DebugString(os)
-               << "</TD>";)
+  // Subgraph Cluster
+  for (auto subgraph : query.Subgraphs()) {
+    os << "subgraph sub_" << *(subgraph.SubgraphId()) << " {\n";
+    os << "color=blue3; edge [color=blue3];\n";
 
-      os << kEndTable << ">];\n";
+    // output the accumulated edge list
+    os << subgraph_edges[*(subgraph.SubgraphId())];
 
-      auto color = " [color=orange]";
-
-      // Link the input columns to their sources.
-      for (auto i = 0u; i < subgraph.NumInputColumns(); ++i) {
-        auto col = subgraph.NthInputColumn(i);
-        auto input_view = QueryView::Containing(col);
-        os << "v" << subgraph.UniqueId() << ":p" << i << " -> v"
-           << input_view.UniqueId() << ":c" << col.Id() << color << ";\n";
-      }
-
-      link_conds(subgraph);
-    }
+    os << "label = \"Subgraph " << *(subgraph.SubgraphId()) << "\";\n}\n";
+  }
 
 
   os << "}\n";

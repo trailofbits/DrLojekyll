@@ -2147,8 +2147,6 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   impl->ExtractConditionsToTuples();
   impl->RemoveUnusedViews();
   impl->ProxyInsertsWithTuples();
-  impl->LinkViews();
-  impl->RemoveUnusedViews();
   impl->BuildSubgraphs();
   impl->LinkViews();
   impl->RemoveUnusedViews();

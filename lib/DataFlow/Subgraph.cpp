@@ -114,6 +114,10 @@ static SUBGRAPH *ProxySubgraphs(QueryImpl *impl, VIEW *view, VIEW *incoming_view
 // IdentifyGraph sets of nodes that compose a subgraph and proxy the SubgraphSet
 // with a SUBGRAPH node.
 void QueryImpl::BuildSubgraphs(void) {
+
+  // Link Views for easy access of predecessor + successors
+  LinkViews();
+
   std::unordered_set<VIEW *> possible_subgraphs;
 
   auto is_conditional = +[](QueryView view) {
@@ -173,6 +177,7 @@ void QueryImpl::BuildSubgraphs(void) {
         && !is_conditional(view) && is_candidate_view_type(view);
   };
 
+  // Re-link since we inserted nodes
   LinkViews();
 
   for (auto subgraph : subgraphs) {

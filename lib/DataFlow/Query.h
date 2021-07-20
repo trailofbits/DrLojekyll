@@ -1117,6 +1117,11 @@ class Node<QuerySubgraph> : public Node<QueryView> {
  public:
   virtual ~Node(void);
 
+  inline Node(void)
+      : Node<QueryView>(),
+        outputs_from_predecessor(this),
+        inputs_to_successor(this) {}
+
   const char *KindName(void) const noexcept override;
   Node<QuerySubgraph> *AsSubgraph(void) noexcept override;
 
@@ -1124,6 +1129,9 @@ class Node<QuerySubgraph> : public Node<QueryView> {
   bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
                     const ErrorLog &) override;
+
+  DefList<COL> outputs_from_predecessor;
+  UseList<COL> inputs_to_successor;
 };
 
 using SUBGRAPH = Node<QuerySubgraph>;
