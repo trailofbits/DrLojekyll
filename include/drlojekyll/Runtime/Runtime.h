@@ -17,6 +17,7 @@
 #include "Column.h"
 #include "Index.h"
 #include "Int.h"
+#include "Reference.h"
 #include "Table.h"
 #include "Util.h"
 
@@ -115,10 +116,6 @@ enum class TupleState : uint8_t {
   kPresent,
   kUnknown,
 };
-
-// An append-only and iterable container for serialized data
-template <typename StorageT, typename... Columns>
-class SerializedVector;
 
 template <typename StorageT, typename... Columns>
 class Vector;

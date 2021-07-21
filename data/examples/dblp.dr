@@ -73,8 +73,8 @@ static void run_on_stream(std::istream &fs) {
   Database<DatabaseStorage, DatabaseLog, DatabaseFunctors> db(
       storage, log, functors);
   
-  hyde::rt::SerializedVector<DatabaseStorage, hyde::rt::UTF8,
-                             hyde::rt::UTF8, hyde::rt::UTF8> atts(storage);
+  hyde::rt::Vector<DatabaseStorage, hyde::rt::UTF8,
+                   hyde::rt::UTF8, hyde::rt::UTF8> atts(storage);
   
   auto num_rows = 0ull;
   for (std::string line; std::getline(fs, line); line.clear()) {
