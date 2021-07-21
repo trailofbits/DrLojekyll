@@ -128,6 +128,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
         color >>= 4u;
       }
       os << "\" ";
+    } else if (view.SubgraphId()) {
+      os << "color=black,style=filled,fillcolor=whitesmoke,";
     }
     return os;
   };
@@ -330,7 +332,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << view.UniqueId() << ":c" << col.Id() << color << ";\n";
     }
 
-    if (auto sub_index = QueryView(constraint).SubgraphId(); sub_index) {
+    if (auto sub_index = QueryView(constraint).SubgraphId(); sub_index && !QueryView(constraint).Predecessors()[0].IsSubgraph()) {
       subgraph_edges[*sub_index] += ss.str();
     } else {
       os << ss.str();
@@ -542,7 +544,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << ":c" << col.Id() << color << ";\n";
     }
 
-    if (auto sub_index = QueryView(map).SubgraphId(); sub_index) {
+    if (auto sub_index = QueryView(map).SubgraphId(); sub_index && !QueryView(map).Predecessors()[0].IsSubgraph()) {
       subgraph_edges[*sub_index] += ss.str();
     } else {
       os << ss.str();
@@ -744,7 +746,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << input_view.UniqueId() << ":c" << col.Id() << color << ";\n";
     }
 
-    if (auto sub_index = QueryView(view).SubgraphId(); sub_index) {
+    if (auto sub_index = QueryView(view).SubgraphId(); sub_index && !QueryView(view).Predecessors()[0].IsSubgraph()) {
       subgraph_edges[*sub_index] += ss.str();
     } else {
       os << ss.str();
@@ -819,7 +821,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     // output the accumulated edge list
     os << subgraph_edges[*(subgraph.SubgraphId())];
 
-    os << "label = \"SUBGRAPH " << *(subgraph.SubgraphId()) << "\"; fontcolor = blue3;\n}\n";
+    os << "style=filled;fillcolor=aliceblue; label = \"SUBGRAPH " << *(subgraph.SubgraphId()) << "\"; fontcolor = black;\n}\n";
   }
 
 
