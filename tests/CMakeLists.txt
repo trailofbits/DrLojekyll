@@ -4,7 +4,13 @@ cmake_minimum_required(VERSION 3.17)
 
 include(GoogleTest)
 
-configure_file(drlojekyll_paths.h.in drlojekyll_paths.h @ONLY)
+set(DrLojekyll_RUNTIME_LIB_PATH $<TARGET_FILE:Runtime>)
+
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/drlojekyll_paths.h.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/include/${CMAKE_BUILD_TYPE}/drlojekyll_paths.h.gen" @ONLY)
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/include/$<CONFIG>/drlojekyll_paths.h"
+              INPUT "${CMAKE_CURRENT_BINARY_DIR}/include/${CMAKE_BUILD_TYPE}/drlojekyll_paths.h.gen")
+
 
 find_package(Filesystem REQUIRED)
 
@@ -35,7 +41,10 @@ else()
     message(STATUS "Disabled testing and verification of generated Python code using Mypy")
 endif()
 
-target_include_directories(unittests PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(unittests PRIVATE
+  "${CMAKE_CURRENT_BINARY_DIR}/include/$<CONFIG>"
+)
+
 target_link_libraries(
   unittests
   PRIVATE gtest_main
@@ -48,6 +57,7 @@ target_link_libraries(
           Lex
           Parse
           DataFlow
+          Runtime
           Version
           std::filesystem)
 

@@ -81,4 +81,14 @@ void QueryImpl::ConvertConstantInputsToTuples(void) {
   }
 }
 
+// Track which views are constant after initialization.
+// See `VIEW::is_const_after_init`.
+void QueryImpl::TrackConstAfterInit(void) const {
+  std::unordered_map<VIEW *, bool> conditional_views;
+  this->ForEachView([&] (VIEW *view) {
+    assert(!view->is_dead);
+    view->is_const_after_init = VIEW::IsConditional(view, conditional_views);
+  });
+}
+
 }  // namespace hyde

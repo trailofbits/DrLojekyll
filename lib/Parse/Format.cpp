@@ -13,7 +13,7 @@ namespace hyde {
 OutputStream &operator<<(OutputStream &os, ParsedVariable var) {
   auto name = var.Name();
   if (name.Lexeme() == Lexeme::kIdentifierUnnamedVariable) {
-    os << 'V' << var.Id();
+    os << "AutoVar_" << var.IdInClause();
   } else {
     os << name;
   }
@@ -389,7 +389,9 @@ OutputStream &operator<<(OutputStream &os, ParsedModule module) {
 }
 
 OutputStream &operator<<(OutputStream &os, ParsedPredicate pred) {
-  if (pred.IsNegated()) {
+  if (pred.IsNegatedWithNever()) {
+    os << "@never ";
+  } else if (pred.IsNegated()) {
     os << "!";
   }
 

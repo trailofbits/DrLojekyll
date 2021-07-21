@@ -35,9 +35,47 @@ class Context;
 // until `Run` is invoked.
 class WorkItem {
  public:
+
+  // The ordering is inscrutable, but we get roughly the following behavior:
+  //
+  //      continuing induction group 2 depth 1
+  //      continuing join group 2 depth 1
+  //      continuing join group 2 depth 1
+  //      continuing join group 2 depth 1
+  //      continuing join group 2 depth 1
+  //      continuing join group 2 depth 1
+  //      continuing join group 2 depth 1
+  //      continuing join group 2 depth 1
+  //      finalizing induction group 2 depth 1
+  //      continuing induction group 3 depth 2
+  //      continuing join group 3 depth 2
+  //      continuing join group 3 depth 2
+  //      continuing join group 3 depth 2
+  //      continuing join group 3 depth 2
+  //      finalizing induction group 3 depth 2
+  //      continuing induction group 0 depth 3
+  //      enclosed by depth 2
+  //      continuing join group 0 depth 3
+  //      continuing join group 0 depth 3
+  //      finalizing induction group 0 depth 3
+  //      continuing induction group 1 depth 4
+  //      continuing join group 1 depth 4
+  //      continuing join group 1 depth 4
+  //      continuing join group 1 depth 4
+  //      continuing join group 1 depth 4
+  //      finalizing induction group 1 depth 4
+  //
+  // We have induction finalizations of one depth happen before induction
+  // continues of the next depth. We also do a priority inversion between
+  // induction and join continues within the same group, such that the join
+  // continues follow the induction continues, but precede the induction
+  // finalizations. This only happens for inductive joins/products, and not
+  // for normal ones.
+
   static constexpr unsigned kContinueJoinOrder = 0u;
-  static constexpr unsigned kContinueInductionOrder = 1u << 30;  // (~0u) >> 2u;
-  static constexpr unsigned kFinalizeInductionOrder = 2u << 30;  // (~0u) >> 1u;
+  static constexpr unsigned kInductionDepthShift = 17u;
+  static constexpr unsigned kContinueInductionOrder = 1u << 30;
+  static constexpr unsigned kFinalizeInductionOrder = 1u << 16u;
 
   virtual ~WorkItem(void);
   virtual void Run(ProgramImpl *program, Context &context) = 0;
@@ -305,51 +343,50 @@ static bool BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
   if (!in_col_indices.empty()) {
     index = table->GetOrCreateIndex(impl, std::move(in_col_indices));
   }
-  const auto proc = seq->containing_procedure;
-  const auto vec = proc->vectors.Create(impl->next_id++, VectorKind::kTableScan,
-                                        selected_cols);
 
   // Scan an index, using the columns from the tuple to find the columns
   // from the tuple's predecessor.
-  const auto scan = impl->operation_regions.CreateDerived<TABLESCAN>(seq);
+  const auto scan = impl->operation_regions.CreateDerived<TABLESCAN>(
+      impl->next_id++, seq);
   seq->AddRegion(scan);
   scan->table.Emplace(scan, table);
   if (index) {
     scan->index.Emplace(scan, index);
   }
-  scan->output_vector.Emplace(scan, vec);
 
-  for (auto view_col : view_cols) {
+  for (QueryColumn view_col : view_cols) {
     const auto in_var = seq->VariableFor(impl, view_col);
     scan->in_vars.AddUse(in_var);
   }
 
-  for (auto table_col : table->columns) {
+  // Scans are funny. Even though we're looking into an index, we permit the
+  // index to be slightly faulty, and so we double check all results.
+  TUPLECMP * const cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
+      scan, ComparisonOperator::kEqual);
+  scan->body.Emplace(scan, cmp);
+
+  auto i = 0u;
+  auto j = 0u;
+  for (TABLECOLUMN *table_col : table->columns) {
+
+    VAR *out_var = scan->out_vars.Create(
+        impl->next_id++, VariableRole::kScanOutput);
+
+    QueryColumn view_col = view.NthColumn(i++);
+    out_var->query_column = view_col;
+
     if (indexed_cols[table_col->index]) {
       assert(index != nullptr);
       scan->in_cols.AddUse(table_col);
 
+      VAR *in_var = scan->in_vars[j++];
+      cmp->lhs_vars.AddUse(in_var);
+      cmp->rhs_vars.AddUse(out_var);
+      cmp->col_id_to_var[view_col.Id()] = in_var;
+
     } else {
       scan->out_cols.AddUse(table_col);
-    }
-  }
-
-  // Loop over the results of the table scan.
-  const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
-      impl->next_id++, seq, ProgramOperation::kLoopOverScanVector);
-  seq->AddRegion(loop);
-  loop->vector.Emplace(loop, vec);
-
-  for (auto col : selected_cols) {
-    const auto var =
-        loop->defined_vars.Create(impl->next_id++, VariableRole::kScanOutput);
-    var->query_column = col;
-    loop->col_id_to_var[col.Id()] = var;
-  }
-
-  for (auto pred_col : view.Columns()) {
-    if (!indexed_cols[*(pred_col.Index())]) {
-      selected_cols.push_back(pred_col);
+      cmp->col_id_to_var[view_col.Id()] = out_var;
     }
   }
 
@@ -360,10 +397,12 @@ static bool BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
     view_cols.push_back(col);
   }
 
-  const auto in_loop = cb(loop, true);
-  assert(!loop->body);
-  assert(in_loop->parent == loop);
-  loop->body.Emplace(loop, in_loop);
+  REGION * const in_loop = cb(cmp, true);
+  assert(!cmp->body);
+  if (in_loop) {
+    assert(in_loop->parent == cmp);
+    cmp->body.Emplace(cmp, in_loop);
+  }
   return true;
 }
 
@@ -483,8 +522,26 @@ REGION *BuildTopDownGeneratorChecker(ProgramImpl *impl, Context &context,
 // on constants.
 void BuildInitProcedure(ProgramImpl *impl, Context &context, Query query);
 
-// Build the primary and entry data flow procedures.
-void BuildEagerProcedure(ProgramImpl *impl, Context &context, Query query);
+// Build the entry data flow procedures.
+PROC *BuildEntryProcedure(ProgramImpl *impl, Context &context, Query query);
+
+// Builds an I/O procedure, which goes and invokes the entry data flow
+// procedure.
+void BuildIOProcedure(ProgramImpl *impl, Query query, QueryIO io,
+                      Context &context, PROC *proc);
+
+// From the initial procedure, "extract" the primary procedure. The entry
+// procedure operates on vectors from message receipt, and then does everything.
+// Our goal is to split it up into two procedures:
+//
+//    1) The simplified entry procedure, which will only read from the
+//       message vectors, do some joins perhaps, and append to induction
+//       vectors / output message vectors.
+//
+//    2) The primary data flow procedure, which takes as input the induction
+//       vectors which do the remainder of the data flow.
+void ExtractPrimaryProcedure(ProgramImpl *impl, PROC *entry_proc,
+                             Context &context);
 
 // Complete a procedure by exhausting the work list.
 void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context,

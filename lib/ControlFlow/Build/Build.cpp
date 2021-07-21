@@ -68,6 +68,24 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
   }
 
   for (auto join : query.Joins()) {
+
+    QueryView view(join);
+    if (!view.CanReceiveDeletions()) {
+      auto num_constant = 0u;
+      auto num_variable = 0u;
+      for (auto pred : join.JoinedViews()) {
+        if (pred.IsConstantAfterInitialization()) {
+          (void) TABLE::GetOrCreate(impl, context, pred);
+          ++num_constant;
+        } else {
+          ++num_variable;
+        }
+      }
+      if (num_constant && 1u == num_variable) {
+        // TODO(pag): Issue #240.
+      }
+    }
+
     for (auto pred : join.JoinedViews()) {
       (void) TABLE::GetOrCreate(impl, context, pred);
     }
@@ -75,7 +93,6 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
     // A top-down checker looking at a join can hit terrible performance issues
     // if they need to inspect the JOIN's outputs and if the pivot columns
     // aren't used.
-    QueryView view(join);
     if (view.CanReceiveDeletions()) {
 
       //      // Easier to just avoid any possible performance issues; storage is
@@ -106,6 +123,11 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
 
   for (auto negate : query.Negations()) {
     const QueryView view(negate);
+    if (!view.CanReceiveDeletions()) {
+      if (negate.NegatedView().IsConstantAfterInitialization()) {
+        // TODO(pag): Issue #242.
+      }
+    }
     (void) TABLE::GetOrCreate(impl, context, negate.NegatedView());
     (void) TABLE::GetOrCreate(impl, context, view.Predecessors()[0]);
   }
@@ -136,12 +158,12 @@ static void BuildDataModel(const Query &query, ProgramImpl *program) {
     auto model = new DataModel;
     program->models.emplace_back(model);
     program->view_to_model.emplace(view, model);
-    eq_classes.emplace(view.TableId(), model);
+    eq_classes.emplace(view.EquivalenceSetId(), model);
   });
 
   query.ForEachView([&](QueryView view) {
     auto curr_model = program->view_to_model[view]->FindAs<DataModel>();
-    auto dest_model = eq_classes[view.TableId()];
+    auto dest_model = eq_classes[view.EquivalenceSetId()];
     DisjointSet::Union(curr_model, dest_model);
   });
 }
@@ -312,8 +334,9 @@ static REGION *PivotAroundNegation(ProgramImpl *impl, Context &context,
     if (role == InputColumnRole::kNegated) {
       assert(out_col.has_value());
       assert(QueryView::Containing(in_col) == view);
-      const auto in_var = seq->VariableFor(impl, in_col);
+      VAR *const in_var = seq->VariableFor(impl, in_col);
       assert(in_var != nullptr);
+      assert(out_col->Type() == in_var->Type());
       seq->col_id_to_var[out_col->Id()] = in_var;
     }
   });
@@ -329,6 +352,7 @@ static REGION *PivotAroundNegation(ProgramImpl *impl, Context &context,
       if (auto out_var_it = seq->col_id_to_var.find(out_col->Id());
           out_var_it != seq->col_id_to_var.end()) {
         VAR *const out_var = out_var_it->second;
+        assert(in_col.Type() == out_var->Type());
         seq->col_id_to_var[in_col.Id()] = out_var;
         source_view_cols.push_back(in_col);
       }
@@ -410,23 +434,22 @@ static REGION *MaybeReAddToNegatedView(ProgramImpl *impl, Context &context,
       });
 }
 
-static REGION *MaybeRemoveFromNegatedView(ProgramImpl *impl, Context &context,
-                                          QueryView view, REGION *parent) {
-  PARALLEL *const par = impl->parallel_regions.Create(parent);
+static void MaybeRemoveFromNegatedView(ProgramImpl *impl, Context &context,
+                                       QueryView view, PARALLEL *par) {
   view.ForEachNegation([&](QueryNegate negate) {
-    par->AddRegion(
-        MaybeRemoveFromNegatedView(impl, context, view, negate, par));
+    if (!negate.HasNeverHint()) {
+      par->AddRegion(
+          MaybeRemoveFromNegatedView(impl, context, view, negate, par));
+    }
   });
-  return par;
 }
 
-static REGION *MaybeReAddToNegatedView(ProgramImpl *impl, Context &context,
-                                       QueryView view, REGION *parent) {
-  PARALLEL *const par = impl->parallel_regions.Create(parent);
+static void MaybeReAddToNegatedView(ProgramImpl *impl, Context &context,
+                                       QueryView view, PARALLEL *par) {
   view.ForEachNegation([&](QueryNegate negate) {
+    assert(!negate.HasNeverHint());
     par->AddRegion(MaybeReAddToNegatedView(impl, context, view, negate, par));
   });
-  return par;
 }
 
 static void BuildTopDownChecker(ProgramImpl *impl, Context &context,
@@ -683,9 +706,21 @@ static void BuildTopDownChecker(ProgramImpl *impl, Context &context,
     if (out_col && in_col.IsConstantOrConstantRef() &&
         std::find(view_cols.begin(), view_cols.end(), *out_col) !=
             view_cols.end()) {
+
+      // We don't need to compare against this constant because the tuple is
+      // "inventing" it, i.e. appending it in.
+      //
+      // TODO(pag): Check that this isn't an all-constant tuple?? Think about
+      //            this if we hit the below assertion.
+      if (in_col.IsConstant() && view.IsTuple()) {
+        assert(0 < view.Predecessors().size());
+        return;
+      }
+
       switch (role) {
         case InputColumnRole::kIndexValue:
-        case InputColumnRole::kAggregatedColumn: return;
+        case InputColumnRole::kAggregatedColumn:
+        case InputColumnRole::kMergedColumn: return;
         default: constants_to_check.emplace_back(*out_col, in_col); break;
       }
     }
@@ -885,8 +920,9 @@ static void BuildQueryEntryPointImpl(ProgramImpl *impl, Context &context,
   std::optional<DataIndex> scanned_index;
 
   if (!col_indices.empty()) {
-    const auto index = model->table->GetOrCreateIndex(impl, col_indices);
-    scanned_index.emplace(DataIndex(index));
+    if (const auto index = model->table->GetOrCreateIndex(impl, col_indices)) {
+      scanned_index.emplace(DataIndex(index));
+    }
   }
 
   if (view.CanReceiveDeletions()) {
@@ -1069,20 +1105,20 @@ void ExpandAvailableColumns(
 
   pivot_ins_to_outs();
 
-  //  // Finally, some of the inputs may be constants. We have to do constants
-  //  // last because something in `available_cols` might be a "variable" that
-  //  // takes on a different value than a constant, and thus needs to be checked
-  //  // against that constant.
-  //  view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
-  //                      std::optional<QueryColumn> out_col) {
-  //    if (out_col && InputColumnRole::kIndexValue != role &&
-  //        InputColumnRole::kAggregatedColumn != role &&
-  //        in_col.IsConstantOrConstantRef()) {
-  //      wanted_to_avail.emplace(out_col->Id(), in_col);
-  //    }
-  //  });
-  //
-  //  pivot_ins_to_outs();
+//  // Finally, some of the inputs may be constants. We have to do constants
+//  // last because something in `available_cols` might be a "variable" that
+//  // takes on a different value than a constant, and thus needs to be checked
+//  // against that constant.
+//  view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+//                      std::optional<QueryColumn> out_col) {
+//    if (out_col && InputColumnRole::kIndexValue != role &&
+//        InputColumnRole::kAggregatedColumn != role &&
+//        in_col.IsConstantOrConstantRef()) {
+//      wanted_to_avail.emplace(out_col->Id(), in_col);
+//    }
+//  });
+//
+//  pivot_ins_to_outs();
 }
 
 // Filter out only the available columns that are part of the view we care
@@ -1095,6 +1131,9 @@ std::vector<std::pair<QueryColumn, QueryColumn>> FilterAvailableColumns(
     if (auto it = wanted_to_avail.find(col.Id()); it != wanted_to_avail.end()) {
       ret.emplace_back(col, it->second);
     }
+//    else if (col.IsConstantOrConstantRef()) {
+//      ret.emplace_back(col, *(col.AsConstantColumn()));
+//    }
   }
   return ret;
 }
@@ -1229,7 +1268,7 @@ CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
     let->col_id_to_var[wanted_col.Id()] = parent->VariableFor(impl, avail_col);
   }
 
-  // Also map in the available columnns, but don't override anything that's
+  // Also map in the available columns, but don't override anything that's
   // there (hence use of `emplace`).
   for (auto [wanted_col, avail_col] : available_cols) {
     let->col_id_to_var.emplace(avail_col.Id(),
@@ -1322,7 +1361,7 @@ CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
 
   auto i = 0u;
   for (auto [wanted_col, avail_col] : available_cols) {
-    const auto var = call_parent->VariableFor(impl, wanted_col);
+    VAR *const var = call_parent->VariableFor(impl, wanted_col);
     assert(var != nullptr);
     check->arg_vars.AddUse(var);
     const auto param = proc->input_vars[i++];
@@ -1379,10 +1418,14 @@ InTryInsert(ProgramImpl *impl, Context &context, QueryView view, OP *parent,
 
       assert(!cols.empty());
 
+      TupleState from_state = TupleState::kAbsent;
+      if (view.CanProduceDeletions()) {
+        from_state = TupleState::kAbsentOrUnknown;
+      }
+
       // Do the marking.
-      const auto table_remove =
-          BuildChangeState(impl, table, parent, cols,
-                           TupleState::kAbsentOrUnknown, TupleState::kPresent);
+      const auto table_remove = BuildChangeState(
+          impl, table, parent, cols, from_state, TupleState::kPresent);
 
       parent->body.Emplace(parent, table_remove);
       parent = table_remove;
@@ -1474,33 +1517,29 @@ static void EvaluateConditionAndNotify(ProgramImpl *impl, QueryView view,
     selected_cols.push_back(col);
   }
 
-  PROC *const proc = parent->containing_procedure;
-  VECTOR *const vec = proc->vectors.Create(
-      impl->next_id++, VectorKind::kTableScan, selected_cols);
-
-  TABLESCAN *const scan = impl->operation_regions.CreateDerived<TABLESCAN>(seq);
+  TABLESCAN *const scan = impl->operation_regions.CreateDerived<TABLESCAN>(
+      impl->next_id++, seq);
   seq->AddRegion(scan);
 
-  scan->table.Emplace(scan, table);
-  scan->output_vector.Emplace(scan, vec);
+
+  std::vector<unsigned> cols_indexes;
   for (auto col : table->columns) {
+    cols_indexes.push_back(col->index);
     scan->out_cols.AddUse(col);
   }
 
-  // Loop over the results of the table scan.
-  VECTORLOOP *const loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
-      impl->next_id++, seq, ProgramOperation::kLoopOverScanVector);
-  seq->AddRegion(loop);
-  loop->vector.Emplace(loop, vec);
+  scan->table.Emplace(scan, table);
+  scan->index.Emplace(
+      scan, table->GetOrCreateIndex(impl, std::move(cols_indexes)));
 
   for (auto col : selected_cols) {
-    const auto var =
-        loop->defined_vars.Create(impl->next_id++, VariableRole::kScanOutput);
+    VAR * const var =
+        scan->out_vars.Create(impl->next_id++, VariableRole::kScanOutput);
     var->query_column = col;
-    loop->col_id_to_var[col.Id()] = var;
+    scan->col_id_to_var[col.Id()] = var;
   }
 
-  OP *succ_parent = loop;
+  OP *succ_parent = scan;
 
   // We might need to double check that the tuple is actually present.
   if (view.CanReceiveDeletions()) {
@@ -1646,7 +1685,7 @@ void BuildEagerRemovalRegionsImpl(ProgramImpl *impl, QueryView view,
   }
 
   if (view.IsUsedByNegation()) {
-    par->AddRegion(MaybeReAddToNegatedView(impl, context, view, par));
+    MaybeReAddToNegatedView(impl, context, view, par);
   }
 
   for (auto succ_view : successors) {
@@ -1732,7 +1771,7 @@ void BuildEagerInsertionRegionsImpl(ProgramImpl *impl, QueryView view,
   // we need to go and make sure that the corresponding data gets removed from
   // the negation.
   if (view.IsUsedByNegation()) {
-    par->AddRegion(MaybeRemoveFromNegatedView(impl, context, view, par));
+    MaybeRemoveFromNegatedView(impl, context, view, par);
   }
 
   //  std::unordered_map<DataModel *, std::vector<QueryView>> grouped_successors;
@@ -2201,7 +2240,11 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   FillDataModel(query, program, context);
 
   // Build bottom-up procedures starting from message receives.
-  BuildEagerProcedure(program, context, query);
+  PROC *const entry_proc = BuildEntryProcedure(program, context, query);
+
+  for (auto io : query.IOs()) {
+    BuildIOProcedure(impl.get(), query, io, context, entry_proc);
+  }
 
   // Build the initialization procedure, needed to start data flows from
   // things like constant tuples.
@@ -2233,6 +2276,10 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
 
   impl->Optimize();
 
+  ExtractPrimaryProcedure(impl.get(), entry_proc, context);
+
+  impl->Optimize();
+
   // Assign defining regions to each variable.
   //
   // NOTE(pag): We don't really want to map variables throughout the building
@@ -2241,6 +2288,19 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   for (auto proc : impl->procedure_regions) {
     MapVariables(proc);
   }
+
+//  // Finally, go through our tables. Any table with no indices is given a
+//  // full table index, on the assumption that it is used for things like state
+//  // checking.
+//  for (TABLE *table : impl->tables) {
+//    if (table->indices.Empty()) {
+//      std::vector<unsigned> offsets;
+//      for (auto col : table->columns) {
+//        offsets.push_back(col->index);
+//      }
+//      (void) table->GetOrCreateIndex(impl.get(), std::move(offsets));
+//    }
+//  }
 
   return Program(std::move(impl));
 }

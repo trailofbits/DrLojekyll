@@ -1,0 +1,63 @@
+#message add_edge(i64 From, i64 To).
+#query reachable_from(bound i64 From, free i64 To).
+#query reaching_to(free i64 From, bound i64 To).
+#local tc1(From, To).
+#local tc2(From, To).
+
+reachable_from(From, To) : tc1(From, To).
+reaching_to(From, To) : tc2(From, To).
+
+tc1(From, To) : tc1(From, X), tc2(X, To).
+tc1(From, To) : add_edge(From, To).
+
+tc2(From, To) : tc2(From, X), tc1(X, To).
+tc2(From, To) : add_edge(From, To).
+
+
+#query is_node(free i64 Node).
+
+is_node(Node) : tc1(Node, _).
+is_node(Node) : tc1(_, Node).
+is_node(Node) : tc2(Node, _).
+is_node(Node) : tc2(_, Node).
+
+#epilogue ```python
+class Functors(DatabaseFunctors):
+  pass
+
+if __name__ == "__main__":
+  db = Database(DatabaseLog(), Functors())
+
+  # start with a simple graph
+  db.add_edge_2([(0,1), (0,2), (2,0), (1,2), (2,3)])
+
+  assert sorted(db.reachable_from_bf(0)) == [0, 1, 2, 3]
+  assert sorted(db.reachable_from_bf(1)) == [0, 1, 2, 3]
+  assert sorted(db.reachable_from_bf(2)) == [0, 1, 2, 3]
+  assert sorted(db.reachable_from_bf(3)) == []
+  assert sorted(db.reachable_from_bf(4)) == []
+
+  assert sorted(db.reaching_to_fb(0)) == [0, 1, 2]
+  assert sorted(db.reaching_to_fb(1)) == [0, 1, 2]
+  assert sorted(db.reaching_to_fb(2)) == [0, 1, 2]
+  assert sorted(db.reaching_to_fb(3)) == [0, 1, 2]
+  assert sorted(db.reaching_to_fb(4)) == []
+
+  assert sorted(db.is_node_f()) == [0, 1, 2, 3]
+
+  # now add more to the graph
+  db.add_edge_2([(4, 3)])
+  assert sorted(db.reachable_from_bf(0)) == [0, 1, 2, 3]
+  assert sorted(db.reachable_from_bf(1)) == [0, 1, 2, 3]
+  assert sorted(db.reachable_from_bf(2)) == [0, 1, 2, 3]
+  assert sorted(db.reachable_from_bf(3)) == []
+  assert sorted(db.reachable_from_bf(4)) == [3]
+
+  assert sorted(db.reaching_to_fb(0)) == [0, 1, 2]
+  assert sorted(db.reaching_to_fb(1)) == [0, 1, 2]
+  assert sorted(db.reaching_to_fb(2)) == [0, 1, 2]
+  assert sorted(db.reaching_to_fb(3)) == [0, 1, 2, 4]
+  assert sorted(db.reaching_to_fb(4)) == []
+
+  assert sorted(db.is_node_f()) == [0, 1, 2, 3, 4]
+```.

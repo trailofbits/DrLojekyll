@@ -1,0 +1,77 @@
+
+#import "../transitive_closure_lazy.dr".
+
+#epilogue ```python
+class Functors(DatabaseFunctors):
+  pass
+
+if __name__ == "__main__":
+  db = Database(DatabaseLog(), Functors())
+
+  # 0 -> 1
+  #      1 -> 2
+  #           2 -> 3
+  #                3 -> 4
+  
+  print("Empty graph")
+  print("Reaching to 0:", list(sorted(set(db.reaching_to_fb(0)))))
+  print("Reaching to 1:", list(sorted(set(db.reaching_to_fb(1)))))
+  print("Reaching to 2:", list(sorted(set(db.reaching_to_fb(2)))))
+  print("Reaching to 3:", list(sorted(set(db.reaching_to_fb(3)))))
+  print("Reaching to 4:", list(sorted(set(db.reaching_to_fb(4)))))
+  
+  print()
+  print("Adding edges 0 -> 1 -> 2 -> 3 -> 4")
+  # start with a simple graph
+  db.add_edge_2([(0,1), (1,2), (2,3), (3, 4)])
+  print("Reaching to 0:", list(sorted(set(db.reaching_to_fb(0)))))
+  print("Reaching to 1:", list(sorted(set(db.reaching_to_fb(1)))))
+  print("Reaching to 2:", list(sorted(set(db.reaching_to_fb(2)))))
+  print("Reaching to 3:", list(sorted(set(db.reaching_to_fb(3)))))
+  print("Reaching to 4:", list(sorted(set(db.reaching_to_fb(4)))))
+  
+  
+  # If we've properly locked things, then the transitive closure
+  # relation will not be eagerly computed, so the only thing
+  # reaching anywhere is the original edges.
+  assert len(set(db.reaching_to_fb(1))) == 1
+  assert len(set(db.reaching_to_fb(2))) == 1
+  assert len(set(db.reaching_to_fb(3))) == 1
+  assert len(set(db.reaching_to_fb(4))) == 1
+  
+  print()
+  print("Unlocking reaching_to 4")
+  
+  # Internally, a call to `reaching_to(A, B)` would "unlock"
+  # `B` via an internal message. Here we will manually
+  # emulate this process.
+  db.unlock_reaching_to_1([4])
+  print("Reaching to 0:", list(sorted(set(db.reaching_to_fb(0)))))
+  print("Reaching to 1:", list(sorted(set(db.reaching_to_fb(1)))))
+  print("Reaching to 2:", list(sorted(set(db.reaching_to_fb(2)))))
+  print("Reaching to 3:", list(sorted(set(db.reaching_to_fb(3)))))
+  print("Reaching to 4:", list(sorted(set(db.reaching_to_fb(4)))))
+  
+  print()
+  print("Add edges 8 -> 9 -> 4")
+  db.add_edge_2([(9, 4), (8, 9)])
+  print("Reaching to 0:", list(sorted(set(db.reaching_to_fb(0)))))
+  print("Reaching to 1:", list(sorted(set(db.reaching_to_fb(1)))))
+  print("Reaching to 2:", list(sorted(set(db.reaching_to_fb(2)))))
+  print("Reaching to 3:", list(sorted(set(db.reaching_to_fb(3)))))
+  print("Reaching to 4:", list(sorted(set(db.reaching_to_fb(4)))))
+  print("Reaching to 8:", list(sorted(set(db.reaching_to_fb(8)))))
+  print("Reaching to 9:", list(sorted(set(db.reaching_to_fb(9)))))
+  
+  print()
+  print("Unlocking reaching_to 2")
+  db.unlock_reaching_to_1([2])
+  print("Reaching to 0:", list(sorted(set(db.reaching_to_fb(0)))))
+  print("Reaching to 1:", list(sorted(set(db.reaching_to_fb(1)))))
+  print("Reaching to 2:", list(sorted(set(db.reaching_to_fb(2)))))
+  print("Reaching to 3:", list(sorted(set(db.reaching_to_fb(3)))))
+  print("Reaching to 4:", list(sorted(set(db.reaching_to_fb(4)))))
+  print("Reaching to 8:", list(sorted(set(db.reaching_to_fb(8)))))
+  print("Reaching to 9:", list(sorted(set(db.reaching_to_fb(9)))))
+```
+.

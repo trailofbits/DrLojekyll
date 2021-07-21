@@ -239,6 +239,9 @@ class DataVariable : public program::ProgramNode<DataVariable> {
   // Whether or not this variable is a constant.
   bool IsConstant(void) const noexcept;
 
+  // Return the number of uses of this variable.
+  unsigned NumUses(void) const noexcept;
+
  private:
   using program::ProgramNode<DataVariable>::ProgramNode;
 };
@@ -349,6 +352,12 @@ class DataVector : public program::ProgramNode<DataVector> {
 
   // Apply a function to each user.
   void ForEachUser(std::function<void(ProgramRegion)> cb);
+
+  // If this is a paramter vector to the data flwo entry function, or to
+  // an I/O procedure, then these will tell us the corresponding message being
+  // added or removed by this vector.
+  std::optional<ParsedMessage> AddedMessage(void) const noexcept;
+  std::optional<ParsedMessage> RemovedMessage(void) const noexcept;
 
  private:
   friend class ProgramVectorClearRegion;
@@ -637,9 +646,6 @@ class ProgramTableJoinRegion
   // once.
   UsedNodeRange<DataTable> Tables(void) const;
 
-  // The indices on the tables.
-  UsedNodeRange<DataIndex> Indices(void) const;
-
   // The columns used in the scan of the Nth table. These are in the same
   // order as the entries in `PivotVector()` and `OutputPivotVariables()`.
   UsedNodeRange<DataColumn> IndexedColumns(unsigned table_index) const;
@@ -649,7 +655,7 @@ class ProgramTableJoinRegion
   UsedNodeRange<DataColumn> SelectedColumns(unsigned table_index) const;
 
   // The index used by the Nth table scan.
-  DataIndex Index(unsigned table_index) const noexcept;
+  std::optional<DataIndex> Index(unsigned table_index) const noexcept;
 
   // These are the output variables for the pivot columns. These are in the same
   // order as the entries in the pivot vector.
@@ -710,11 +716,17 @@ class ProgramTableScanRegion
  public:
   static ProgramTableScanRegion From(ProgramRegion) noexcept;
 
+  // Unique ID of this region.
+  unsigned Id(void) const noexcept;
+
   // The table being scanned.
   DataTable Table(void) const noexcept;
 
   // Optional index being scanned.
   std::optional<DataIndex> Index(void) const noexcept;
+
+  // The body that conditionally executes for each scanned tuple.
+  std::optional<ProgramRegion> Body(void) const noexcept;
 
   // The columns used to constrain the scan of the table. These are in the same
   // order as the entries in `InputVariables()`. This is empty if an index isn't
@@ -734,8 +746,9 @@ class ProgramTableScanRegion
   // being used.
   UsedNodeRange<DataVariable> InputVariables(void) const;
 
-  // The scanned results are filled into this vector.
-  DataVector FilledVector(void) const;
+  // The variables which are scanned. There is one variable for each column in
+  // the table. This does not have a 1:1 correspondence with `SelectedColumns`.
+  DefinedNodeRange<DataVariable> OutputVariables(void) const;
 
  private:
   friend class ProgramRegion;
@@ -810,6 +823,9 @@ class ProgramTupleCompareRegion
 class ProgramPublishRegion : public program::ProgramNode<ProgramPublishRegion> {
  public:
   static ProgramPublishRegion From(ProgramRegion) noexcept;
+
+  // Return a unique ID for this region.
+  unsigned Id(void) const noexcept;
 
   ParsedMessage Message(void) const noexcept;
 
@@ -992,9 +1008,9 @@ class ProgramQuery {
       std::optional<ProgramProcedure> forcing_function_)
       : query(query_),
         table(table_),
-        index(index_),
-        tuple_checker(tuple_checker_),
-        forcing_function(forcing_function_) {}
+        index(std::move(index_)),
+        tuple_checker(std::move(tuple_checker_)),
+        forcing_function(std::move(forcing_function_)) {}
 
   ProgramQuery(const ProgramQuery &) = default;
   ProgramQuery(ProgramQuery &&) noexcept = default;
@@ -1031,6 +1047,11 @@ class Program {
 
   // List of all procedures.
   DefinedNodeRange<ProgramProcedure> Procedures(void) const;
+
+  // List of all table join regions in a program. It is convenient to provide
+  // access to these to enable code generators to create specialized, per-join
+  // code, e.g. that selects an optimal evaluation order at runtime.
+  DefinedNodeRange<ProgramTableJoinRegion> JoinRegions(void) const;
 
   // List of query entry points.
   const std::vector<ProgramQuery> &Queries(void) const noexcept;

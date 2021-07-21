@@ -1,0 +1,132 @@
+#message att(bytes DocId, bytes AttrKind, bytes Attr).
+
+#query answer(free bytes DocId,
+              free bytes Title,
+              free bytes Year,
+              free bytes Author,
+              free bytes Month).
+
+
+answer(DocId, Title, Year, Author, Month)
+    : att(DocId, "title", Title)
+    , att(DocId, "year", Year)
+    , att(DocId, "author", Author)
+    , att(DocId, "month", Month).
+
+    
+#prologue ```c++
+#include <drlojekyll/Runtime/StdRuntime.h>
+#include <algorithm>
+#include <vector>
+#include <iomanip>
+#include <iostream>
+#include <fstream>
+#include <set>
+#include <sstream>
+#include <cstdio>
+#include <cinttypes>
+```.
+
+#epilogue ```c++
+
+using DatabaseStorage = hyde::rt::StdStorage;
+
+static const char * const kData =
+    "att('node12eo5mnsvx1',key,'tr/dec/SRC1997018').\n"
+    "att('node12eo5mnsvx1',mdate,'20020103').\n"
+    "att('node12eo5mnsvx1',editor,'Paul R. McJones').\n"
+    "att('node12eo5mnsvx1',title,'The 1995 SQL Reunion: People, Project, and Politics, May 29, 1995.').\n"
+    "att('node12eo5mnsvx1',journal,'Digital System Research Center Report').\n"
+    "att('node12eo5mnsvx1',volume,'SRC1997018').\n"
+    "att('node12eo5mnsvx1',year,'1997').\n"
+    "att('node12eo5mnsvx1',ee,'SRC1997018.html').\n"
+    "att('node12eo5mnsvx1',ee,'x').\n"
+    "att('node12eo5mnsvx1',cdrom,'decTR/src1997018.pdf').\n"
+    "att('node12eo5mnsvx2',key,'tr/gte/TR02630894165').\n"
+    "att('node12eo5mnsvx2',mdate,'20020103').\n"
+    "att('node12eo5mnsvx2',title,'An Evaluation of ObjectOriented DBMS Developments: 1994 Edition.').\n"
+    "att('node12eo5mnsvx2',journal,'GTE Laboratories Incorporated').\n"
+    "att('node12eo5mnsvx2',volume,'TR02630894165').\n"
+    "att('node12eo5mnsvx2',year,'1994').\n"
+    "att('node12eo5mnsvx2',ee,'TR02630894165.html').\n"
+    "att('node12eo5mnsvx2',cdrom,'GTE/MANO94a.pdf').\n"
+    "att('node12eo5mnsvx2',author,'Frank Manola').\n"
+    "att('node12eo5mnsvx2',month,'August').\n"
+    "att('node12eo5mnsvx2',url,'TR02630894165').\n"
+    "att('node12eo5mnsvx3',key,'tr/gte/TR01691291165').\n"
+    "att('node12eo5mnsvx3',mdate,'20020103').\n"
+    "att('node12eo5mnsvx3',title,'Object Data Language Facilities for Multimedia Data Types.').\n"
+    "att('node12eo5mnsvx3',journal,'GTE Laboratories Incorporated').\n"
+    "att('node12eo5mnsvx3',volume,'TR01691291165').\n"
+    "att('node12eo5mnsvx3',year,'1991').\n"
+    "att('node12eo5mnsvx3',ee,'TR01691291165.html').\n"
+    "att('node12eo5mnsvx3',cdrom,'GTE/MANO91a.pdf').\n"
+    "att('node12eo5mnsvx3',author,'Frank Manola').\n"
+    "att('node12eo5mnsvx3',month,'December').\n"
+    "att('node12eo5mnsvx3',url,'TR01691291165').\n";
+
+
+static void run_on_stream(std::istream &fs) {
+  DatabaseFunctors functors;
+  DatabaseLog log;
+  DatabaseStorage storage;
+  Database<DatabaseStorage, DatabaseLog, DatabaseFunctors> db(
+      storage, log, functors);
+  
+  hyde::rt::Vector<DatabaseStorage, hyde::rt::UTF8,
+                   hyde::rt::UTF8, hyde::rt::UTF8> atts(storage);
+  
+  auto num_rows = 0ull;
+  for (std::string line; std::getline(fs, line); line.clear()) {
+    if (line.size() < 12u) {
+      continue;
+    }
+
+    auto first_quote = 4u;
+    auto second_quote = line.find('\'', 5u);
+    auto first_comma = second_quote + 1u;
+    auto second_comma = line.find(',', first_comma + 2u);
+    auto third_quote = second_comma + 1u;
+    auto fourth_quote = line.size() - 4u;
+
+    auto doc_id = line.substr(first_quote + 1u, second_quote - first_quote - 1);
+    auto attr = line.substr(first_comma + 1u, second_comma - first_comma - 1);
+    auto val = line.substr(third_quote + 1u, fourth_quote - third_quote);
+
+    //std::cout << "Parsed doc_id=" << doc_id << " attr=" << attr << " val=" << val << "\n";
+   
+    atts.Add(std::move(doc_id), std::move(attr), std::move(val));
+    ++num_rows;
+  }
+  
+  std::cerr << "Adding " << num_rows << " attributes\n";
+
+  db.att_3(atts);
+  
+  db.answer_fffff([] (const std::string &id, const std::string &title,
+                      const std::string &year, const std::string &author,
+                      const std::string &month) {
+    std::cerr << id << '|' << title << '|' << year << '|' << author << '|'
+              << month << '\n';                   
+    return true;
+  });
+}
+
+int main(int argc, char *argv[]) {
+  if (argc == 2) {
+    std::ifstream fs(argv[1], std::ifstream::in);
+    run_on_stream(fs);
+    return EXIT_SUCCESS;
+  } else if (argc == 1) {
+    std::stringstream ss;
+    ss << kData;
+    run_on_stream(ss);
+    return EXIT_SUCCESS;
+  } else {
+    return EXIT_FAILURE;
+  }
+  
+  return EXIT_SUCCESS;
+}
+```.
+    

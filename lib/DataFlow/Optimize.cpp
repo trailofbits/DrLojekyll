@@ -6,6 +6,8 @@
 
 #include "Query.h"
 
+#include <sstream>
+
 namespace hyde {
 namespace {
 
@@ -15,7 +17,7 @@ using CandidateLists = std::unordered_map<uint64_t, CandidateList>;
 // Perform common subexpression elimination, which will first identify
 // candidate subexpressions for possible elimination using hashing, and
 // then will perform recursive equality checks.
-static bool CSE(CandidateList &all_views) {
+static bool CSE(QueryImpl *impl, CandidateList &all_views) {
   EqualitySet eq;
   CandidateLists candidate_groups;
 
@@ -38,6 +40,8 @@ static bool CSE(CandidateList &all_views) {
     }
     return a;
   };
+
+  impl->RelabelGroupIDs();
 
   for (auto &[hash, candidates] : candidate_groups) {
     (void) hash;
@@ -92,11 +96,19 @@ static bool CSE(CandidateList &all_views) {
 
       eq.Clear();
       if (v1 != v2 && v1->IsUsed() && v2->IsUsed() && v1->Equals(eq, v2)) {
+#ifndef NDEBUG
+        std::stringstream ss;
+        ss << "CSE(" << v2->producer << ", " << v1->producer << ")";
+        ss.str().swap(v2->producer);
+#endif
         v1->ReplaceAllUsesWith(v2);
+        impl->RelabelGroupIDs();
         changed = true;
       }
     }
   }
+
+  impl->ClearGroupIDs();
 
   return changed;
 }
@@ -114,6 +126,14 @@ static void FillViews(T &def_list, CandidateList &views_out) {
 
 }  // namespace
 
+// Clear all group IDs. Sometimes we want to do optimizations that excplicitly
+// don't need to deal with the issues of accidentally over-merging nodes.
+void QueryImpl::ClearGroupIDs(void) {
+  const_cast<const QueryImpl *>(this)->ForEachView([&](VIEW *view) {
+    view->group_ids.clear();
+  });
+}
+
 // Relabel group IDs. This enables us to better optimize SELECTs. Our initial
 // assignment of `group_id`s works well enough to start with, but isn't good
 // enough to help us merge some SELECTs. The key idea is that if a given
@@ -124,7 +144,7 @@ void QueryImpl::RelabelGroupIDs(void) {
   std::vector<COL *> sorted_cols;
 
   unsigned i = 1u;
-  ForEachView([&](VIEW *view) {
+  const_cast<const QueryImpl *>(this)->ForEachView([&](VIEW *view) {
     if (view->is_dead) {
       return;
     }
@@ -146,7 +166,7 @@ void QueryImpl::RelabelGroupIDs(void) {
     }
   });
 
-  ForEachView([&](VIEW *view) {
+  const_cast<const QueryImpl *>(this)->ForEachView([&](VIEW *view) {
     if (view->is_dead) {
       return;
     }
@@ -244,7 +264,7 @@ void QueryImpl::Simplify(const ErrorLog &log) {
   // Start by applying CSE to the SELECTs only. This will improve
   // canonicalization of the initial TUPLEs and other things.
   FillViews(selects, views);
-  CSE(views);
+  CSE(this, views);
 
   OptimizationContext opt;
 
@@ -264,7 +284,6 @@ void QueryImpl::Simplify(const ErrorLog &log) {
   }
 
   RemoveUnusedViews();
-  RelabelGroupIDs();
 }
 
 // Canonicalize the dataflow. This tries to put each node into its current
@@ -289,28 +308,47 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt,
   uint64_t hash_history[kNumHistories] = {};
   auto curr_hash_index = 0u;
 
-  for (auto non_local_changes = true; non_local_changes && iter < max_iters;
-       ++iter) {
-    non_local_changes = false;
+#ifndef NDEBUG
+  auto check_consistency = [=] (VIEW *v) {
+    for (auto c : v->columns) {
+      assert(c->view == v);
+    }
+    for (auto cond : conditions) {
+      assert(cond->UsersAreConsistent());
+      assert(cond->SettersAreConsistent());
+    }
+  };
+#else
+#  define check_consistency(v)
+#endif
 
-    // Running hash of which views produced non-local changes.
-    uint64_t hash = 0u;
+
+  // Running hash of which views produced non-local changes.
+  auto non_local_changes = true;
+  uint64_t hash = 0u;
+
+  // Applied to canonicalize each view.
+  auto on_each_view = [&](VIEW *view) {
+    if (!view->is_dead) {
+      check_consistency(view);
+      const auto ret = view->Canonicalize(this, opt, log);
+      check_consistency(view);
+      if (ret) {
+        hash = RotateRight64(hash, 13) ^ view->Hash();
+        non_local_changes = true;
+      }
+    }
+  };
+
+  for (; non_local_changes && iter < max_iters; ++iter) {
+
+    non_local_changes = false;
+    hash = 0u;
 
     if (opt.bottom_up) {
-      ForEachViewInDepthOrder([&](VIEW *view) {
-        if (view->Canonicalize(this, opt, log)) {
-          hash = RotateRight64(hash, 13) ^ view->Hash();
-          non_local_changes = true;
-        }
-      });
-
+      ForEachViewInDepthOrder(on_each_view);
     } else {
-      ForEachViewInReverseDepthOrder([&](VIEW *view) {
-        if (view->Canonicalize(this, opt, log)) {
-          hash = RotateRight64(hash, 13) ^ view->Hash();
-          non_local_changes = true;
-        }
-      });
+      ForEachViewInReverseDepthOrder(on_each_view);
     }
 
     // Store our running hash into our history of hashes.
@@ -341,7 +379,6 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt,
   }
 
   RemoveUnusedViews();
-  RelabelGroupIDs();
 }
 
 // Sometimes we have a bunch of dumb condition patterns, roughly looking like
@@ -352,83 +389,135 @@ bool QueryImpl::ShrinkConditions(void) {
   std::vector<COND *> conds;
   ForEachView([&](VIEW *view) { view->depth = 0; });
 
-  for (auto cond : conditions) {
+  for (COND *cond : conditions) {
     conds.push_back(cond);
   }
 
-  std::sort(conds.begin(), conds.end(), [](COND *a, COND *b) {
+  std::sort(conds.begin(), conds.end(), +[](COND *a, COND *b) {
     return QueryCondition(a).Depth() < QueryCondition(b).Depth();
   });
 
-  for (auto cond : conds) {
-    if (cond->setters.Size() != 1u) {
-      continue;
-    }
+  std::unordered_map<VIEW *, bool> conditional_views;
+  std::vector<VIEW *> setters;
 
-    VIEW *const setter = cond->setters[0];
-    assert(setter->sets_condition.get() == cond);
-    bool all_constant = true;
-    for (auto in_col : setter->input_columns) {
-      if (!in_col->IsConstant()) {
-        all_constant = false;
-        break;
-      }
-    }
+  for (auto changed = true; changed; ) {
 
-    for (auto in_col : setter->attached_columns) {
-      if (!in_col->IsConstant()) {
-        all_constant = false;
-        break;
-      }
-    }
+    changed = false;
+    conditional_views.clear();
 
-    if (!all_constant) {
-      continue;
-    }
+    for (COND *cond : conds) {
 
-    if (TUPLE *tuple = setter->AsTuple(); tuple) {
-
-      // Keep positive conditions the same
-      for (auto pos_dep_cond : setter->positive_conditions) {
-        assert(pos_dep_cond);
-        for (auto user_view : cond->positive_users) {
-          if (user_view) {
-            user_view->positive_conditions.AddUse(pos_dep_cond);
-            pos_dep_cond->positive_users.AddUse(user_view);
-          }
-        }
-        for (auto user_view : cond->negative_users) {
-          if (user_view) {
-            user_view->negative_conditions.AddUse(pos_dep_cond);
-            pos_dep_cond->negative_users.AddUse(user_view);
-          }
-        }
+      assert(!cond->is_dead);
+      if (cond->setters.Empty()) {
+        continue;
       }
 
-      // Invert the negated conditions.
-      for (auto neg_dep_cond : setter->negative_conditions) {
-        assert(neg_dep_cond);
-        for (auto user_view : cond->positive_users) {
-          if (user_view) {
-            user_view->negative_conditions.AddUse(neg_dep_cond);
-            neg_dep_cond->negative_users.AddUse(user_view);
+      assert(cond->UsersAreConsistent());
+      assert(cond->SettersAreConsistent());
+
+      setters.clear();
+      for (auto setter : cond->setters) {
+        setters.push_back(setter);
+      }
+
+      if (1u < setters.size()) {
+        for (VIEW *setter : setters) {
+
+          // This setter of this condition is not needed.
+          if (!VIEW::IsConditional(setter, conditional_views)) {
+            setter->DropSetConditions();
+            changed = true;
           }
         }
-        for (auto user_view : cond->negative_users) {
-          if (user_view) {
-            user_view->positive_conditions.AddUse(neg_dep_cond);
-            neg_dep_cond->positive_users.AddUse(user_view);
+      } else {
+        VIEW *setter = setters[0];
+        if (!VIEW::IsConditional(setter, conditional_views)) {
+          setter->DropSetConditions();
+          changed = true;
+
+        // This is an annoying but common problem:
+        //
+        //          COND0
+        //           |
+        //      TUPLE 1 testing COND1
+        //                        |
+        //                     COMPARE
+        //
+        // What we'd like to do is identify if we can replace COND0 with COND1.
+        } else if (setter->positive_conditions.Size() == 1u &&
+                   setter->negative_conditions.Empty()) {
+
+          COND *tested_condition = setter->positive_conditions[0];
+          if (tested_condition == cond) {
+            assert(false);  // Cycle?
+            continue;
+          }
+
+          TUPLE *tuple = setter->AsTuple();
+          if (!tuple) {
+            continue;
+          }
+
+          // All inputs to this tuple are constant.
+          if (!VIEW::GetIncomingView(tuple->input_columns)) {
+
+            std::vector<VIEW *> users;
+            for (auto user : cond->positive_users) {
+              users.push_back(user);
+            }
+            for (auto user : cond->negative_users) {
+              users.push_back(user);
+            }
+            for (auto user : users) {
+              auto removed = false;
+              user->positive_conditions.RemoveIf(
+                  [&](COND *c) {
+                    if (c == cond) {
+                      removed = true;
+                      return true;
+                    } else {
+                      return false;
+                    }
+                  });
+
+              if (removed) {
+                tested_condition->positive_users.AddUse(user);
+                user->positive_conditions.AddUse(tested_condition);
+              }
+
+              removed = false;
+              user->negative_conditions.RemoveIf(
+                  [&](COND *c) {
+                    if (c == cond) {
+                      removed = true;
+                      return true;
+                    } else {
+                      return false;
+                    }
+                  });
+
+              if (removed) {
+                tested_condition->negative_users.AddUse(user);
+                user->negative_conditions.AddUse(tested_condition);
+              }
+            }
+
+            cond->positive_users.Clear();
+            cond->negative_users.Clear();
+            setter->DropSetConditions();
+
+            assert(cond->UsersAreConsistent());
+            assert(cond->SettersAreConsistent());
+
+            assert(tested_condition->UsersAreConsistent());
+            assert(tested_condition->SettersAreConsistent());
+            changed = true;
           }
         }
       }
 
-      tuple->sets_condition.Clear();
-      cond->setters.Clear();
-      cond->positive_users.Clear();
-      cond->negative_users.Clear();
-
-    } else if (CMP *cmp = setter->AsCompare(); cmp) {
-      (void) cmp;
+      assert(cond->UsersAreConsistent());
+      assert(cond->SettersAreConsistent());
     }
   }
 
@@ -449,9 +538,8 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     const_cast<const QueryImpl *>(this)->ForEachView(
         [&views](VIEW *view) { views.push_back(view); });
 
-    for (auto max_cse = views.size(); max_cse-- && CSE(views);) {
+    for (auto max_cse = views.size(); max_cse-- && CSE(this, views);) {
       RemoveUnusedViews();
-      RelabelGroupIDs();
       TrackDifferentialUpdates(log, true);
       views.clear();
       const_cast<const QueryImpl *>(this)->ForEachView(
@@ -461,13 +549,19 @@ void QueryImpl::Optimize(const ErrorLog &log) {
 
   auto do_sink = [&](void) {
     OptimizationContext opt;
-    opt.can_sink_unions = true;
     for (auto i = 0u; i < merges.Size(); ++i) {
       MERGE *const merge = merges[i];
       if (!merge->is_dead) {
-        opt.can_sink_unions = true;
+        merge->is_canonical = false;
+        opt.can_sink_unions = false;
         opt.can_remove_unused_columns = false;
         merge->Canonicalize(this, opt, log);
+        if (!merge->is_dead) {
+          merge->is_canonical = false;
+          opt.can_sink_unions = true;
+          opt.can_remove_unused_columns = false;
+          merge->Canonicalize(this, opt, log);
+        }
       }
     }
   };

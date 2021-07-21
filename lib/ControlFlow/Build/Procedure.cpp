@@ -21,6 +21,7 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
   VECTOR *removal_vec = nullptr;
   const auto vec =
       proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
+  vec->added_message.emplace(message);
 
   // Loop over the receives for adding.
   for (auto receive : receives) {
@@ -29,6 +30,7 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
     if (!removal_vec && receive.CanReceiveDeletions()) {
       removal_vec =
           proc->VectorFor(impl, VectorKind::kParameter, receive.Columns());
+      removal_vec->removed_message.emplace(message);
     }
 
     const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
@@ -74,68 +76,6 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
 
     BuildEagerRemovalRegions(impl, receive, context, loop, receive.Successors(),
                              nullptr);
-  }
-}
-
-// Builds an I/O procedure, which goes and invokes the primary data flow
-// procedure.
-static void BuildIOProcedure(ProgramImpl *impl, Query query, QueryIO io,
-                             Context &context, PROC *proc) {
-  const auto receives = io.Receives();
-  if (receives.empty()) {
-    return;
-  }
-
-  assert(io.Declaration().IsMessage());
-  const auto message = ParsedMessage::From(io.Declaration());
-
-  const auto io_proc = impl->procedure_regions.Create(
-      impl->next_id++, ProcedureKind::kMessageHandler);
-  io_proc->io = io;
-
-  const auto io_vec =
-      io_proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
-
-  VECTOR *io_remove_vec = nullptr;
-  if (message.IsDifferential()) {
-    io_remove_vec =
-        io_proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
-  }
-
-  auto seq = impl->series_regions.Create(io_proc);
-  io_proc->body.Emplace(io_proc, seq);
-
-  auto call =
-      impl->operation_regions.CreateDerived<CALL>(impl->next_id++, seq, proc);
-  seq->AddRegion(call);
-
-  auto ret = impl->operation_regions.CreateDerived<RETURN>(
-      seq, ProgramOperation::kReturnTrueFromProcedure);
-  seq->AddRegion(ret);
-
-  for (auto other_io : query.IOs()) {
-    const auto other_receives = other_io.Receives();
-    if (other_receives.empty()) {
-      continue;
-    }
-
-    // Pass in our input vector for additions, and possibly our input vector
-    // for removals.
-    if (io == other_io) {
-      call->arg_vecs.AddUse(io_vec);
-      if (io_remove_vec) {
-        call->arg_vecs.AddUse(io_remove_vec);
-      }
-
-    // Pass in the empty vector once or twice for other messages.
-    } else {
-      const auto empty_vec = io_proc->VectorFor(impl, VectorKind::kEmpty,
-                                                other_receives[0].Columns());
-      call->arg_vecs.AddUse(empty_vec);
-      if (other_receives[0].CanReceiveDeletions()) {
-        call->arg_vecs.AddUse(empty_vec);
-      }
-    }
   }
 }
 
@@ -202,6 +142,229 @@ static void ClassifyVector(VECTOR *vec, REGION *region,
   }
 }
 
+// Create vectors for each published message that is marked as `@differential`.
+// We de-duplicate these, then check that they actually are added/removed (as
+// that can change over the course of some iterations), then publish.
+static void CreateDifferentialMessageVectors(ProgramImpl *impl, Context &context,
+                                      Query query, PROC *proc) {
+  for (auto io : query.IOs()) {
+    const auto transmits = io.Transmits();
+    if (!transmits.empty()) {
+      const auto insert = QueryInsert::From(transmits[0]);
+      assert(insert.IsStream());
+      assert(transmits[0].AllColumnsOfSinglePredecessorAreUsed());
+
+      // In the data flow representation, as a final step, we enforce that every
+      // INSERT is preceded by a TUPLE, and the TUPLE passes exactly the inputs
+      // needed by the INSERT, and only them, and in that order.
+      auto pred = transmits[0].Predecessors()[0];
+      assert(pred.IsTuple());
+
+      const auto message = ParsedMessage::From(io.Declaration());
+      assert(message.IsPublished());
+
+      if (message.IsDifferential()) {
+        context.publish_vecs[message] =
+            proc->VectorFor(impl, VectorKind::kMessageOutputs, pred.Columns());
+        context.published_view.emplace(message, insert);
+      }
+    }
+  }
+}
+
+static void PublishDifferentialMessageVectors(ProgramImpl *impl, PROC *proc,
+                                              Context &context) {
+
+  // Place the body inside of a sequence.
+  const auto seq = impl->series_regions.Create(proc);
+  proc->body->parent = seq;
+  seq->AddRegion(proc->body.get());
+  proc->body.Emplace(proc, seq);
+
+  // The first thing in the sequence will be a PARALLEL region for iterating
+  // over the vectors to publish.
+  const auto iter_par = impl->parallel_regions.Create(seq);
+  seq->AddRegion(iter_par);
+
+  for (auto [message, vec] : context.publish_vecs) {
+    if (!vec) {
+      continue;
+    }
+
+    const auto sub_seq = impl->series_regions.Create(iter_par);
+    iter_par->AddRegion(sub_seq);
+
+    VECTORUNIQUE *const sort =
+        impl->operation_regions.CreateDerived<VECTORUNIQUE>(
+            sub_seq, ProgramOperation::kSortAndUniqueMessageOutputVector);
+    sort->vector.Emplace(sort, vec);
+    sub_seq->AddRegion(sort);
+
+    const QueryView view = context.published_view.find(message)->second;
+    const QueryInsert insert = QueryInsert::From(view);
+
+    // Create the vector loop over the publish vector.
+    VECTORLOOP *const iter = impl->operation_regions.CreateDerived<VECTORLOOP>(
+        impl->next_id++, sub_seq,
+        ProgramOperation::kLoopOverMessageOutputVector);
+    sub_seq->AddRegion(iter);
+    iter->vector.Emplace(iter, vec);
+
+    // Add in variable bindings.
+    std::vector<std::pair<QueryColumn, QueryColumn>> available_cols;
+    for (auto col : insert.InputColumns()) {
+      const auto var = iter->defined_vars.Create(impl->next_id++,
+                                                 VariableRole::kMessageOutput);
+
+      var->query_column = col;
+      if (col.IsConstantOrConstantRef()) {
+        var->query_const = QueryConstant::From(col);
+      }
+
+      iter->col_id_to_var[col.Id()] = var;
+      available_cols.emplace_back(col, col);
+    }
+
+    const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+    TABLE *const table = model->table;
+
+    // Call the top-down checker.
+    PROC *const checker_proc = GetOrCreateTopDownChecker(
+        impl, context, view.Predecessors()[0], available_cols, table);
+
+    // Now call the checker procedure. Unlike in normal checkers, we're doing
+    // a check on `false`.
+    CALL *const check = impl->operation_regions.CreateDerived<CALL>(
+        impl->next_id++, iter, checker_proc);
+    iter->body.Emplace(iter, check);
+
+    for (auto var : iter->defined_vars) {
+      check->arg_vars.AddUse(var);
+    }
+
+    // Now make the publishers for removal / insertion.
+
+    PUBLISH *const publish_add = impl->operation_regions.CreateDerived<PUBLISH>(
+        check, message, impl->next_id++,
+        ProgramOperation::kPublishMessage);
+    check->body.Emplace(check, publish_add);
+
+    PUBLISH *const publish_removal =
+        impl->operation_regions.CreateDerived<PUBLISH>(
+            check, message, impl->next_id++,
+            ProgramOperation::kPublishMessageRemoval);
+    check->false_body.Emplace(check, publish_removal);
+
+    for (auto var : iter->defined_vars) {
+      publish_add->arg_vars.AddUse(var);
+      publish_removal->arg_vars.AddUse(var);
+    }
+
+    // Finally, clear the vector; we're done.
+    VECTORCLEAR *const clear =
+        impl->operation_regions.CreateDerived<VECTORCLEAR>(
+            sub_seq, ProgramOperation::kClearMessageOutputVector);
+    sub_seq->AddRegion(clear);
+    clear->vector.Emplace(clear, vec);
+  }
+
+  // Finally, return from the data flow procedure.
+  seq->AddRegion(impl->operation_regions.CreateDerived<RETURN>(
+      seq, ProgramOperation::kReturnTrueFromProcedure));
+}
+
+static void FixupContainingProcedure(ProgramImpl *impl) {
+  for (auto region : impl->operation_regions) {
+    auto proc = region->Ancestor()->AsProcedure();
+    assert(proc != nullptr);
+    region->containing_procedure = proc;
+  }
+
+  for (auto region : impl->series_regions) {
+    auto proc = region->Ancestor()->AsProcedure();
+    assert(proc != nullptr);
+    region->containing_procedure = proc;
+  }
+
+  for (auto region : impl->parallel_regions) {
+    auto proc = region->Ancestor()->AsProcedure();
+    assert(proc != nullptr);
+    region->containing_procedure = proc;
+  }
+
+  for (auto region : impl->induction_regions) {
+    auto proc = region->Ancestor()->AsProcedure();
+    assert(proc != nullptr);
+    region->containing_procedure = proc;
+  }
+}
+
+}  // namespace
+
+// Builds an I/O procedure, which goes and invokes the entry data flow
+// procedure.
+void BuildIOProcedure(ProgramImpl *impl, Query query, QueryIO io,
+                      Context &context, PROC *proc) {
+  const auto receives = io.Receives();
+  if (receives.empty()) {
+    return;
+  }
+
+  assert(io.Declaration().IsMessage());
+  const auto message = ParsedMessage::From(io.Declaration());
+
+  const auto io_proc = impl->procedure_regions.Create(
+      impl->next_id++, ProcedureKind::kMessageHandler);
+  io_proc->io = io;
+
+  const auto io_vec =
+      io_proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
+  io_vec->added_message.emplace(message);
+
+  VECTOR *io_remove_vec = nullptr;
+  if (message.IsDifferential()) {
+    io_remove_vec =
+        io_proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
+    io_remove_vec->removed_message.emplace(message);
+  }
+
+  auto seq = impl->series_regions.Create(io_proc);
+  io_proc->body.Emplace(io_proc, seq);
+
+  auto call =
+      impl->operation_regions.CreateDerived<CALL>(impl->next_id++, seq, proc);
+  seq->AddRegion(call);
+
+  auto ret = impl->operation_regions.CreateDerived<RETURN>(
+      seq, ProgramOperation::kReturnTrueFromProcedure);
+  seq->AddRegion(ret);
+
+  for (auto other_io : query.IOs()) {
+    const auto other_receives = other_io.Receives();
+    if (other_receives.empty()) {
+      continue;
+    }
+
+    // Pass in our input vector for additions, and possibly our input vector
+    // for removals.
+    if (io == other_io) {
+      call->arg_vecs.AddUse(io_vec);
+      if (io_remove_vec) {
+        call->arg_vecs.AddUse(io_remove_vec);
+      }
+
+    // Pass in the empty vector once or twice for other messages.
+    } else {
+      const auto empty_vec = io_proc->VectorFor(impl, VectorKind::kEmpty,
+                                                other_receives[0].Columns());
+      call->arg_vecs.AddUse(empty_vec);
+      if (other_receives[0].CanReceiveDeletions()) {
+        call->arg_vecs.AddUse(empty_vec);
+      }
+    }
+  }
+}
+
 // From the initial procedure, "extract" the primary procedure. The entry
 // procedure operates on vectors from message receipt, and then does everything.
 // Our goal is to split it up into two procedures:
@@ -212,8 +375,7 @@ static void ClassifyVector(VECTOR *vec, REGION *region,
 //
 //    2) The primary data flow procedure, which takes as input the induction
 //       vectors which do the remainder of the data flow.
-static void ExtractPrimaryProcedure(ProgramImpl *impl, PROC *entry_proc,
-                                    Context &context) {
+void ExtractPrimaryProcedure(ProgramImpl *impl, PROC *entry_proc, Context &) {
   const auto primary_proc = impl->procedure_regions.Create(
       impl->next_id++, ProcedureKind::kPrimaryDataFlowFunc);
 
@@ -322,6 +484,32 @@ static void ExtractPrimaryProcedure(ProgramImpl *impl, PROC *entry_proc,
   // Garbage collect the unneeded vectors from the entry proc.
   entry_proc->vectors.RemoveUnused();
 
+  std::unordered_set<unsigned> needed_vecs;
+  for (VECTOR *vec : primary_params) {
+    needed_vecs.insert(vec->id);
+  }
+
+  // Try to clear out an uneeded vector.
+  auto try_clear_vec = [&] (VECTOR *vec) {
+    if (!needed_vecs.count(vec->id)) {
+      VECTORCLEAR * const clear =
+          impl->operation_regions.CreateDerived<VECTORCLEAR>(
+              entry_seq,
+              ProgramOperation::kClearVectorBeforePrimaryFlowFunction);
+      entry_seq->AddRegion(clear);
+      clear->vector.Emplace(clear, vec);
+    }
+  };
+
+  // Go clear the memory of unneeded vectors prior to calling the primary
+  // dataflow procedure.
+  for (VECTOR *vec : entry_proc->input_vecs) {
+    try_clear_vec(vec);
+  }
+  for (VECTOR *vec : entry_proc->vectors) {
+    try_clear_vec(vec);
+  }
+
   // Call the dataflow proc from the entry proc.
   auto call = impl->operation_regions.CreateDerived<CALL>(
       impl->next_id++, entry_seq, primary_proc,
@@ -335,167 +523,12 @@ static void ExtractPrimaryProcedure(ProgramImpl *impl, PROC *entry_proc,
   // Terminate the entry proc.
   entry_seq->AddRegion(impl->operation_regions.CreateDerived<RETURN>(
       entry_seq, ProgramOperation::kReturnFalseFromProcedure));
+
+  FixupContainingProcedure(impl);
 }
-
-// Create vectors for each published message that is marked as `@differential`.
-// We de-duplicate these, then check that they actually are added/removed (as
-// that can change over the course of some iterations), then publish.
-void CreateDifferentialMessageVectors(ProgramImpl *impl, Context &context,
-                                      Query query, PROC *proc) {
-  for (auto io : query.IOs()) {
-    const auto transmits = io.Transmits();
-    if (!transmits.empty()) {
-      const auto insert = QueryInsert::From(transmits[0]);
-      assert(insert.IsStream());
-      assert(transmits[0].AllColumnsOfSinglePredecessorAreUsed());
-
-      // In the data flow representation, as a final step, we enforce that every
-      // INSERT is preceded by a TUPLE, and the TUPLE passes exactly the inputs
-      // needed by the INSERT, and only them, and in that order.
-      auto pred = transmits[0].Predecessors()[0];
-      assert(pred.IsTuple());
-
-      const auto message = ParsedMessage::From(io.Declaration());
-      assert(message.IsPublished());
-
-      if (message.IsDifferential()) {
-        context.publish_vecs[message] =
-            proc->VectorFor(impl, VectorKind::kMessageOutputs, pred.Columns());
-        context.published_view.emplace(message, insert);
-      }
-    }
-  }
-}
-
-static void PublishDifferentialMessageVectors(ProgramImpl *impl, PROC *proc,
-                                              Context &context) {
-
-  // Place the body inside of a sequence.
-  const auto seq = impl->series_regions.Create(proc);
-  proc->body->parent = seq;
-  seq->AddRegion(proc->body.get());
-  proc->body.Emplace(proc, seq);
-
-  // The first thing in the sequence will be a PARALLEL region for iterating
-  // over the vectors to publish.
-  const auto iter_par = impl->parallel_regions.Create(seq);
-  seq->AddRegion(iter_par);
-
-  for (auto [message, vec] : context.publish_vecs) {
-    if (!vec) {
-      continue;
-    }
-
-    const auto sub_seq = impl->series_regions.Create(iter_par);
-    iter_par->AddRegion(sub_seq);
-
-    VECTORUNIQUE *const sort =
-        impl->operation_regions.CreateDerived<VECTORUNIQUE>(
-            sub_seq, ProgramOperation::kSortAndUniqueMessageOutputVector);
-    sort->vector.Emplace(sort, vec);
-    sub_seq->AddRegion(sort);
-
-    const QueryView view = context.published_view.find(message)->second;
-    const QueryInsert insert = QueryInsert::From(view);
-
-    // Create the vector loop over the publish vector.
-    VECTORLOOP *const iter = impl->operation_regions.CreateDerived<VECTORLOOP>(
-        impl->next_id++, sub_seq,
-        ProgramOperation::kLoopOverMessageOutputVector);
-    sub_seq->AddRegion(iter);
-    iter->vector.Emplace(iter, vec);
-
-    // Add in variable bindings.
-    std::vector<std::pair<QueryColumn, QueryColumn>> available_cols;
-    for (auto col : insert.InputColumns()) {
-      const auto var = iter->defined_vars.Create(impl->next_id++,
-                                                 VariableRole::kMessageOutput);
-
-      var->query_column = col;
-      if (col.IsConstantOrConstantRef()) {
-        var->query_const = QueryConstant::From(col);
-      }
-
-      iter->col_id_to_var[col.Id()] = var;
-      available_cols.emplace_back(col, col);
-    }
-
-    const auto model = impl->view_to_model[view]->FindAs<DataModel>();
-    TABLE *const table = model->table;
-
-    // Call the top-down checker.
-    PROC *const checker_proc = GetOrCreateTopDownChecker(
-        impl, context, view.Predecessors()[0], available_cols, table);
-
-    // Now call the checker procedure. Unlike in normal checkers, we're doing
-    // a check on `false`.
-    CALL *const check = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, iter, checker_proc);
-    iter->body.Emplace(iter, check);
-
-    for (auto var : iter->defined_vars) {
-      check->arg_vars.AddUse(var);
-    }
-
-    // Now make the publishers for removal / insertion.
-
-    PUBLISH *const publish_add = impl->operation_regions.CreateDerived<PUBLISH>(
-        check, message, ProgramOperation::kPublishMessage);
-    check->body.Emplace(check, publish_add);
-
-    PUBLISH *const publish_removal =
-        impl->operation_regions.CreateDerived<PUBLISH>(
-            check, message, ProgramOperation::kPublishMessageRemoval);
-    check->false_body.Emplace(check, publish_removal);
-
-    for (auto var : iter->defined_vars) {
-      publish_add->arg_vars.AddUse(var);
-      publish_removal->arg_vars.AddUse(var);
-    }
-
-    // Finally, clear the vector; we're done.
-    VECTORCLEAR *const clear =
-        impl->operation_regions.CreateDerived<VECTORCLEAR>(
-            sub_seq, ProgramOperation::kClearMessageOutputVector);
-    sub_seq->AddRegion(clear);
-    clear->vector.Emplace(clear, vec);
-  }
-
-  // Finally, return from the data flow procedure.
-  seq->AddRegion(impl->operation_regions.CreateDerived<RETURN>(
-      seq, ProgramOperation::kReturnTrueFromProcedure));
-}
-
-static void FixupContainingProcedure(ProgramImpl *impl) {
-  for (auto region : impl->operation_regions) {
-    auto proc = region->Ancestor()->AsProcedure();
-    assert(proc != nullptr);
-    region->containing_procedure = proc;
-  }
-
-  for (auto region : impl->series_regions) {
-    auto proc = region->Ancestor()->AsProcedure();
-    assert(proc != nullptr);
-    region->containing_procedure = proc;
-  }
-
-  for (auto region : impl->parallel_regions) {
-    auto proc = region->Ancestor()->AsProcedure();
-    assert(proc != nullptr);
-    region->containing_procedure = proc;
-  }
-
-  for (auto region : impl->induction_regions) {
-    auto proc = region->Ancestor()->AsProcedure();
-    assert(proc != nullptr);
-    region->containing_procedure = proc;
-  }
-}
-
-}  // namespace
 
 // Build the primary and entry data flow procedures.
-void BuildEagerProcedure(ProgramImpl *impl, Context &context, Query query) {
+PROC *BuildEntryProcedure(ProgramImpl *impl, Context &context, Query query) {
 
   assert(context.work_list.empty());
   assert(context.view_to_join_action.empty());
@@ -612,13 +645,7 @@ void BuildEagerProcedure(ProgramImpl *impl, Context &context, Query query) {
   // NOTE(pag): This adds in a `return-true` to `proc`.
   PublishDifferentialMessageVectors(impl, proc, context);
 
-  ExtractPrimaryProcedure(impl, proc, context);
-
-  for (auto io : query.IOs()) {
-    BuildIOProcedure(impl, query, io, context, proc);
-  }
-
-  FixupContainingProcedure(impl);
+  return proc;
 }
 
 }  // namespace hyde

@@ -72,9 +72,6 @@ std::string_view TypeName(ParsedModule module, TypeLoc kind) {
     case TypeKind::kFloat:
     case TypeKind::kDouble: return "float";
     case TypeKind::kBytes: return "bytes";
-    case TypeKind::kASCII:
-    case TypeKind::kUTF8:
-    case TypeKind::kUUID: return "str";
     case TypeKind::kForeignType:
       if (auto type = module.ForeignType(kind); type) {
         return TypeName(*type);
@@ -139,9 +136,6 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
       suffix = ")";
       break;
     case TypeKind::kBytes: prefix = "b"; break;
-    case TypeKind::kASCII:
-    case TypeKind::kUTF8:
-    case TypeKind::kUUID: break;
     case TypeKind::kForeignType:
       if (auto type = module.ForeignType(loc); type) {
         if (auto constructor = type->Constructor(Language::kPython);

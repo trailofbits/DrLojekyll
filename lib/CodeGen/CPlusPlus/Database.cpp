@@ -19,152 +19,199 @@ namespace hyde {
 namespace cxx {
 namespace {
 
-static OutputStream &Functor(OutputStream &os, const ParsedFunctor func) {
-  return os << "functors." << func.Name() << '_'
-            << ParsedDeclaration(func).BindingPattern();
-}
-
-static OutputStream &Table(OutputStream &os, const DataTable table) {
-  return os << "table_" << table.Id();
-}
-
-static OutputStream &TableIndex(OutputStream &os, const DataIndex index) {
-  return os << "index_" << index.Id();
-}
-
-static OutputStream &Vector(OutputStream &os, const DataVector vec) {
-  return os << "vec_" << vec.Id();
-}
-
-// Declare Table Descriptors that contain additional metadata about
+// Declare Table Descriptors that contain additional metadata about columns,
+// indexes, and tables. The output of this code looks roughly like this:
+//
+//      template <>
+//      struct ColumnDescriptor<12> {
+//        static constexpr bool kIsNamed = false;
+//        static constexpr unsigned kId = 12;
+//        static constexpr unsigned kTableId = 10;
+//        static constexpr unsigned kOffset = 1;
+//        using Type = uint64_t;
+//      };
+//      template <>
+//      struct IndexDescriptor<141> {
+//        static constexpr unsigned kId = 141;
+//        static constexpr unsigned kTableId = 10;
+//        using Columns = TypeList<KeyColumn<11>, ValueColumn<12>>;
+//        using KeyColumnIds = IdList<11>;
+//        using ValueColumnIds = IdList<12>;
+//      };
+//      template <>
+//      struct TableDescriptor<10> {
+//        using ColumnIds = IdList<11, 12>;
+//        using IndexIds = IdList<141>;
+//        static constexpr unsigned kNumColumns = 2;
+//      };
+//
+// We use the IDs of columns/indices/tables in place of type names so that we
+// can have circular references.
 static void DeclareDescriptors(OutputStream &os, Program program,
                                ParsedModule module) {
 
   // Table and column descriptors
+  os << "namespace hyde::rt {\n";
   for (auto table : program.Tables()) {
-    os << "struct table_desc_" << table.Id() << " {};\n";
     for (auto col : table.Columns()) {
-      os << "struct column_desc_" << table.Id() << "_" << col.Index() << " {\n";
+      os << os.Indent() << "template <>\n"
+         << os.Indent() << "struct ColumnDescriptor<" << col.Id() << "> {\n";
       os.PushIndent();
+      os << os.Indent() << "static constexpr bool kIsNamed = false;\n"
+         << os.Indent() << "static constexpr unsigned kId = " << col.Id()
+         << ";\n"
+         << os.Indent() << "static constexpr unsigned kTableId = " << table.Id()
+         << ";\n"
+         << os.Indent() << "static constexpr unsigned kOffset = " << col.Index()
+         << ";\n"
+         << os.Indent() << "using Type = ";
 
-      // NOTE(ekilmer): Will want to fill this programmatically someday
-      os << os.Indent() << "static constexpr bool kIsNamed = false;\n";
-      os << os.Indent() << "using type = " << TypeName(module, col.Type())
-         << ";\n";
+      TypeLoc col_type(col.Type());
+      if (col_type.IsReferentiallyTransparent(module, Language::kCxx)) {
+        os << TypeName(module, col_type);
+      } else {
+        os << "::hyde::rt::InternRef<" << TypeName(module, col_type) << ">";
+      }
+
+      os   << ";\n";
       os.PopIndent();
-      os << "};\n";
+      os << os.Indent() << "};\n";
     }
-    os << "\n";
-  }
-  os << "\n";
-}
 
-// Print out the type of an index. Specify whether this is being used for an index or within a table type
-static OutputStream &IndexTypeDecl(OutputStream &os, const DataTable table,
-                                   const DataIndex index) {
-  const auto key_cols = index.KeyColumns();
-  const auto val_cols = index.ValueColumns();
+    auto sep = "";
 
-  //  // The index can be implemented with the keys in the Table.
-  //  // In this case, the index lookup will be like an `if ... in ...`.
-  //  if (key_cols.size() == cols.size()) {
-  //    assert(val_cols.empty());
-  //
-  //    // Implement this index as a reference to the Table
-  //    return os << "decltype(" << Table(os, table) << ") & "
-  //              << TableIndex(os, index) << " = " << Table(os, table) << ";\n";
-  //  }
 
-  os << "::hyde::rt::Index<StorageT, table_desc_" << table.Id() << ", "
-     << index.Id() << ", ::hyde::rt::TypeList<";
-
-  // In C++ codegen, the Index knows which columns are keys/values, but they
-  // need to be ordered as they were in the table
-  auto key_col_iter = key_cols.begin();
-  auto val_col_iter = val_cols.begin();
-
-  // Assumes keys and values are sorted by index within their respective lists
-
-  auto type_sep = "";
-  while (key_col_iter != key_cols.end() || val_col_iter != val_cols.end()) {
-    os << type_sep;
-    if (val_col_iter == val_cols.end() ||
-        (key_col_iter != key_cols.end() &&
-         (*key_col_iter).Index() < (*val_col_iter).Index())) {
-      os << "::hyde::rt::Key<column_desc_" << table.Id() << "_"
-         << (*key_col_iter).Index() << ">";
-      key_col_iter++;
-    } else {
-      os << "::hyde::rt::Value<column_desc_" << table.Id() << "_"
-         << (*val_col_iter).Index() << ">";
-      val_col_iter++;
+    std::vector<DataIndex> indexes;
+    for (DataIndex index : table.Indices()) {
+      indexes.push_back(index);
     }
-    type_sep = ", ";
-  }
 
-  os << ">, ::hyde::rt::TypeList<";
-  type_sep = "";
-  for (auto key_col : key_cols) {
-    os << type_sep << "column_desc_" << table.Id() << '_' << key_col.Index();
-    type_sep = ", ";
-  }
+    std::sort(indexes.begin(), indexes.end(),
+              [] (DataIndex a, DataIndex b) {
+                return a.ValueColumns().size() < b.ValueColumns().size();
+              });
 
-  os << ">, ::hyde::rt::TypeList<";
-  type_sep = "";
-  for (auto val_col : val_cols) {
-    os << type_sep << "column_desc_" << table.Id() << '_' << val_col.Index();
-    type_sep = ", ";
-  }
+    unsigned i = 0u;
+    for (auto index : indexes) {
 
-  os << ">>";
-  return os;
-}
+      const auto key_cols = index.KeyColumns();
+      const auto val_cols = index.ValueColumns();
 
-// Declare a structure containing the information about a table.
-static void DeclareTable(OutputStream &os, ParsedModule module,
-                         DataTable table) {
+      os << os.Indent() << "template <>\n"
+         << os.Indent() << "struct IndexDescriptor<" << index.Id() << "> {\n";
+      os.PushIndent();
+      os << os.Indent() << "static constexpr unsigned kId = " << index.Id()
+         << ";\n"
+         << os.Indent() << "static constexpr unsigned kTableId = " << table.Id()
+         << ";\n"
+         << os.Indent() << "static constexpr unsigned kOffset = "
+         << (i++) << ";\n"
+         << os.Indent() << "static constexpr unsigned kNumKeyColumns = "
+         << key_cols.size() << ";\n"
+         << os.Indent() << "static constexpr unsigned kNumValueColumns = "
+         << val_cols.size() << ";\n"
+         << os.Indent() << "static constexpr bool kCoversAllColumns = "
+         << (0 == val_cols.size() ? "true" : "false") << ";\n"
+         << os.Indent() << "using Columns = TypeList<";
 
-  for (auto index : table.Indices()) {
-    if (!index.ValueColumns().empty()) {
-      os << os.Indent() << "using Index" << index.Id() << " = "
-         << IndexTypeDecl(os, table, index) << ";\n";
+      // In C++ codegen, the Index knows which columns are keys/values, but they
+      // need to be ordered as they were in the table
+      auto key_col_iter = key_cols.begin();
+      auto val_col_iter = val_cols.begin();
+
+      // Assumes keys and values are sorted by index within their respective lists
+
+      sep = "";
+      while (key_col_iter != key_cols.end() || val_col_iter != val_cols.end()) {
+        os << sep;
+        if (val_col_iter == val_cols.end() ||
+            (key_col_iter != key_cols.end() &&
+             (*key_col_iter).Index() < (*val_col_iter).Index())) {
+          os << "KeyColumn<" << (*key_col_iter).Id() << ">";
+          key_col_iter++;
+        } else {
+          os << "ValueColumn<" << (*val_col_iter).Id() << ">";
+          val_col_iter++;
+        }
+        sep = ", ";
+      }
+
+      os << ">;\n" << os.Indent() << "using KeyColumnIds = IdList<";
+      sep = "";
+      for (auto key_col : key_cols) {
+        os << sep << key_col.Id();
+        sep = ", ";
+      }
+
+      os << ">;\n" << os.Indent() << "using ValueColumnIds = IdList<";
+      sep = "";
+      for (auto val_col : val_cols) {
+        os << sep << val_col.Id();
+        sep = ", ";
+      }
+
+      os << ">;\n"
+         << os.Indent() << "using KeyColumnOffsets = IdList<";
+      sep = "";
+      for (auto key_col : key_cols) {
+        os << sep << key_col.Index();
+        sep = ", ";
+      }
+      os << ">;\n"
+          << os.Indent() << "using ValueColumnOffsets = IdList<";
+       sep = "";
+       for (auto val_col : val_cols) {
+         os << sep << val_col.Index();
+         sep = ", ";
+       }
+       os << ">;\n";
+      os.PopIndent();
+      os << os.Indent() << "};\n";
     }
-  }
 
-  os << os.Indent() << "::hyde::rt::Table<StorageT, table_desc_" << table.Id()
-     << ", hyde::rt::TypeList<";
+    os << os.Indent() << "template <>\n"
+       << os.Indent() << "struct TableDescriptor<" << table.Id() << "> {\n";
+    os.PushIndent();
 
-  const auto cols = table.Columns();
+    // Does this table have an index that fully covers it?
+    os << os.Indent() << "static constexpr bool kHasCoveringIndex = ";
+    for (auto index : table.Indices()) {
+      if (index.ValueColumns().empty()) {
+        os << "true;\n";
+        goto print_rest;
+      }
+    }
+    os << "false;\n";
 
-  // List index types first
-  auto sep = "";
-  for (auto index : table.Indices()) {
-    if (!index.ValueColumns().empty()) {
-
-      // The index can be implemented with the keys in the Table.
-      // In this case, the index lookup will be like an `if ... in ...`.
-      os << sep << "Index" << index.Id();
+  print_rest:
+    os << os.Indent() << "using ColumnIds = IdList<";
+    sep = "";
+    for (auto col : table.Columns()) {
+      os << sep << col.Id();
       sep = ", ";
     }
-  }
+    os << ">;\n" << os.Indent() << "using IndexIds = IdList<";
+    sep = "";
 
-  // Then column types
-  sep = ">, hyde::rt::TypeList<";
-  for (auto col : cols) {
-    os << sep << "column_desc_" << table.Id() << '_' << col.Index();
-    sep = ", ";
-  }
-  os << ">> " << Table(os, table) << ";\n";
-
-  // We represent indices as mappings to vectors so that we can concurrently
-  // write to them while iterating over them (via an index and length check).
-  for (auto index : table.Indices()) {
-    if (!index.ValueColumns().empty()) {
-      os << os.Indent() << "Index" << index.Id() << " " << TableIndex(os, index)
-         << ";\n";
+    // Print out the indexes in order of the number of decreasing number of
+    // key columns. Thus, if there's an index over all columns, then it appears
+    // first.
+    for (auto index : indexes) {
+      os << sep << index.Id();
+      sep = ", ";
     }
+    os << ">;\n"
+        << os.Indent() << "static constexpr unsigned kFirstIndexId = "
+        << indexes[0].Id() << ";\n"
+        << os.Indent() << "static constexpr unsigned kNumColumns = "
+        << table.Columns().size() << ";\n";
+
+    os.PopIndent();
+    os << "};\n";
+
+    os << "\n";
   }
-  os << "\n";
+  os << "}  // namepace hyde::rt\n\n";
 }
 
 static void DefineGlobal(OutputStream &os, ParsedModule module,
@@ -172,10 +219,53 @@ static void DefineGlobal(OutputStream &os, ParsedModule module,
   auto type = global.Type();
   os << os.Indent();
   if (global.IsConstant()) {
-    os << "static constexpr ";
+    switch (global.Type().Kind()) {
+      case TypeKind::kBoolean:
+      case TypeKind::kSigned8:
+      case TypeKind::kSigned16:
+      case TypeKind::kSigned32:
+      case TypeKind::kSigned64:
+      case TypeKind::kUnsigned8:
+      case TypeKind::kUnsigned16:
+      case TypeKind::kUnsigned32:
+      case TypeKind::kUnsigned64:
+      case TypeKind::kDouble:
+      case TypeKind::kFloat:
+        os << "static constexpr ";
+        break;
+      default:
+        os << "static const ";
+        break;
+    }
   }
-  os << TypeName(module, type) << " ";
-  os << Var(os, global) << ";\n";
+  os << TypeName(module, type) << " " << Var(os, global) << ";\n";
+}
+
+static bool CanInlineDefineConstant(DataVariable global) {
+  switch (global.DefiningRole()) {
+    case VariableRole::kConstantZero:
+    case VariableRole::kConstantOne:
+    case VariableRole::kConstantFalse:
+    case VariableRole::kConstantTrue: return true;
+    default: break;
+  }
+
+  switch (auto type = global.Type(); type.Kind()) {
+    case TypeKind::kBoolean:
+    case TypeKind::kSigned8:
+    case TypeKind::kSigned16:
+    case TypeKind::kSigned32:
+    case TypeKind::kSigned64:
+    case TypeKind::kUnsigned8:
+    case TypeKind::kUnsigned16:
+    case TypeKind::kUnsigned32:
+    case TypeKind::kUnsigned64:
+    case TypeKind::kDouble:
+    case TypeKind::kFloat:
+      return true;
+    default:
+      return false;
+  }
 }
 
 // Similar to DefineGlobal except has constexpr to enforce const-ness
@@ -189,9 +279,15 @@ static void DefineConstant(OutputStream &os, ParsedModule module,
     default: break;
   }
   auto type = global.Type();
-  os << os.Indent() << "static constexpr " << TypeName(module, type) << " "
-     << Var(os, global) << " = " << TypeName(module, type)
-     << TypeValueOrDefault(module, type, global) << ";\n";
+  if (CanInlineDefineConstant(global)) {
+    os << os.Indent() << "static constexpr " << TypeName(module, type) << " "
+       << Var(os, global) << " = " << TypeName(module, type)
+       << TypeValueOrDefault(module, type, global) << ";\n";
+
+  } else {
+    os << os.Indent() << "const " << TypeName(module, type) << " "
+       << Var(os, global) << ";\n";
+  }
 }
 //
 //// We want to enable referential transparency in the code, so that if an Nth
@@ -260,7 +356,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     // Pass in the vector parameters, or the references to the vectors.
     for (auto vec : region.VectorArguments()) {
-      os << sep << Vector(os, vec);
+      os << sep << "std::move(" << Vector(os, vec) << ")";
       sep = ", ";
     }
 
@@ -511,6 +607,9 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
     os.PushIndent();
 
+    os << os.Indent() << "DumpStats();\n"
+       << os.Indent() << "if constexpr (false) {\n";
+    os.PushIndent();
     os << os.Indent() << "fprintf(stderr, \"";
 
     sep = "";
@@ -524,6 +623,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       sep = ", ";
     }
     os << ");\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n\n";
 
     region.FixpointLoop().Accept(*this);
 
@@ -559,18 +660,23 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
   }
 
   // Should never be reached; defined below.
-  void Visit(ProgramProcedure region) override {
+  void Visit(ProgramProcedure) override {
     assert(false);
   }
 
   void Visit(ProgramPublishRegion region) override {
     os << Comment(os, region, "ProgramPublishRegion");
     auto message = region.Message();
+
     os << os.Indent() << "log." << message.Name() << '_' << message.Arity();
 
     auto sep = "(";
     for (auto var : region.VariableArguments()) {
-      os << sep << Var(os, var);
+      if (var.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+        os << sep << Var(os, var);
+      } else {
+        os << sep << "*" << Var(os, var);
+      }
       sep = ", ";
     }
 
@@ -633,7 +739,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       os << sep << Var(os, var);
       sep = ", ";
     }
-    // Need to differentiate between our SerializedVector and regular
+    // Need to differentiate between our Vector and regular
     os << "] : " << Vector(os, vec) << ") {\n";
 
     os.PushIndent();
@@ -751,6 +857,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       return;
     }
 
+    const auto id = region.Id();
+
     os << Comment(os, region, "ProgramTableJoinRegion");
 
     // Nested loop join
@@ -770,73 +878,49 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os.PushIndent();
 
     auto tables = region.Tables();
+
+    // First, build the scans.
     for (auto i = 0u; i < tables.size(); ++i) {
+      auto maybe_index = region.Index(i);
+      assert(maybe_index.has_value());
+
       const auto table = tables[i];
-      const auto index = region.Index(i);
+      const auto index = *maybe_index;
       const auto index_keys = index.KeyColumns();
-      const auto index_vals = index.ValueColumns();
 
-      // The index is a set of key column values/tuples.
-      if (index_vals.empty()) {
-        os << os.Indent() << "if (" << Table(os, table) << ".GetState(";
+      os << os.Indent() << "::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<"
+         << index.Id() << ">> scan_" << id << '_' << i << "(storage, "
+         << Table(os, table);
 
-        // Print out key columns
-        auto key_columns = [&]() {
-          sep = "";
-          for (auto index_col : index_keys) {
-            auto j = 0u;
-            for (auto used_col : region.IndexedColumns(i)) {
-              if (used_col == index_col) {
-                os << sep << var_names[j];
-                sep = ", ";
-              }
-              ++j;
-            }
+      for (auto index_col : index_keys) {
+        auto j = 0u;
+        for (auto used_col : region.IndexedColumns(i)) {
+          if (used_col == index_col) {
+            os << ", " << var_names[j];
           }
-        };
-
-        key_columns();
-        os << ") != ::hyde::rt::TupleState::kAbsent) {\n";
-
-        // We increase indentation here, and the corresponding `PopIndent()`
-        // only comes *after* visiting the `region.Body()`.
-        os.PushIndent();
-
-        // Should have no output variables
-        assert(region.OutputVariables(i).empty());
-
-      // The index is a default dict mapping key columns to a list of value
-      // columns/tuples.
-      } else {
-
-        auto out_vars = region.OutputVariables(i);
-        assert(out_vars.size() == region.SelectedColumns(i).size());
-        os << os.Indent() << "for (auto [";
-        sep = "";
-        for (auto var : out_vars) {
-          os << sep << Var(os, var);
-          sep = ", ";
+          ++j;
         }
-
-        os << "] : " << TableIndex(os, index) << ".Get(";
-        sep = "";
-        for (auto index_col : index_keys) {
-          auto j = 0u;
-          for (auto used_col : region.IndexedColumns(i)) {
-            if (used_col == index_col) {
-              os << sep << var_names[j];
-              sep = ", ";
-            }
-            ++j;
-          }
-        }
-
-        os << ")) {\n";
-
-        // We increase indentation here, and the corresponding `PopIndent()`
-        // only comes *after* visiting the `region.Body()`.
-        os.PushIndent();
       }
+
+      os << ");\n";
+    }
+
+    // Now, iterate over the scans over the tables where we do use an index.
+    for (auto i = 0u; i < tables.size(); ++i) {
+      auto out_vars = region.OutputVariables(i);
+      assert(out_vars.size() == region.SelectedColumns(i).size());
+      os << os.Indent() << "for (auto [";
+      sep = "";
+      for (auto var : out_vars) {
+        os << sep << Var(os, var);
+        sep = ", ";
+      }
+
+      os << "] : scan_" << id << '_' << i << ") {\n";
+
+      // We increase indentation here, and the corresponding `PopIndent()`
+      // only comes *after* visiting the `region.Body()`.
+      os.PushIndent();
     }
 
     body->Accept(*this);
@@ -869,7 +953,12 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     for (auto table : region.Tables()) {
       (void) table;
       for (auto var : region.OutputVariables(i++)) {
-        os << ", " << TypeName(module, var.Type());
+        if (var.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+          os << ", " << TypeName(module, var.Type());
+        } else {
+          os << ", ::hyde::rt::InternRef<" << TypeName(module, var.Type())
+             << ">";
+        }
       }
     }
 
@@ -946,12 +1035,12 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       os << ");\n";
 
       // De-dent everything.
-      for (auto outer_vec : region.Tables()) {
+      for (auto table : region.Tables()) {
         os.PopIndent();
         os << os.Indent() << "}\n";
         assert(0u < indents);
         indents--;
-        (void) outer_vec;
+        (void) table;
       }
     }
 
@@ -975,62 +1064,41 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
   void Visit(ProgramTableScanRegion region) override {
     os << Comment(os, region, "ProgramTableScanRegion");
-
-    const auto input_vars = region.InputVariables();
-    const auto filled_vec = region.FilledVector();
-
-    // Index scan :-D
-    if (auto maybe_index = region.Index(); maybe_index) {
-      const auto index = *maybe_index;
-
-      os << os.Indent() << "auto scan_tuple_" << filled_vec.Id()
-         << "_vec = " << TableIndex(os, index) << ".Get(";
-      auto sep = "";
-      for (auto var : input_vars) {
-        os << sep << Var(os, var);
-        sep = ", ";
-      }
-      os << ");\n";
-
-      os << os.Indent() << "for (auto [";
-      sep = "";
-      for (auto var : index.ValueColumns()) {
-        os << sep << "scan_tuple_" << filled_vec.Id() << "_" << var.Id();
-        sep = ", ";
-      }
-      os << "] : scan_tuple_" << filled_vec.Id() << "_vec) {\n";
-      os.PushIndent();
-      os << os.Indent() << Vector(os, filled_vec) << ".Add(";
-      sep = "";
-      for (auto var : index.ValueColumns()) {
-        os << sep << "scan_tuple_" << filled_vec.Id() << "_" << var.Id();
-        sep = ", ";
-      }
-      os << ");\n";
-
-    // Full table scan.
-    } else {
-      assert(input_vars.empty());
-      os << os.Indent() << "for (auto [";
-      auto sep = "";
-
-      auto table = region.Table();
-      for (auto i = 0u; i < table.Columns().size(); i++) {
-        os << sep << "scan_var_" << filled_vec.Id() << "_" << i;
-        sep = ", ";
-      }
-
-      os << "] : " << Table(os, region.Table()) << ".Keys()) {\n";
-      os.PushIndent();
-      os << os.Indent() << Vector(os, filled_vec) << ".Add(";
-      sep = "";
-      for (unsigned int i = 0; i < table.Columns().size(); i++) {
-        os << sep << "scan_var_" << filled_vec.Id() << "_" << i;
-        sep = ", ";
-      }
-      os << ");\n";
+    const auto body = region.Body();
+    if (!body) {
+      return;
     }
 
+    const auto id = region.Id();
+    const auto table = region.Table();
+    const auto input_vars = region.InputVariables();
+    os << os.Indent() << "{\n";
+    os.PushIndent();
+    os << os.Indent() << "::hyde::rt::Scan<StorageT, ::hyde::rt::";
+    if (auto maybe_index = region.Index(); maybe_index) {
+      os << "IndexTag<" << maybe_index->Id() << ">";
+    } else {
+      os << "TableTag<" << table.Id() << ">";
+    }
+
+    os << "> scan_" << id << "(storage, " << Table(os, table);
+    for (auto var : input_vars) {
+      os << ", " << Var(os, var);
+    }
+    os << ");\n";
+
+    os << os.Indent() << "for (auto [";
+    auto sep = "";
+    for (auto var : region.OutputVariables()) {
+      os << sep << Var(os, var);
+      sep = ", ";
+    }
+    os << "] : scan_" << id << ") {\n";
+
+    os.PushIndent();
+    body->Accept(*this);
+    os.PopIndent();
+    os << os.Indent() << "}\n";
     os.PopIndent();
     os << os.Indent() << "}\n";
   }
@@ -1195,27 +1263,23 @@ static void DeclareFunctors(OutputStream &os, Program program,
 }
 
 static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
-                                 ParsedMessage message, const char *impl,
-                                 bool interface = false) {
-  os << os.Indent();
-  os << "void " << message.Name() << "_" << message.Arity() << "(";
+                                 ParsedMessage message) {
+  os << os.Indent() << "void " << message.Name() << "_" << message.Arity()
+     << "(";
 
   auto sep = "";
   for (auto param : message.Parameters()) {
-    os << sep << TypeName(module, param.Type()) << " " << param.Name();
+    os << sep;
+    if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+      os << TypeName(module, param.Type()) << " p";
+    } else {
+      os << "const " << TypeName(module, param.Type()) << " &p";
+    }
+    os << param.Index() << " /* " << param.Name() << " */";
     sep = ", ";
   }
 
-  os << ", bool added) ";
-  if (interface) {
-    os << " {}\n\n";
-  } else {
-    os << " {\n";
-    os.PushIndent();
-    os << os.Indent() << impl << "\n";
-    os.PopIndent();
-    os << os.Indent() << "}\n\n";
-  }
+  os << sep << "bool added) {}\n";
 }
 
 static void DeclareMessageLog(OutputStream &os, Program program,
@@ -1227,7 +1291,7 @@ static void DeclareMessageLog(OutputStream &os, Program program,
 
   for (auto message : Messages(root_module)) {
     if (message.IsPublished()) {
-      DeclareMessageLogger(os, root_module, message, "{}");
+      DeclareMessageLogger(os, root_module, message);
     }
   }
 
@@ -1250,30 +1314,35 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   // First, declare all vector parameters.
   auto sep = "";
   for (auto vec : vec_params) {
-    os << sep;
-    auto vec_kind = vec.Kind();
-    if (vec_kind == VectorKind::kParameter) {
-      os << "const ";
-    }
-    if (proc.Kind() == ProcedureKind::kMessageHandler ||
-        proc.Kind() == ProcedureKind::kEntryDataFlowFunc) {
-      os << "::hyde::rt::SerializedVector<StorageT";
-    } else {
-      os << "::hyde::rt::Vector<StorageT";
-    }
+    os << sep << "::hyde::rt::Vector<StorageT";
     const auto &col_types = vec.ColumnTypes();
     for (auto type : col_types) {
-      os << ", " << TypeName(module, type);
+      auto type_loc = TypeLoc(type);
+      if (type_loc.IsReferentiallyTransparent(module, Language::kCxx)) {
+        os << ", " << TypeName(module, type);
+      } else {
+        os << ", ::hyde::rt::InternRef<" << TypeName(module, type) << ">";
+      }
     }
-    os << "> & ";
+    os << "> ";
 
+    if (proc.Kind() != ProcedureKind::kMessageHandler &&
+        proc.Kind() != ProcedureKind::kEntryDataFlowFunc &&
+        proc.Kind() != ProcedureKind::kPrimaryDataFlowFunc) {
+      os << '&';
+    }
     os << Vector(os, vec);
     sep = ", ";
   }
 
   // Then, declare all variable parameters.
   for (auto param : var_params) {
-    os << sep << TypeName(module, param.Type()) << ' ' << Var(os, param);
+    if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+      os << sep << TypeName(module, param.Type()) << ' ' << Var(os, param);
+    } else {
+      os << sep << "::hyde::rt::InternRef<" << TypeName(module, param.Type())
+         << "> " << Var(os, param);
+    }
     sep = ", ";
   }
 
@@ -1283,18 +1352,18 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   // Define the vectors that will be created and used within this procedure.
   // These vectors exist to support inductions, joins (pivot vectors), etc.
   for (auto vec : proc.DefinedVectors()) {
-    if (proc.Kind() == ProcedureKind::kMessageHandler ||
-        proc.Kind() == ProcedureKind::kInitializer) {
-      os << os.Indent() << "::hyde::rt::SerializedVector<StorageT";
-    } else {
-      os << os.Indent() << "::hyde::rt::Vector<StorageT";
-    }
+    os << os.Indent() << "::hyde::rt::Vector<StorageT";
 
     for (auto type : vec.ColumnTypes()) {
-      os << ", " << TypeName(module, type);
+      auto type_loc = TypeLoc(type);
+      if (type_loc.IsReferentiallyTransparent(module, Language::kCxx)) {
+        os << ", " << TypeName(module, type);
+      } else {
+        os << ", ::hyde::rt::InternRef<" << TypeName(module, type) << ">";
+      }
     }
 
-    os << "> " << Vector(os, vec) << ";\n";
+    os << "> " << Vector(os, vec) << "(storage, " << vec.Id() << "u);\n";
   }
 
   // Visit the body of the procedure. Procedure bodies are never empty; the
@@ -1356,7 +1425,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 
   if (spec.forcing_function) {
     os << os.Indent() << Procedure(os, *(spec.forcing_function)) << '(';
-    auto sep = "";
+    sep = "";
     for (auto param : params) {
       if (param.Binding() == ParameterBinding::kBound) {
         os << sep << "param_" << param.Index();
@@ -1366,59 +1435,83 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     os << ");\n";
   }
 
-  // This is an index scan.
-  if (num_bound_params && num_free_params) {
-    assert(spec.index.has_value());
-    const auto index = *(spec.index);
+  // This is either a table or index scan.
+  if (num_free_params) {
+    os << os.Indent() << "::hyde::rt::Scan<StorageT, ::hyde::rt::";
 
-    os << os.Indent() << "for (auto [";
-    sep = "";
-    for (auto param : params) {
-      if (param.Binding() != ParameterBinding::kBound) {
-        os << sep << "param_" << param.Index();
-        sep = ", ";
-      }
+    // This is an index scan.
+    if (num_bound_params) {
+      assert(spec.index.has_value());
+      os << "IndexTag<" << spec.index->Id() << ">";
+
+    // This is a full table scan.
+    } else {
+      os << "TableTag<" << spec.table.Id() << ">";
     }
 
-    os << "] : " << TableIndex(os, index) << ".Get(";
-
-    sep = "";
-    for (auto param : decl.Parameters()) {
+    os << "> scan(storage, " << Table(os, spec.table);
+    for (auto param : params) {
       if (param.Binding() == ParameterBinding::kBound) {
-        os << sep << "param_" << param.Index();
-        sep = ", ";
+        if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+          os << ", param_" << param.Index();
+        } else {
+          os << ", std::move(param_" << param.Index() << ")";
+        }
       }
     }
-
-    os << ")) {\n";
-
-  // This is a full table scan.
-  } else if (!num_bound_params) {
-    assert(0u < num_free_params);
-
-    os << os.Indent() << "for (auto [";
+    os << ");\n"
+       << os.Indent() << "for (auto [";
     sep = "";
     for (auto param : params) {
       if (param.Binding() != ParameterBinding::kBound) {
         os << sep << "param_" << param.Index();
-        sep = ", ";
+      } else {
+        os << sep << "shadow_param_" << param.Index();
       }
+      sep = ", ";
     }
 
-    os << "] : " << Table(os, spec.table) << ".Keys()) {\n";
+    os << "] : scan) {\n";
+    os.PushIndent();
 
-  // Either the tuple checker will figure out of the tuple is present, or our
-  // state check on the full tuple will figure it out.
+    // We have to double-check the tuples from index scans, as they can be
+    // probabilistically stored.
+    if (num_bound_params) {
+      os << os.Indent() << "if (std::make_tuple(";
+      sep = "";
+      for (auto param : params) {
+        if (param.Binding() == ParameterBinding::kBound) {
+          os << sep << "param_" << param.Index();
+          sep = ", ";
+        }
+      }
+
+      os << ") != std::make_tuple(";
+      sep = "";
+      for (auto param : params) {
+        if (param.Binding() == ParameterBinding::kBound) {
+          os << sep << "shadow_param_" << param.Index();
+          sep = ", ";
+        }
+      }
+
+      os << ")) {\n";
+      os.PushIndent();
+      os << os.Indent() << "continue;\n";
+      os.PopIndent();
+      os << os.Indent() << "}\n";
+    }
+
+  // This is an existence check.
   } else {
     os << os.Indent() << "if (true) {\n";
+    os.PushIndent();
   }
-
-  os.PushIndent();
 
   // Check the tuple's state using a finder function.
   if (spec.tuple_checker) {
     os << os.Indent() << "if (!" << Procedure(os, *(spec.tuple_checker)) << '(';
-    auto sep = "";
+    sep = "";
     for (auto param : params) {
       os << sep << "param_" << param.Index();
       sep = ", ";
@@ -1450,12 +1543,14 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 
   if (num_free_params) {
     os << os.Indent() << "if (!_generator(";
-    auto sep = "";
+    sep = "";
     for (auto param : params) {
-      if (param.Binding() != ParameterBinding::kBound) {
+      if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
         os << sep << "param_" << param.Index();
-        sep = ", ";
+      } else {
+        os << sep << "*param_" << param.Index();
       }
+      sep = ", ";
     }
     os << ")) {\n";
     os.PushIndent();
@@ -1483,9 +1578,10 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 // Emits C++ code for the given program to `os`.
 void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << "/* Auto-generated file */\n\n"
+     << "#pragma once\n\n"
      << "#include <drlojekyll/Runtime/Runtime.h>\n\n"
-     << "\n";
-
+     << "#ifndef __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n"
+     << "#  define __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n";
   const auto module = program.ParsedModule();
 
   // Output prologue code.
@@ -1503,7 +1599,8 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
     }
   }
 
-  os << "#include <algorithm>\n"
+  os << "#endif  // __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n\n"
+     << "#include <algorithm>\n"
      << "#include <optional>\n"
      << "#include <tuple>\n"
      << "#include <unordered_map>\n"
@@ -1511,13 +1608,13 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
 
   // Forward-declare user-provided functors
   std::unordered_set<std::string> seen;
-  for (auto module : ParsedModuleIterator(module)) {
-    for (auto first_func : module.Functors()) {
+  for (auto sub_module : ParsedModuleIterator(module)) {
+    for (auto first_func : sub_module.Functors()) {
       for (auto func : first_func.Redeclarations()) {
         std::stringstream ss;
         ss << func.Id() << ':' << ParsedDeclaration(func).BindingPattern();
         if (auto [it, inserted] = seen.emplace(ss.str()); inserted) {
-          DeclareFunctor(os, module, func, true);
+          DeclareFunctor(os, sub_module, func, true);
           os << ";\n";
           (void) it;
         }
@@ -1527,9 +1624,6 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << "\n";
 
   DeclareDescriptors(os, program, module);
-
-  os << "namespace {\n\n";
-
   DeclareFunctors(os, program, module);
   DeclareMessageLog(os, program, module);
 
@@ -1541,34 +1635,35 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << os.Indent() << "public:\n";
   os.PushIndent();  // public:
 
-  os << os.Indent() << "LogT &log;\n";
-  os << os.Indent() << "FunctorsT &functors;\n";
-
-  os << os.Indent()
-     << "std::unordered_map<std::size_t, std::vector<::hyde::rt::Any*>> _refs;\n";
-
-  os << "\n";
-
-  os << os.Indent() << "explicit " << gClassName
-     << "(StorageT &storage, LogT &l, FunctorsT &f)\n";
-  os.PushIndent();  // constructor
-  os << os.Indent() << ": log(l),\n" << os.Indent() << "  functors(f)";
+  os << os.Indent() << "StorageT &storage;\n"
+     << os.Indent() << "LogT &log;\n"
+     << os.Indent() << "FunctorsT &functors;\n"
+     << "\n";
 
   for (auto table : program.Tables()) {
-    for (auto index : table.Indices()) {
-      if (!index.ValueColumns().empty()) {
-        os << ",\n"
-           << os.Indent() << "  " << TableIndex(os, index) << "(storage)";
-      }
-    }
+    os << os.Indent() << "::hyde::rt::Table<StorageT, " << table.Id() << "> "
+       << Table(os, table) << ";\n";
+  }
 
-    os << ",\n" << os.Indent() << "  " << Table(os, table) << "(storage";
-    for (auto index : table.Indices()) {
-      if (!index.ValueColumns().empty()) {
-        os << ", " << TableIndex(os, index);
-      }
-    }
-    os << ")";
+  for (auto global : program.GlobalVariables()) {
+    DefineGlobal(os, module, global);
+  }
+  os << "\n";
+
+  for (auto constant : program.Constants()) {
+    DefineConstant(os, module, constant);
+  }
+
+  os << "\n"
+     << os.Indent() << "explicit " << gClassName
+     << "(StorageT &s, LogT &l, FunctorsT &f)\n";
+  os.PushIndent();  // constructor
+  os << os.Indent() << ": storage(s),\n"
+     << os.Indent() << "  log(l),\n"
+     << os.Indent() << "  functors(f)";
+
+  for (auto table : program.Tables()) {
+    os << ",\n" << os.Indent() << "  " << Table(os, table) << "(s)";
   }
 
   for (auto global : program.GlobalVariables()) {
@@ -1576,6 +1671,13 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
       os << ",\n"
          << os.Indent() << "  " << Var(os, global)
          << TypeValueOrDefault(module, global.Type(), global);
+    }
+  }
+  for (auto constant : program.Constants()) {
+    if (!CanInlineDefineConstant(constant)) {
+      os << ",\n"
+         << os.Indent() << "  " << Var(os, constant)
+         << TypeValueOrDefault(module, constant.Type(), constant);
     }
   }
   os << " {\n";
@@ -1598,23 +1700,62 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
     }
   }
 
-  os.PopIndent();
-  os << os.Indent() << "private:\n";
+//  os.PopIndent();
+//  os << os.Indent() << "private:\n";
+//  os.PushIndent();
+
+  //  for (auto table : program.Tables()) {
+  //    DeclareTable(os, module, table);
+  //  }
+
+  os << "\n"
+     << os.Indent() << "template <typename Printer>\n"
+     << os.Indent() << "void DumpSizes(Printer _print) const {\n";
   os.PushIndent();
 
   for (auto table : program.Tables()) {
-    DeclareTable(os, module, table);
+    os << os.Indent() << "_print(" << table.Id() << ", "
+       << Table(os, table) << ".Size());\n";
   }
 
-  for (auto global : program.GlobalVariables()) {
-    DefineGlobal(os, module, global);
-  }
-  os << "\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n\n"
+     << os.Indent() << "void DumpStats(void) const {\n";
+  os.PushIndent();
+  os << os.Indent() << "if constexpr (true) {\n";
+  os.PushIndent();
+  os << os.Indent() << "return;  /* change to false to enable */\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n"
+     << os.Indent() << "static FILE *tables = nullptr;\n"
+     << os.Indent() << "if (!tables) {\n";
+  os.PushIndent();
+  os << os.Indent() << "tables = fopen(\"/tmp/tables.csv\", \"w\");\n"
+     << os.Indent() << "fprintf(tables, \"";
 
-  for (auto constant : program.Constants()) {
-    DefineConstant(os, module, constant);
+  auto sep = "";
+  for (auto table : program.Tables()) {
+    os << sep << "table " << table.Id();
+    sep = ",";
   }
-  os << "\n";
+  os << "\\n\");\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n";
+  os.PopIndent();
+  os << os.Indent() << "fprintf(tables, \"";
+  sep = "";
+  for (auto table : program.Tables()) {
+    (void) table;
+    os << sep << "%\" PRIu64 \"";
+    sep = ",";
+  }
+  os << "\\n\"";
+  for (auto table : program.Tables()) {
+    os << ", " << Table(os, table) << ".Size()";
+  }
+  os << ");\n";
+
+  os << os.Indent() << "}\n\n";
 
   for (auto proc : program.Procedures()) {
     if (proc.Kind() != ProcedureKind::kMessageHandler) {
@@ -1623,11 +1764,8 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   }
 
   os.PopIndent();  // private:
-
   os.PopIndent();  // class:
-  os << os.Indent() << "};\n\n";
-
-  os << "}  // namespace\n";
+  os << "};\n\n";
 
   // Output epilogue code.
   for (auto sub_module : ParsedModuleIterator(module)) {

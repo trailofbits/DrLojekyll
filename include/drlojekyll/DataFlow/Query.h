@@ -95,6 +95,7 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   bool IsConstantOrConstantRef(void) const noexcept;
   bool IsNegate(void) const noexcept;
 
+  std::optional<QueryColumn> AsConstantColumn(void) const noexcept;
   std::optional<ParsedVariable> Variable(void) const noexcept;
   const TypeLoc &Type(void) const noexcept;
 
@@ -387,10 +388,19 @@ class QueryView : public query::QueryNode<QueryView> {
   // These break abstraction layers, as table IDs come from the control-flow
   // IR, but it's nifty for debugging.
   void SetTableId(unsigned id) const noexcept;
-  unsigned TableId(void) const noexcept;
+  std::optional<unsigned> TableId(void) const noexcept;
 
-  std::optional<unsigned> EquivalenceSetId(void) const noexcept;
+  unsigned EquivalenceSetId(void) const noexcept;
   UsedNodeRange<QueryView> EquivalenceSetViews(void) const;
+
+  // Is this view constant after the initialization of the program? This is
+  // computed at the end of building the dataflow graph, and helps us optimize
+  // JOINs and negations in the control-flow IR by letting us avoid persisting
+  // data when that data is non-differential. That is, if non-differential
+  // data is flowing through a JOIN, and the stuff against which we're joining
+  // is constant after init, then we don't need to save our stuff to a table
+  // prior to the join -- we can force it through and dedup it downstream.
+  bool IsConstantAfterInitialization(void) const noexcept;
 
   bool IsSelect(void) const noexcept;
   bool IsTuple(void) const noexcept;
@@ -802,6 +812,11 @@ class QueryNegate : public query::QueryNode<QueryNegate> {
 
   DefinedNodeRange<QueryColumn> Columns(void) const;
   QueryColumn NthColumn(unsigned n) const noexcept;
+
+  // If a negation has a never hint, then we know that if some data goes through
+  // the output, then it will always go through, and nothing will get set in
+  // the negated view that will result in the prior data being retracted.
+  bool HasNeverHint(void) const noexcept;
 
   // The resulting copied columns.
   DefinedNodeRange<QueryColumn> CopiedColumns(void) const;

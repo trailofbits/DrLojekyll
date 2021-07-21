@@ -197,7 +197,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
   //                           . <--'
   //
   DisplayPosition next_pos;
-  DisplayPosition negation_pos;
+  Token negation_tok;
   Node<ParsedVariable> *arg = nullptr;
   Node<ParsedVariable> *lhs = nullptr;
   Node<ParsedVariable> *rhs = nullptr;
@@ -206,7 +206,19 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
 
   // Link `pred` into `clause`.
   auto link_pred = [&](void) {
-    if (negation_pos.IsValid()) {
+    if (negation_tok.IsValid()) {
+      if (negation_tok.Lexeme() == Lexeme::kPragmaPerfNever) {
+        if (pred->declaration->context->kind == DeclarationKind::kFunctor) {
+          context->error_log.Append(
+              scope_range, ParsedPredicate(pred.get()).SpellingRange())
+              << "Functor applications cannot be negated with '@never'";
+
+        } else if (pred->argument_uses.empty()) {
+          context->error_log.Append(
+              scope_range, ParsedPredicate(pred.get()).SpellingRange())
+              << "Zero-argument predicates cannot be negated with '@never'";
+        }
+      }
       if (!clause->negated_predicates.empty()) {
         clause->negated_predicates.back()->next = pred.get();
       }
@@ -217,7 +229,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
       }
       clause->positive_predicates.emplace_back(std::move(pred));
     }
-    negation_pos = DisplayPosition();
+    negation_tok = Token();
   };
 
   for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);
@@ -498,7 +510,13 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
 
         // The `!` in `!pred(...)` or in `!V` where `V` has Boolean type.
         } else if (Lexeme::kPuncExclaim == lexeme) {
-          negation_pos = tok.Position();
+          negation_tok = tok;
+          state = 11;
+          continue;
+
+        // The `@never` in `@never pred(...)`.
+        } else if (Lexeme::kPragmaPerfNever == lexeme) {
+          negation_tok = tok;
           state = 11;
           continue;
 
@@ -599,7 +617,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
         // variables and assigning values to those variables.
         if (Lexeme::kLiteralString == lexeme ||
             Lexeme::kLiteralNumber == lexeme ||
-            Lexeme::kIdentifierConstant == lexeme) {
+            Lexeme::kIdentifierConstant == lexeme ||
+            Lexeme::kLiteralTrue == lexeme ||
+            Lexeme::kLiteralFalse == lexeme) {
 
           // If we're doing `<var> = <literal>` then we don't want to explode
           // it into `<temp> = literal, <var> = <temp>`.
@@ -743,9 +763,16 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
         if (Lexeme::kIdentifierAtom == lexeme) {
           pred.reset(new Node<ParsedPredicate>(module, clause.get()));
           pred->name = tok;
-          pred->negation_pos = negation_pos;
+          pred->negation = negation_tok;
           state = 12;
           continue;
+
+        // `@never` can only apply to a predicate, not to a variable.
+        } else if (negation_tok.Lexeme() == Lexeme::kPragmaPerfNever) {
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected atom here after the '@never' negation pragma, "
+              << "but got '" << tok << "' instead";
+          return;
 
         // We think we're parsing a negated Boolean variable, e.g. `!V`;
         // this gets treated as `V = false`.
@@ -758,7 +785,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
           assign->rhs.data = "false";
           assign->rhs.type =
               TypeLoc(TypeKind::kBoolean,
-                      DisplayRange(negation_pos, tok.NextPosition()));
+                      DisplayRange(negation_tok.Position(), tok.NextPosition()));
 
           // Add to the clause's assignment list.
           if (!clause->assignments.empty()) {
@@ -774,7 +801,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
 
         // `!true`, i.e. `false`, this gets treated as `false`.
         } else if (Lexeme::kLiteralTrue == lexeme) {
-          clause->disabled_by = DisplayRange(negation_pos, tok.NextPosition());
+          clause->disabled_by = DisplayRange(negation_tok.Position(),
+                                             tok.NextPosition());
           state = 8;
           continue;
 
@@ -814,10 +842,24 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
           link_pred();
           continue;
 
+        // It is a zero-argument predicate, go to the next clause.
+        } else if (Lexeme::kPuncColon == lexeme) {
+          clause->dot = tok;
+          if (!TryMatchPredicateWithDecl(module, pred.get())) {
+            return;
+          }
+
+          link_pred();
+
+          // there's another clause let's go accumulate the remaining tokens
+          state = 16;
+          multi_clause = true;
+          continue;
+
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected an opening parenthesis, comma, or period here to"
-              << "test predicate '" << pred->name << "', but got '" << tok
+              << " test predicate '" << pred->name << "', but got '" << tok
               << "' instead";
           return;
         }
@@ -876,7 +918,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
 
           // Not allowed to negate inline declarations, as they might not be
           // backed by actual relations.
-          if (pred->negation_pos.IsValid() &&
+          if (pred->negation.IsValid() &&
               pred->declaration->inline_attribute.IsValid()) {
             auto err = context->error_log.Append(scope_range, pred_range);
             err << "Cannot negate " << pred->declaration->KindName() << " '"
@@ -895,7 +937,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
           if (pred_decl.IsFunctor() &&
               ParsedFunctor::From(pred_decl).IsAggregate()) {
 
-            if (pred->negation_pos.IsValid()) {
+            if (pred->negation.IsValid()) {
               context->error_log.Append(scope_range, pred_range)
                   << "Cannot negate aggregating functor '" << pred->name << "'";
               return;
@@ -904,7 +946,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
             state = 15;  // Go look for an `over`.
             continue;
 
-          } else if (pred->negation_pos.IsValid()) {
+          } else if (pred->negation.IsValid()) {
 
             const auto kind = pred->declaration->context->kind;
 

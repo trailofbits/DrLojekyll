@@ -5,6 +5,8 @@
 #include "Optimize.h"
 #include "Query.h"
 
+#include <iostream>
+
 namespace hyde {
 
 Node<QueryMerge>::~Node(void) {}
@@ -289,15 +291,23 @@ bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
     for (auto &[kind_name, similar_views] : grouped_views) {
       VIEW *const first_view = similar_views[0];
       if (first_view->AsTuple()) {
-        if (SinkThroughTuples(query, similar_views)) {
+        if (opt.can_sink_unions_through_tuples &&
+            SinkThroughTuples(query, similar_views)) {
           changed = true;
         }
       } else if (first_view->AsMap()) {
-        if (SinkThroughMaps(query, similar_views)) {
+        if (opt.can_sink_unions_through_maps &&
+            SinkThroughMaps(query, similar_views)) {
           changed = true;
         }
       } else if (first_view->AsNegate()) {
-        if (SinkThroughNegations(query, similar_views)) {
+        if (opt.can_sink_unions_through_negations &&
+            SinkThroughNegations(query, similar_views)) {
+          changed = true;
+        }
+      } else if (first_view->AsJoin()) {
+        if (opt.can_sink_unions_through_joins &&
+            SinkThroughJoins(query, similar_views)) {
           changed = true;
         }
       }
@@ -500,29 +510,6 @@ namespace {
 // Make a tuple that will take the place of a negation that will be merged
 // with other negations.
 static TUPLE *MakeSameShapedTuple(QueryImpl *impl, MAP *map) {
-
-  //  const auto input_tuple_for_map = impl->tuples.Create();
-  //  input_tuple_for_map->color = color;
-  //  auto col_index = 0u;
-  //
-  //  for (auto j = 0u; j < num_input_cols; ++j) {
-  //    const auto orig_input_col = map->input_columns[j];
-  //    input_tuple_for_map->columns.Create(
-  //        orig_input_col->var, orig_input_col->type, input_tuple_for_map,
-  //        orig_input_col->id, col_index++);
-  //    input_tuple_for_map->input_columns.AddUse(orig_input_col);
-  //  }
-  //
-  //  for (auto j = 0u; j < num_attached_cols; ++j) {
-  //    const auto orig_attached_col = map->attached_columns[j];
-  //    input_tuple_for_map->columns.Create(
-  //        orig_attached_col->var, orig_attached_col->type,
-  //        input_tuple_for_map, orig_attached_col->id, col_index++);
-  //    input_tuple_for_map->input_columns.AddUse(orig_attached_col);
-  //  }
-  //
-  //  return input_tuple_for_map;
-
 
   TUPLE *tuple = impl->tuples.Create();
 
@@ -866,7 +853,8 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
 
     if (next_negate->columns.Size() != num_cols ||
         next_negate->input_columns.Size() != num_input_cols ||
-        next_negate->attached_columns.Size() != num_attached_cols) {
+        next_negate->attached_columns.Size() != num_attached_cols ||
+        next_negate->is_never != first_negate->is_never) {
       continue;
     }
 
@@ -940,8 +928,13 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
 
         // Make a new, tag column-aware negation that operates on `input_merge`.
         merged_negation = impl->negations.Create();
+        merged_negation->is_never = first_negate->is_never;
         merged_negation->negated_view.Emplace(merged_negation,
                                               negated_view_merge);
+
+        for (auto pred : first_negate->negations) {
+          merged_negation->negations.push_back(pred);
+        }
 
         // Tag column.
         col_index = 0u;
@@ -978,6 +971,10 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
         }
       }
 
+      for (auto pred : next_negate->negations) {
+        merged_negation->negations.push_back(pred);
+      }
+
       COL *const next_tag_col = CreateTag(impl, num_used_tags);
 
       // Create a tag for the Nth negated view.
@@ -1009,7 +1006,12 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
 
         // Make the new negation.
         merged_negation = impl->negations.Create();
+        merged_negation->is_never = first_negate->is_never;
         output = merged_negation;
+
+        for (auto pred : first_negate->negations) {
+          merged_negation->negations.push_back(pred);
+        }
 
         merged_negation->negated_view.Emplace(merged_negation, negated_view);
 
@@ -1029,6 +1031,10 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
           merged_negation->attached_columns.AddUse(
               input_merge->columns[col_index++]);
         }
+      }
+
+      for (auto pred : next_negate->negations) {
+        merged_negation->negations.push_back(pred);
       }
 
       // Add the mergable negation into `input_merge`.
@@ -1062,6 +1068,357 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
     inout_views[first_negate_index] = first_negate;
     return changed_rec;
   }
+}
+
+// Similar to above, but for joins.
+bool Node<QueryMerge>::SinkThroughJoins(
+    QueryImpl *impl, std::vector<VIEW *> &inout_views, bool recursive) {
+
+  if (inout_views.size() == 1u) {
+    return false;
+  }
+
+  EqualitySet eq;
+  JOIN *first_join = nullptr;
+  unsigned first_join_index = 0u;
+  unsigned num_joined_views = 0u;
+  unsigned num_columns = 0u;
+
+  // We start by trying to find a way to maximize the chances of "aligning"
+  // the views across all of the independent joins, such that two joined views
+  // that are equivalent (or identical) are likely to end up being ordered into
+  // the same position.
+  if (!recursive) {
+    std::unordered_map<uint64_t, unsigned> hash_to_count;
+    std::unordered_map<uint64_t, unsigned> hash_to_index;
+
+    // Count the number of distinct-ish joined views.
+    for (auto &inout_view : inout_views) {
+      const auto join = inout_view->AsJoin();
+      num_joined_views = std::max(num_joined_views, join->joined_views.Size());
+      for (auto v : join->joined_views) {
+        hash_to_count[v->Hash()] += 1u;
+      }
+    }
+
+    // Convert the counts into an index-based ordering, so that more likely to
+    // match views show up first. This is a greedy algorithm, so we might miss
+    // things.
+    auto next_index = 0u;
+    for (;;) {
+      auto max_count = 0u;
+      uint64_t max_hash = 0u;
+      for (auto [hash, count] : hash_to_count) {
+        if (count > max_count && !hash_to_index.count(hash)) {
+          max_hash = hash;
+          max_count = count;
+        }
+      }
+      if (max_count) {
+        hash_to_index[max_hash] = next_index++;
+      } else {
+        break;
+      }
+    }
+
+    for (auto &inout_view : inout_views) {
+      const auto join = inout_view->AsJoin();
+      join->joined_views.Sort([&] (VIEW *a, VIEW *b) -> bool {
+        return hash_to_index[a->Hash()] < hash_to_index[b->Hash()];
+      });
+
+      for (auto &[out, in_cols_] : join->out_to_in) {
+        UseList<COL> &in_cols = in_cols_;
+        in_cols.Sort([&] (COL *a, COL *b) -> bool {
+          assert(!a->IsConstant());
+          assert(!b->IsConstant());
+          return hash_to_index[a->view->Hash()] <
+                 hash_to_index[b->view->Hash()];
+        });
+      }
+    }
+  }
+
+  // Maps output column indices (of `first_join`) to the index of that column's
+  // view in `first_join->joined_views`.
+  std::vector<std::pair<unsigned, unsigned>> out_to_in_index;
+
+  // The `ith` entry tells us if all of the `ith` views are equal across
+  // everything in our candidate set.
+  std::vector<JOIN *> joins_to_merge;
+  num_joined_views = 0u;
+
+  for (auto &inout_view : inout_views) {
+    if (!inout_view) {
+      ++first_join_index;
+      continue;
+    }
+
+    const auto join = inout_view->AsJoin();
+    if (!join->num_pivots || join->sets_condition ||
+        !join->positive_conditions.Empty() ||
+        !join->negative_conditions.Empty()) {
+      if (!first_join) {
+        ++first_join_index;
+      }
+      continue;
+
+    } else if (!first_join) {
+
+      num_columns = join->columns.Size();
+      num_joined_views = join->joined_views.Size();
+
+      for (COL * out_col : join->columns) {
+        const auto &in_cols = join->out_to_in.find(out_col)->second;
+        assert(1u <= in_cols.Size());
+
+        // We don't need to care about which view a pivot column comes from,
+        // because *all* views contribute pivots.
+        if (1u < in_cols.Size()) {
+          out_to_in_index.emplace_back(~0u, ~0u);
+
+        // Try to find which view is associated with this input column. We need
+        // to make sure that candidate views for the tag-based merging have
+        // their columns in the same order.
+        } else {
+          COL * const in_col = in_cols[0];
+
+          // Don't have a good way of handling this. We have no provenance for
+          // a free-floating constant.
+          if (in_col->IsConstant()) {
+            goto not_found;
+          }
+
+          auto i = 0u;
+          for (VIEW *joined_view : join->joined_views) {
+            if (in_col->view == joined_view) {
+              out_to_in_index.emplace_back(i, in_col->Index());
+              goto out_col_is_good;
+            }
+            ++i;
+          }
+
+          assert(false);  // Didn't find it?! Abort out of the sinking attempts.
+          goto not_found;
+        }
+
+      out_col_is_good:
+        continue;
+      }
+
+      assert(out_to_in_index.size() == num_columns);
+
+      // This commits us to our sinking attempt.
+      inout_view = nullptr;
+      first_join = join;
+      joins_to_merge.push_back(join);
+      continue;
+
+    not_found:
+      return false;
+
+    // We require that the number of pivots match.
+    } else if (join->num_pivots != first_join->num_pivots ||
+               join->joined_views.Size() != num_joined_views) {
+      goto skip;
+    }
+
+    // Make sure the corresponding views are all a similar shape.
+    for (auto i = 0u; i < num_joined_views; ++i) {
+      const auto first_i = first_join->joined_views[i];
+      const auto nth_i = join->joined_views[i];
+      const auto num_i_cols = first_i->columns.Size();
+
+      // Different number of columns in the `ith` view.
+      if (num_i_cols != nth_i->columns.Size()) {
+        goto skip;
+      }
+
+      // Different column types in the `ith` view.
+      for (auto j = 0u; j < num_i_cols; ++j) {
+        if (first_i->columns[j]->type != nth_i->columns[j]->type) {
+          goto skip;
+        }
+      }
+    }
+
+    // Now make sure things are in the same order as in `first_join`.
+    for (auto i = first_join->num_pivots; i < num_columns; ++i) {
+      COL * const out_col = join->columns[i];
+      const auto &in_cols = join->out_to_in.find(out_col)->second;
+      assert(in_cols.Size() == 1u);
+      COL * const in_col = in_cols[0];
+      if (in_col->Index() != out_to_in_index[i].second ||
+          join->joined_views[out_to_in_index[i].first] != in_col->view) {
+        goto skip;
+      }
+    }
+
+    inout_view = nullptr;
+    joins_to_merge.push_back(join);
+    continue;
+
+  skip:
+    continue;
+  }
+
+  if (!first_join) {
+    return false;
+
+  } else if (1u == joins_to_merge.size()) {
+    auto ret = SinkThroughJoins(impl, inout_views, true);
+    inout_views[first_join_index] = first_join;
+    return ret;
+  }
+
+//  if (1u < to_merge.size()) {
+//    auto color = to_merge[0]->Hash() & 0xffffffu;
+//    for (auto join : to_merge) {
+//      join->color = static_cast<unsigned>(color);
+//    }
+//  }
+
+  std::vector<COL *> join_to_tag;
+  unsigned num_used_tags = 0u;
+
+  // Create one tag per join.
+  for (auto join : joins_to_merge) {
+    join->is_canonical = false;
+    join_to_tag.push_back(CreateTag(impl, num_used_tags));
+    (void) join;
+  }
+
+  // Now we can go through and build the new JOIN.
+  JOIN * const lifted_join = impl->joins.Create();
+  lifted_join->num_pivots = first_join->num_pivots + 1u;
+
+  // Create tuples for each of the views flowing into each of the joins, so that
+  // the tuples include tags that we can use to maintain the proper working of
+  // the eventual merged join.
+  for (auto i = 0u; i < num_joined_views; ++i) {
+    auto j = 0u;
+
+    MERGE * const sunk_merge = impl->merges.Create();
+    lifted_join->joined_views.AddUse(sunk_merge);
+
+    VIEW *last_ith = nullptr;
+
+    // We need to make a tagged tuple.
+    for (JOIN * join : joins_to_merge) {
+      assert(join->columns.Size() == num_columns);
+      assert(join->num_pivots == first_join->num_pivots);
+
+      COL * const jth_tag = join_to_tag[j++];
+      VIEW * const ith_view = join->joined_views[i];
+      TUPLE * const tagged_ith = impl->tuples.Create();
+
+      if (last_ith) {
+        assert(last_ith->columns.Size() == ith_view->columns.Size());
+      }
+      last_ith = ith_view;
+
+      // Put the tag first.
+      tagged_ith->input_columns.AddUse(jth_tag);
+      tagged_ith->columns.Create(
+          jth_tag->var, jth_tag->type, tagged_ith, jth_tag->id, 0u);
+
+      auto col_index = 1u;
+      auto num_pivots = 0u;
+
+      for (COL *join_col : join->columns) {
+        const auto &out_to_in = join->out_to_in.find(join_col)->second;
+
+        // This is a pivot column.
+        if (out_to_in.Size() == num_joined_views) {
+          COL * const ith_view_col = out_to_in[i];
+          assert(ith_view_col->view == ith_view);
+          assert(!ith_view_col->IsConstant());
+
+          ++num_pivots;
+          tagged_ith->columns.Create(
+              ith_view_col->var, ith_view_col->type, tagged_ith,
+              ith_view_col->id, col_index++);
+          tagged_ith->input_columns.AddUse(ith_view_col);
+
+        // This isn't a pivot column.
+        } else {
+          assert(out_to_in.Size() == 1u);
+          COL * const in_col = out_to_in[0];
+
+          const auto [jvi, ci] = out_to_in_index[join_col->Index()];
+
+          if (in_col->view == ith_view) {
+            assert(jvi == i);
+            assert(ci == in_col->Index());
+            tagged_ith->columns.Create(
+                in_col->var, in_col->type, tagged_ith, in_col->id, col_index++);
+            tagged_ith->input_columns.AddUse(in_col);
+
+          } else {
+            assert(jvi != i);
+            (void) jvi;
+            (void) ci;
+          }
+        }
+      }
+
+      assert(first_join->num_pivots == num_pivots);
+
+      if (sunk_merge->columns.Empty()) {
+        for (COL *col : tagged_ith->columns) {
+          sunk_merge->columns.Create(
+              col->var, col->type, sunk_merge, col->id, col->Index());
+        }
+      }
+
+      // Add this to the merge view.
+      sunk_merge->merged_views.AddUse(tagged_ith);
+    }
+  }
+
+  // Add in the pivots. The first pivot column will be the tag column.
+  for (auto i = 0u; i < lifted_join->num_pivots; ++i) {
+    COL * const first_col = lifted_join->joined_views[0]->columns[i];
+    COL * const out_col = lifted_join->columns.Create(
+        first_col->var, first_col->type, lifted_join,
+        first_col->id, i);
+
+    auto [it, added] = lifted_join->out_to_in.emplace(out_col, lifted_join);
+
+    for (VIEW *sunk_merge : lifted_join->joined_views) {
+      it->second.AddUse(sunk_merge->columns[i]);
+    }
+  }
+
+  // Add in the non-pivots. We need to pull them in in the right order.
+  for (auto i = first_join->num_pivots; i < num_columns; ++i) {
+    COL * const nth_col = first_join->columns[i];
+    COL * const out_col = lifted_join->columns.Create(
+        nth_col->var, nth_col->type, lifted_join,
+        nth_col->id, i + 1u);
+
+    auto [it, added] = lifted_join->out_to_in.emplace(out_col, lifted_join);
+    VIEW *in_col_view = lifted_join->joined_views[out_to_in_index[i].first];
+    COL *in_col = in_col_view->columns[out_to_in_index[i].second + 1u];
+
+    assert(in_col->type.Kind() == out_col->type.Kind());
+
+    it->second.AddUse(in_col);
+  }
+
+//  lifted_join->color = 0xff00;
+
+  TUPLE *join_without_tag = impl->tuples.Create();
+  for (auto i = 0u; i < num_columns; ++i) {
+    COL *in_col = lifted_join->columns[i + 1u];
+    (void) join_without_tag->columns.Create(
+        in_col->var, in_col->type, join_without_tag, in_col->id, i);
+    join_without_tag->input_columns.AddUse(in_col);
+  }
+
+  (void) SinkThroughJoins(impl, inout_views, true);
+  inout_views[first_join_index] = join_without_tag;
+  return true;
 }
 
 // Equality over merge is structural.

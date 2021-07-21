@@ -1,0 +1,121 @@
+
+#import "../transitive_closure5.dr".
+
+
+#prologue ```c++
+#include <drlojekyll/Runtime/StdRuntime.h>
+#include <algorithm>
+#include <vector>
+#include <iomanip>
+#include <iostream>
+#include <set>
+#include <cstdio>
+#include <cinttypes>
+```.
+
+#epilogue ```c++
+
+using DatabaseStorage = hyde::rt::StdStorage;
+
+int main() {
+  DatabaseFunctors functors;
+  DatabaseLog log;
+  DatabaseStorage storage;
+  Database<DatabaseStorage, DatabaseLog, DatabaseFunctors> db(
+      storage, log, functors);
+
+  auto assert_reachable_from = [&](uint64_t F, std::vector<uint64_t> expect) {
+    std::vector<uint64_t> got;
+    db.reachable_from_bf(F, [&] (uint64_t T) {
+      got.push_back(T);
+      return true;
+    });
+    std::sort(got.begin(), got.end());
+    if (got != expect) {
+      std::cout << "Reached from " << F << ":\n" << std::dec;
+      for (auto v : got) {
+        std::cout << v << " ";
+      }
+      std::cout << "\n";
+      std::cout << "Expected reaching from " << F << ":\n";
+      for (auto v : expect) {
+        std::cout << v << " ";
+      }
+      std::cout << "\n";
+      assert(false);
+    }
+  };
+
+  auto assert_reaching_to = [&db](uint64_t T, std::vector<uint64_t> expect) {
+    std::vector<uint64_t> got;
+    db.reaching_to_fb(T, [&] (uint64_t F) {
+      got.push_back(F);
+      return true;
+    });
+    
+    std::sort(got.begin(), got.end());
+    assert(got == expect);
+  };
+  
+  auto assert_nodes = [&] (std::vector<uint64_t> expect) {
+    std::vector<uint64_t> got;
+    db.is_node_f([&] (uint64_t N) {
+      got.push_back(N);
+      return true;
+    });
+    std::sort(got.begin(), got.end());
+    std::vector<uint64_t> expected_nodes = {0,1,2,3};
+    assert(got == expect);
+  };
+  
+  hyde::rt::SerializedVector<DatabaseStorage, uint64_t, uint64_t>
+      edges(storage);
+  
+  // start with a simple graph
+  edges.Add(0, 1);
+  edges.Add(0, 2);
+  edges.Add(2, 0);
+  edges.Add(1, 2);
+  edges.Add(2, 3);
+  db.add_edge_2(edges);
+  edges.Clear();
+
+  assert_reachable_from(0, {0, 1, 2, 3});
+  assert_reachable_from(1, {0, 1, 2, 3});
+  assert_reachable_from(2, {0, 1, 2, 3});
+  assert_reachable_from(3, {});
+  assert_reachable_from(4, {});
+
+  // Reaching to
+  assert_reaching_to(0, {0, 1, 2});
+  assert_reaching_to(1, {0, 1, 2});
+  assert_reaching_to(2, {0, 1, 2});
+  assert_reaching_to(3, {0, 1, 2});
+  assert_reaching_to(4, {});
+
+  // Nodes
+  assert_nodes({0,1,2,3});
+
+  // now add more to the graph
+  edges.Add(4, 3);
+  db.add_edge_2(edges);
+  edges.Clear();
+
+  assert_reachable_from(0, {0, 1, 2, 3});
+  assert_reachable_from(1, {0, 1, 2, 3});
+  assert_reachable_from(2, {0, 1, 2, 3});
+  assert_reachable_from(3, {});
+  assert_reachable_from(4, {3});
+
+  assert_reaching_to(0, {0, 1, 2});
+  assert_reaching_to(1, {0, 1, 2});
+  assert_reaching_to(2, {0, 1, 2});
+  assert_reaching_to(3, {0, 1, 2, 4});
+  assert_reaching_to(4, {});
+
+  // Nodes
+  assert_nodes({0,1,2,3, 4});
+
+  return 0;
+}
+```.

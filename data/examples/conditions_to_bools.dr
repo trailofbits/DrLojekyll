@@ -1,0 +1,15 @@
+; This example shows how to convert conditions into boolean values, suitable
+; for outputting.
+
+#message enable_feature(u32 X).
+foo : enable_feature(1).
+bar : enable_feature(2).
+#local foo_enabled(bool X)
+    : X=true, foo
+    : X=false, !foo.
+#local bar_enabled(bool X)
+    : X=true, bar
+    : X=false, !bar.
+#message enabled_features(bool FooEnabled, bool BarEnabled) @differential @product
+    : foo_enabled(FooEnabled)
+    , bar_enabled(BarEnabled).

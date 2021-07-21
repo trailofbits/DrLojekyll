@@ -405,10 +405,7 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
           }
 
           // Create a named constant on a built-in type.
-          case Lexeme::kTypeASCII:
-          case Lexeme::kTypeUTF8:
           case Lexeme::kTypeBytes:
-          case Lexeme::kTypeUUID:
           case Lexeme::kTypeBoolean:
           case Lexeme::kTypeUn:
           case Lexeme::kTypeIn:
@@ -502,9 +499,7 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
 
         } else if (Lexeme::kLiteralString == lexeme) {
           switch (const_val.type.UnderlyingKind()) {
-            case TypeKind::kASCII:
             case TypeKind::kBytes:
-            case TypeKind::kUTF8:
               const_val.lang = Language::kUnknown;
               context->display_manager.TryReadData(tok_range, &code);
               break;
@@ -535,10 +530,7 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
         // Named number; basically like an enumerator.
         } else if (Lexeme::kLiteralNumber == lexeme) {
           switch (const_val.type.UnderlyingKind()) {
-            case TypeKind::kASCII:
             case TypeKind::kBytes:
-            case TypeKind::kUTF8:
-            case TypeKind::kUUID:
             case TypeKind::kBoolean:
               context->error_log.Append(scope_range, tok_range)
                   << "Cannot initialize named constant of built-in type '"

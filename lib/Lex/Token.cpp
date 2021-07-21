@@ -178,10 +178,7 @@ unsigned Token::SpellingWidth(void) const {
 // Returns `true` if this token's lexeme corresponds with a type.
 bool Token::IsType(void) const {
   switch (Lexeme()) {
-    case ::hyde::Lexeme::kTypeASCII:
-    case ::hyde::Lexeme::kTypeUTF8:
     case ::hyde::Lexeme::kTypeBytes:
-    case ::hyde::Lexeme::kTypeUUID:
     case ::hyde::Lexeme::kTypeBoolean:
     case ::hyde::Lexeme::kTypeUn:
     case ::hyde::Lexeme::kTypeIn:
@@ -257,10 +254,7 @@ unsigned Token::IdentifierLength(void) const {
 // for foreign constants.
 ::hyde::TypeKind Token::TypeKind(void) const {
   switch (Lexeme()) {
-    case ::hyde::Lexeme::kTypeASCII: return ::hyde::TypeKind::kASCII;
-    case ::hyde::Lexeme::kTypeUTF8: return ::hyde::TypeKind::kUTF8;
     case ::hyde::Lexeme::kTypeBytes: return ::hyde::TypeKind::kBytes;
-    case ::hyde::Lexeme::kTypeUUID: return ::hyde::TypeKind::kUUID;
     case ::hyde::Lexeme::kTypeUn:
     case ::hyde::Lexeme::kTypeIn:
     case ::hyde::Lexeme::kTypeFn:

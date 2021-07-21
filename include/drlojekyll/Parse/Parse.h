@@ -201,6 +201,9 @@ class ParsedVariable : public parse::ParsedNode<ParsedVariable> {
   // clause, all body_variables with the same name will have the same identifier.
   uint64_t Id(void) const noexcept;
 
+  // Compute the unique identifier for this variable, local to its clause.
+  uint64_t IdInClause(void) const noexcept;
+
   // A number corresponding to the order of appearance of this variable.
   unsigned Order(void) const noexcept;
 
@@ -288,8 +291,15 @@ class ParsedPredicate : public parse::ParsedNode<ParsedPredicate> {
   // Returns `true` if this is a negated predicate.
   bool IsNegated(void) const noexcept;
 
+  // Returns `true` if this is a negated predicate, and the negation uses
+  // `@never`.
+  bool IsNegatedWithNever(void) const noexcept;
+
   // Returns the arity of this predicate.
   unsigned Arity(void) const noexcept;
+
+  // Return the negation token used, if any.
+  Token Negation(void) const noexcept;
 
   // Return the `n`th argument of this predicate.
   ParsedVariable NthArgument(unsigned n) const noexcept;
@@ -829,12 +839,10 @@ class ParsedMessage : public parse::ParsedNode<ParsedMessage> {
 
   unsigned NumPositiveUses(void) const noexcept;
 
-  inline unsigned NumNegatedUses(void) const noexcept {
-    return 0;
-  }
+  unsigned NumNegatedUses(void) const noexcept;
 
   inline unsigned NumUses(void) const noexcept {
-    return NumPositiveUses();
+    return NumPositiveUses() + NumNegatedUses();
   }
 
  protected:

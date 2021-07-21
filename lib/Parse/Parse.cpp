@@ -163,6 +163,12 @@ uint64_t Node<ParsedVariable>::Id(void) noexcept {
   return id.flat;
 }
 
+// Compute the unique identifier for this variable, local to its clause.
+uint64_t Node<ParsedVariable>::IdInClause(void) noexcept {
+  (void) Id();
+  return context->id.info.var_id;
+}
+
 // Compute the identifier for this clause.
 uint64_t Node<ParsedPredicate>::Id(void) const noexcept {
   return declaration->Id();
@@ -221,6 +227,11 @@ bool ParsedVariable::IsUnnamed(void) const noexcept {
 // Return a unique integer that identifies this variable.
 uint64_t ParsedVariable::Id(void) const noexcept {
   return impl->Id();
+}
+
+// Compute the unique identifier for this variable, local to its clause.
+uint64_t ParsedVariable::IdInClause(void) const noexcept {
+  return impl->IdInClause();
 }
 
 // A number corresponding to the order of appearance of this variable.
@@ -413,19 +424,31 @@ NodeRange<ParsedArgumentUse> ParsedPredicate::Using(ParsedVariable var) {
 
 DisplayRange ParsedPredicate::SpellingRange(void) const noexcept {
   return DisplayRange(
-      impl->negation_pos.IsValid() ? impl->negation_pos : impl->name.Position(),
+      impl->negation.IsValid() ? impl->negation.Position() :
+                                 impl->name.Position(),
       impl->rparen.IsValid() ? impl->rparen.NextPosition()
                              : impl->name.NextPosition());
 }
 
 // Returns `true` if this is a positive predicate.
 bool ParsedPredicate::IsPositive(void) const noexcept {
-  return impl->negation_pos.IsInvalid();
+  return impl->negation.IsInvalid();
 }
 
 // Returns `true` if this is a negated predicate.
 bool ParsedPredicate::IsNegated(void) const noexcept {
-  return impl->negation_pos.IsValid();
+  return impl->negation.IsValid();
+}
+
+// Returns `true` if this is a negated predicate, and the negation uses
+// `@never`.
+bool ParsedPredicate::IsNegatedWithNever(void) const noexcept {
+  return impl->negation.Lexeme() == Lexeme::kPragmaPerfNever;
+}
+
+// Return the negation token used, if any.
+Token ParsedPredicate::Negation(void) const noexcept {
+  return impl->negation;
 }
 
 // Returns the arity of this predicate.
@@ -1238,6 +1261,10 @@ Token ParsedMessage::Differential(void) const noexcept {
 
 unsigned ParsedMessage::NumPositiveUses(void) const noexcept {
   return static_cast<unsigned>(impl->context->positive_uses.size());
+}
+
+unsigned ParsedMessage::NumNegatedUses(void) const noexcept {
+  return static_cast<unsigned>(impl->context->negated_uses.size());
 }
 
 DisplayRange ParsedModule::SpellingRange(void) const noexcept {

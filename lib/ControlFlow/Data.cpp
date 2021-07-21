@@ -28,6 +28,11 @@ static std::string ColumnSpec(const std::vector<unsigned> &col_ids) {
 
 }  // namespace
 
+Node<DataVariable>::Node(unsigned id_, VariableRole role_)
+    : Def<Node<DataVariable>>(this),
+      role(role_),
+      id(id_) {}
+
 TypeLoc Node<DataVariable>::Type(void) const noexcept {
   switch (role) {
     case VariableRole::kConditionRefCount:
@@ -128,14 +133,22 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl, Context &,
   if (!model->table) {
     model->table = impl->tables.Create(impl->next_id++);
 
+    std::vector<unsigned> offsets;
+    unsigned col_index = 0;
     for (auto col : cols) {
+      offsets.push_back(col_index++);
       (void) model->table->columns.Create(impl->next_id++, col.Type().Kind(),
                                           model->table);
     }
+
+    // Always create an index over every column.
+    (void) model->table->GetOrCreateIndex(impl, std::move(offsets));
   }
 
   const auto old_size = model->table->views.size();
   model->table->views.push_back(view);
+
+  view.SetTableId(model->table->id);
 
   // Sort the views associated with this model so that the first view is
   // the deepest inductive union associated with the table. This is super
@@ -232,6 +245,12 @@ TABLEINDEX *
 Node<DataTable>::GetOrCreateIndex(ProgramImpl *impl,
                                   std::vector<unsigned> col_indexes) {
   SortAndUnique(col_indexes);
+
+//  // The index covers all columns, i.e. we don't want/need it.
+//  if (col_indexes.size() == this->columns.Size()) {
+//    return nullptr;
+//  }
+
   auto col_spec = ColumnSpec(col_indexes);
   for (auto index : indices) {
     if (index->column_spec == col_spec) {

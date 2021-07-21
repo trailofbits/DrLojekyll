@@ -100,7 +100,7 @@ bool Node<ProgramInductionRegion>::Equals(EqualitySet &eq,
 }
 
 const bool Node<ProgramInductionRegion>::MergeEqual(
-    ProgramImpl *prog, std::vector<Node<ProgramRegion> *> &merges) {
+    ProgramImpl *, std::vector<Node<ProgramRegion> *> &) {
   NOTE("TODO(ekilmer): Unimplemented merging of ProgramInductionRegion");
   assert(false);
   return false;

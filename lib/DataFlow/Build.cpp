@@ -824,19 +824,37 @@ static VIEW *TryApplyNegation(QueryImpl *query, ParsedClause clause,
   }
 
   sel = GuardViewWithFilter(query, clause, context, sel);
-  sel->can_produce_deletions = true;
-  sel->is_used_by_negation = true;
+
+  TUPLE *negated_view = query->tuples.Create();
+  negated_view->is_used_by_negation = true;
+
+  auto col_index = 0u;
+  for (ParsedVariable var : needed_vars) {
+    COL * const in_col = FindColVarInView(context, sel, var);
+    assert(in_col->type == var.Type());
+    (void) negated_view->columns.Create(
+        var, negated_view, in_col->id, col_index++);
+    negated_view->input_columns.AddUse(in_col);
+  }
 
   NEGATION *const negate = query->negations.Create();
   negate->color = context.color;
-  negate->negated_view.Emplace(negate, sel);
+  negate->negated_view.Emplace(negate, negated_view);
+  negate->is_never = pred.IsNegatedWithNever();
+  negate->negations.emplace_back(pred);
 
-  auto col_index = 0u;
+  col_index = 0u;
   for (auto in_col : needed_cols) {
     ParsedVariable var = needed_vars[col_index];
     negate->input_columns.AddUse(in_col);
     (void) negate->columns.Create(var, negate, in_col->id, col_index++);
   }
+
+#ifndef NDEBUG
+  for (auto col : negated_view->columns) {
+    assert(col->type == negate->columns[col->Index()]->type);
+  }
+#endif
 
   // Now attach in any other columns that `view` was bringing along but that
   // aren't used in the negation itself.
@@ -1082,12 +1100,24 @@ static bool FindColInAllViews(COL *search_col, const std::vector<VIEW *> &views,
 // join each of its columns against every other view, then proposes this as
 // a new candidate. Updates `work_item` in place.
 static bool FindJoinCandidates(QueryImpl *query, ParsedClause clause,
-                               ClauseContext &context, const ErrorLog &log) {
-  auto &views = context.views;
+                               ClauseContext &context,
+                               std::vector<VIEW *> &views,
+                               const ErrorLog &log,
+                               bool recursive=false) {
   const auto num_views = views.size();
   if (1u == num_views) {
     return false;
   }
+
+#ifndef NDEBUG
+  // Make sure a given view doesn't appear twice.
+  for (auto &view : views) {
+    auto view_ = view;
+    view = nullptr;
+    assert(std::find(views.begin(), views.end(), view_) == views.end());
+    view = view_;
+  }
+#endif
 
   //  // Nothing left to do but try to publish the view!
   //  if (num_views == 1u &&
@@ -1209,7 +1239,11 @@ static bool FindJoinCandidates(QueryImpl *query, ParsedClause clause,
     auto ret = GuardViewWithFilter(query, clause, context,
                                    PromoteOnlyUniqueColumns(query, join));
 
-    // Remove the joined views from `views`, and move `ret` to the end.
+    // Remove the joined views from `views`, and put the joined view at the
+    // end as a way of giving other relations in the body a chance to be
+    // the head of a JOIN. The purpose here is to try to encourage more
+    // "balanced" trees of joins, rather than ones that lean in a specific
+    // direction.
     for (VIEW *&view : views) {
       if (std::find(next_views.begin(), next_views.end(), view) !=
           next_views.end()) {
@@ -1220,7 +1254,69 @@ static bool FindJoinCandidates(QueryImpl *query, ParsedClause clause,
     auto it =
         std::remove_if(views.begin(), views.end(), [](VIEW *v) { return !v; });
     views.erase(it, views.end());
+
+    // Put the joined view at the end.
     views.push_back(ret);
+
+//    // For each of the views we just joined, try to join that view against
+//    // every other unjoined view. The idea here is that we want to bring about
+//    // the equivalent of a worst-case optimal join, where you have something
+//    // like `foo(A, B), bar(B, C), baz(A, C)` and you can't decide the best
+//    // order a-priori. With this approach, we'll end up with something like:
+//    //
+//    //
+//    //       JOIN[B | A, C]         JOIN[A | B, C]          JOIN[C | A, C]
+//    //          /      \               /       \                /     \        .
+//    //      foo(A, B)  bar(B, C)   foo(A, B)  baz(A, C)   bar(B, C)  baz(A, C)
+//    if (1u <= views.size() && !recursive) {
+//
+//      std::vector<VIEW *> next_views_wcoj;
+//
+//      // Experimental testing on dds-native shows that this variant performs
+//      // pretty well. The general idea is that we have `foo(A, B), bar(B, C),
+//      // baz(A, C)`, and so if we join together `foo(A, B), bar(B, C)` then
+//      // we want to select `bar(B, C)` (index 1), and try to join it against
+//      // everything not joined, i.e. `baz(A, C)`. After both, we'll have
+//      // two things presenting `foo_bar(A, B, C), bar_baz(A, B, C)` which can
+//      // be joined over all columns.
+//      if (true) {
+//        next_views_wcoj.push_back(join->joined_views[1u]);
+//        for (VIEW *unjoined_view : views) {
+//          next_views_wcoj.push_back(unjoined_view);
+//        }
+//
+//        if (FindJoinCandidates(query, clause, context, next_views_wcoj, log,
+//                               false)) {
+//          views.swap(next_views_wcoj);
+//        }
+//
+//      // This variant is like a generalization of the above variant for N-ary
+//      // joins rather than binary joins. Experiments on dds-native shows that
+//      // `i=0` is better than not doing any WCOJ-like setup, and that `i=1`
+//      // is consistently better than `i=0`, and performs nearly as well as the
+//      // above if use `next_views_wcoj.push_back(join->joined_views[0]);`, but
+//      // ultimately, `next_views_wcoj.push_back(join->joined_views[1]);` (i.e.
+//      // index 1) outperformed all. Keeping this code here for posterity.
+//      } else {
+//
+//        //for (VIEW *view : join->joined_views) {
+//        for (auto i = 1u, max_i = join->joined_views.Size(); i < max_i; ++i) {
+//          VIEW * const view = join->joined_views[i];
+//          next_views_wcoj.clear();
+//          next_views_wcoj.push_back(view);
+//          for (VIEW *unjoined_view : views) {
+//            next_views_wcoj.push_back(unjoined_view);
+//          }
+//
+//          if (FindJoinCandidates(query, clause, context, next_views_wcoj, log,
+//                                 true)) {
+//            views.swap(next_views_wcoj);
+//          }
+//        }
+//      }
+//    }
+//
+
     return true;
   }
 
@@ -1517,9 +1613,12 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     assert(pred.IsNegated());
     const auto decl = ParsedDeclaration::Of(pred);
     if (decl.IsFunctor()) {
+      assert(!pred.IsNegatedWithNever());
       context.functors.push_back(pred);
-    } else {
+    } else if (pred.Arity()) {
       context.negated_predicates.push_back(pred);
+    } else {
+      assert(!pred.IsNegatedWithNever());
     }
   }
 
@@ -1538,9 +1637,9 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   for (auto changed = true; changed && !pred_views.empty();) {
     changed = false;
 
-    // We applied at least one functor or negation and updated `pred_views`
-    // in place (view `context.views`). Here we limit the functors to ones that
-    // have a range of zero-or-one, i.e. filter functors.
+
+    // Limit the functors to ones that  have a range of zero-or-one, i.e.
+    // filter functors. These will restrict the data passing through.
     if (TryApplyFunctors(query, clause, context, log, true)) {
       changed = true;
       continue;
@@ -1548,7 +1647,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 
     // Try to join two or more views together. Updates `pred_views` in place
     // (view `context.views`).
-    if (FindJoinCandidates(query, clause, context, log)) {
+    if (FindJoinCandidates(query, clause, context, context.views, log)) {
       changed = true;
       continue;
     }
@@ -1560,8 +1659,8 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
       continue;
     }
 
-    // Try to apply negations; leave these as late as possible to defer adding
-    // in differential updates.
+    // Try to apply negations; these can introduce differential updates, so
+    // defer them as late as possible.
     if (TryApplyNegations(query, clause, context, log)) {
       changed = true;
       continue;
@@ -1703,6 +1802,9 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 
       view->sets_condition.Emplace(view, cond);
       cond->setters.AddUse(view);
+
+      assert(cond->UsersAreConsistent());
+      assert(cond->SettersAreConsistent());
     }
   };
 
@@ -1715,7 +1817,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     insert->color = context.color;
     stream->transmits.AddUse(insert);
 
-  } else {
+  } else if (decl.Arity()) {
     auto &rel = query->decl_to_relation[decl];
     if (!rel) {
       rel = query->relations.Create(decl);
@@ -1723,6 +1825,12 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     insert = query->inserts.Create(rel, decl);
     insert->color = context.color;
     rel->inserts.AddUse(insert);
+
+  // It's a zero-argument predicate.
+  } else {
+    assert(decl.IsExport());
+    add_set_conditon(clause_head);
+    return true;
   }
 
   for (auto col : clause_head->columns) {
@@ -1730,13 +1838,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   }
 
   // We just proved a zero-argument predicate, i.e. a condition.
-  if (!decl.Arity()) {
-    assert(decl.IsExport());
-    add_set_conditon(insert);
-
-  } else {
-    assert(clause_head->columns.Size() == clause.Arity());
-  }
+  assert(clause_head->columns.Size() == clause.Arity());
 
   return true;
 }
@@ -1749,7 +1851,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
   unsigned next_data_model_id = 1u;
   std::unordered_map<QueryView, EquivalenceSet *> view_to_model;
 
-  query->ForEachView([&](VIEW *view) {
+  const_cast<const QueryImpl *>(query)->ForEachView([&](VIEW *view) {
     QueryView query_view(view);
     EquivalenceSet *const eq_set =
         new EquivalenceSet(next_data_model_id++, view);
@@ -1911,7 +2013,9 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     if (view.IsMerge()) {
       auto possible_sharing_preds = view.InductivePredecessors();
       for (auto pred : possible_sharing_preds) {
-        if (!output_is_conditional(pred) && !pred.IsMerge()) {
+        if (!output_is_conditional(pred) && !pred.IsMerge() &&
+            //!has_multiple_succs(pred) &&
+            pred.CanProduceDeletions() == view.CanReceiveDeletions()) {
           const auto pred_model = view_to_model[pred];
           EquivalenceSet::TryUnion(model, pred_model);
         }
@@ -1957,9 +2061,6 @@ static void BuildEquivalenceSets(QueryImpl *query) {
       }
     }
   }
-
-  query->ForEachView(
-      [&](QueryView view) { view.SetTableId(*view.EquivalenceSetId()); });
 }
 
 
@@ -2002,24 +2103,45 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
     }
   }
 
+#ifndef NDEBUG
+  auto check_conds = [=] (void) {
+    for (auto cond : impl->conditions) {
+      assert(cond->UsersAreConsistent());
+      assert(cond->SettersAreConsistent());
+    }
+  };
+#else
+#  define check_conds()
+#endif
+
   impl->RemoveUnusedViews();
-  impl->RelabelGroupIDs();
+  impl->ClearGroupIDs();
   impl->TrackDifferentialUpdates(log);
+  if (num_errors != log.Size()) {
+    return std::nullopt;
+  }
+
+  check_conds();
 
   impl->Simplify(log);
   if (num_errors != log.Size()) {
     return std::nullopt;
   }
 
+  check_conds();
+
   if (!impl->ConnectInsertsToSelects(log)) {
     return std::nullopt;
   }
 
-  impl->Optimize(log);
+  check_conds();
 
+  impl->Optimize(log);
   if (num_errors != log.Size()) {
     return std::nullopt;
   }
+
+  check_conds();
 
   impl->ConvertConstantInputsToTuples();
   impl->RemoveUnusedViews();
@@ -2027,9 +2149,12 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   impl->RemoveUnusedViews();
   impl->ProxyInsertsWithTuples();
   impl->LinkViews();
+  impl->RemoveUnusedViews();
   impl->IdentifyInductions(log);
+  impl->FinalizeDepths();
   impl->FinalizeColumnIDs();
   impl->TrackDifferentialUpdates(log, true);
+  impl->TrackConstAfterInit();
 
   TaintTracker<COL *> t (impl);
   //t.RunBackwardAnalysis();

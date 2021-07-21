@@ -5,8 +5,11 @@
 namespace hyde {
 
 Node<QueryCondition>::~Node(void) {
+  is_dead = true;
+
   for (auto setter : setters) {
     if (setter) {
+      //assert(setter->sets_condition.get() == this);
       setter->sets_condition.Clear();
       setter->is_canonical = false;
 
@@ -27,45 +30,50 @@ Node<QueryCondition>::~Node(void) {
   setters.Clear();
 }
 
+// An anonymous, not-user-defined condition that is instead inferred based
+// off of optmizations.
+Node<QueryCondition>::Node(void)
+    : Def<Node<QueryCondition>>(this),
+      User(this),
+      positive_users(this),
+      negative_users(this),
+      setters(this) {}
+
+// An explicit, user-defined condition. Usually associated with there-exists
+// checks or configuration options.
+Node<QueryCondition>::Node(ParsedExport decl_)
+    : Def<Node<QueryCondition>>(this),
+      User(this),
+      declaration(decl_),
+      positive_users(this),
+      negative_users(this),
+      setters(this) {}
+
 // Is this a trivial condition?
-bool Node<QueryCondition>::IsTrivial(void) {
+bool Node<QueryCondition>::IsTrivial(
+    std::unordered_map<Node<QueryView> *, bool> &conditional_views) {
   if (in_trivial_check) {
     assert(false);  // Suggests a condition is dependent on itself.
     return true;
   }
 
-  auto is_trivial = true;
   in_trivial_check = true;
 
-  for (auto setter : setters) {
-    if (!setter->negative_conditions.Empty()) {
-      is_trivial = false;
-      goto done;
-    }
-
-    for (auto pos_condition : setter->positive_conditions) {
-      if (!pos_condition->IsTrivial()) {
-        is_trivial = false;
-        goto done;
-      }
-    }
-
-    if (auto tuple_setter = setter->AsTuple(); tuple_setter) {
-      for (auto in_col : tuple_setter->input_columns) {
-        if (!in_col->IsConstant()) {
-          is_trivial = false;
-          goto done;
-        }
-      }
-    } else {
-      is_trivial = false;
-      goto done;
+  for (VIEW *setter : setters) {
+    if (VIEW::IsConditional(setter, conditional_views)) {
+      in_trivial_check = false;
+      return false;
     }
   }
 
-done:
   in_trivial_check = false;
-  return is_trivial;
+  return true;
+}
+
+// Is this a trivial condition?
+bool Node<QueryCondition>::IsTrivial(void) {
+  std::unordered_map<Node<QueryView> *, bool> conditional_views;
+  return this->IsTrivial(conditional_views);
 }
 
 // Are the `positive_users` and `negative_users` lists consistent?
@@ -98,6 +106,34 @@ bool Node<QueryCondition>::UsersAreConsistent(void) const {
   }
 
   return consistent;
+}
+
+// Are the setters of this condition consistent?
+bool Node<QueryCondition>::SettersAreConsistent(void) const {
+  for (VIEW *setter : setters) {
+    if (setter->sets_condition.get() != this) {
+      return false;
+    }
+  }
+
+  bool ok = true;
+
+  this->ForEachUse<VIEW>([&ok] (VIEW *setter, COND *self) {
+    if (setter->is_dead ||
+        setter->sets_condition.get() != self) {
+      return;
+    }
+
+    for (auto v : self->setters) {
+      if (v == setter) {
+        return;
+      }
+    }
+
+    ok = false;
+  });
+
+  return ok;
 }
 
 // Extract conditions from regular nodes and force them to belong to only

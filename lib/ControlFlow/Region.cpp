@@ -6,7 +6,7 @@ namespace hyde {
 
 Node<ProgramRegion>::~Node(void) {}
 
-Node<ProgramRegion>::Node(Node<ProgramProcedure> *containing_procedure_)
+Node<ProgramRegion>::Node(Node<ProgramProcedure> *containing_procedure_, bool)
     : Def<Node<ProgramRegion>>(this),
       User(this),
       containing_procedure(containing_procedure_),
@@ -20,7 +20,9 @@ Node<ProgramRegion>::Node(Node<ProgramRegion> *parent_)
     : Def<Node<ProgramRegion>>(this),
       User(this),
       containing_procedure(parent_->containing_procedure),
-      parent(parent_) {}
+      parent(parent_) {
+  assert(containing_procedure == parent->parent->containing_procedure);
+}
 
 Node<ProgramProcedure> *Node<ProgramRegion>::AsProcedure(void) noexcept {
   return nullptr;
@@ -53,13 +55,15 @@ unsigned Node<ProgramRegion>::Depth(void) const noexcept {
 
 // Returns the lexical level of this node.
 unsigned Node<ProgramRegion>::CachedDepth(void) noexcept {
-  if (depth) {
-    return depth;
+  if (cached_depth) {
+    return cached_depth;
+
   } else if (parent == containing_procedure || parent == this || !parent) {
     return 0u;
+
   } else {
-    depth = parent->CachedDepth() + 1u;
-    return depth;
+    cached_depth = parent->CachedDepth() + 1u;
+    return cached_depth;
   }
 }
 
@@ -241,7 +245,9 @@ VAR *Node<ProgramRegion>::VariableFor(ProgramImpl *impl, QueryColumn col) {
       var = impl->const_to_var[QueryConstant::From(col)];
     }
   }
+
   assert(var != nullptr);
+  assert(var->Type() == col.Type());
   return var;
 }
 

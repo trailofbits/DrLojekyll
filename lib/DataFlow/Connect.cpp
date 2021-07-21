@@ -30,10 +30,7 @@ VIEW *CreateProxyOfInserts(QueryImpl *impl, UseList<Node<QueryView>> &inserts) {
 
     insert->CopyDifferentialAndGroupIdsTo(proxy);
     insert->TransferSetConditionTo(proxy);
-    insert->CopyTestedConditionsTo(proxy);
-
-    insert->DropSetConditions();
-    insert->DropTestedConditions();
+    insert->TransferTestedConditionsTo(proxy);
 
     auto col_index = 0u;
     for (auto in_col : insert->input_columns) {
@@ -136,11 +133,6 @@ static void ProxySelects(QueryImpl *impl, UseList<Node<QueryView>> &selects,
 #endif
 
     select->CopyDifferentialAndGroupIdsTo(proxy);
-    select->TransferSetConditionTo(proxy);
-    select->CopyTestedConditionsTo(proxy);
-
-    select->DropSetConditions();
-    select->DropTestedConditions();
 
     auto col_index = 0u;
     for (auto in_col : insert_proxy->columns) {
@@ -186,7 +178,6 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
 
       // If a message has more than one transmit, then we want to merge all
       // of those transmits via a single UNION.
-
       VIEW *const proxy = CreateProxyOfInserts(this, io->transmits);
 
       INSERT *insert = inserts.Create(io, io->declaration);
@@ -241,6 +232,13 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
       continue;
     }
 
+    if (rel->inserts.Empty()) {
+      log.Append(rel->declaration.SpellingRange())
+          << "Declaration of " << rel->declaration.KindName()
+          << " is missing a definition";
+      continue;
+    }
+
     VIEW *const insert_proxy = CreateProxyForMutableParams(
         this, CreateProxyOfInserts(this, rel->inserts), rel->declaration);
     rel->inserts.Clear();
@@ -268,7 +266,6 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
   }
 
   RemoveUnusedViews();
-  RelabelGroupIDs();
   TrackDifferentialUpdates(log, true);
 
   return true;

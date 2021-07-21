@@ -26,7 +26,9 @@ bool NeedsInductionOutputVector(QueryView view) {
 ContinueInductionWorkItem::ContinueInductionWorkItem(Context &context,
                                                      QueryView merge,
                                                      INDUCTION *induction_)
-    : WorkItem(context, (kContinueInductionOrder | *(merge.InductionDepth()))),
+    : WorkItem(context,
+               (kContinueInductionOrder |
+                (merge.InductionDepth().value() << kInductionDepthShift))),
       induction(induction_) {}
 
 // A work item whose `Run` method is invoked after all initialization and
@@ -38,7 +40,8 @@ class FinalizeInductionWorkItem final : public WorkItem {
   FinalizeInductionWorkItem(Context &context, QueryView merge,
                             INDUCTION *induction_)
       : WorkItem(context,
-                 (kFinalizeInductionOrder | *(merge.InductionDepth()))),
+                 (kContinueInductionOrder | kFinalizeInductionOrder |
+                  (merge.InductionDepth().value() << kInductionDepthShift))),
         induction(induction_) {}
 
   void Run(ProgramImpl *impl, Context &context) override;
@@ -299,7 +302,6 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
     if (const auto num_pivots = join.NumPivotColumns()) {
       if (for_add) {
 
-
         LET *const let = impl->operation_regions.CreateDerived<LET>(cycle_par);
         let->view.emplace(view);
         cycle_par->AddRegion(let);
@@ -388,7 +390,15 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
   // Add a tuple to the output vector. We don't need to compute a worker ID
   // because we know we're dealing with only worker-specific data in this
   // cycle.
-  if (NeedsInductionOutputVector(view)) {
+  //
+  // NOTE(pag): Don't do anything for removals of JOINs/PRODUCTs. This function
+  //            is called at the beginning of processing the nodes inside of the
+  //            cycle, and we know that inductive JOINs straddle inside/outside,
+  //            so when we processor the inductive successors of the UNIONs in
+  //            this inductive region, we'll eventually come back to the JOINs
+  //            and at that point we'll do the right thing.
+  if (NeedsInductionOutputVector(view) &&
+      !(!for_add && view.IsJoin())) {
     cycle_body_par->AddRegion(AppendToInductionOutputVectors(
         impl, view, context, induction, cycle_body_par));
   }
@@ -559,6 +569,7 @@ void ContinueInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
   }
 
   auto ancestor_of_inits = FindCommonAncestorOfInitRegions(regions);
+
   induction->parent = ancestor_of_inits->parent;
   ancestor_of_inits->ReplaceAllUsesWith(induction);
   ancestor_of_inits->parent = induction;
@@ -788,6 +799,14 @@ INDUCTION *GetOrInitInduction(ProgramImpl *impl, QueryView view,
     induction = pending_action->induction;
   } else {
     induction = impl->induction_regions.Create(impl, parent);
+
+#ifndef NDEBUG
+    const auto merge_group = *(view.InductionGroupId());
+    std::stringstream ss;
+    ss << "set " << merge_group << " depth " << merge_depth;
+    induction->comment = ss.str();
+#endif
+
     action = new ContinueInductionWorkItem(context, view, induction);
     pending_action = action;
     context.work_list.emplace_back(action);

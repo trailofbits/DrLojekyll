@@ -27,10 +27,8 @@ static VIEW *ProxyInsertWithTuple(QueryImpl *impl, INSERT *view,
     view->input_columns.AddUse(col);
   }
 
-  view->CopyTestedConditionsTo(proxy);
-  view->DropTestedConditions();
   view->TransferSetConditionTo(proxy);
-  view->DropSetConditions();
+  view->TransferTestedConditionsTo(proxy);
   return proxy;
 }
 
@@ -261,9 +259,7 @@ void QueryImpl::LinkViews(bool recursive) {
     }
   }
 
-
   // Now we start the linking!
-
 
   for (auto view : negations) {
     assert(!view->is_dead);
@@ -374,16 +370,30 @@ void QueryImpl::LinkViews(bool recursive) {
       view->predecessors.AddUse(incoming_view);
       incoming_view->successors.AddUse(view);
     }
-
-    // Force depth calculation.
-    if (view->successors.Empty()) {
-      (void) view->Depth();
-    }
   }
 
   const_cast<const QueryImpl *>(this)->ForEachView([=](VIEW *view) {
     view->predecessors.Unique();
     view->successors.Unique();
+    view->depth = 0;
+  });
+}
+
+// Finalize all depth calculations.
+void QueryImpl::FinalizeDepths(void) const {
+  this->ForEachView([=](VIEW *view) {
+    view->depth = 0;
+  });
+
+  // Force depth calculation.
+  for (auto view : inserts) {
+    if (view->successors.Empty()) {
+      (void) view->Depth();
+    }
+  }
+
+  this->ForEachView([=](VIEW *view) {
+    (void) view->Depth();
   });
 }
 

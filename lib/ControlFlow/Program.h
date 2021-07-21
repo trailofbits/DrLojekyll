@@ -155,6 +155,9 @@ class Node<DataVector> final : public Def<Node<DataVector>> {
   const VectorKind kind;
   std::vector<TypeKind> col_types;
 
+  std::optional<ParsedMessage> added_message;
+  std::optional<ParsedMessage> removed_message;
+
   // `true` if this vector must have variants of itself sharded across workers.
   bool is_sharded{false};
 };
@@ -166,10 +169,7 @@ using VECTOR = Node<DataVector>;
 template <>
 class Node<DataVariable> final : public Def<Node<DataVariable>> {
  public:
-  inline explicit Node(unsigned id_, VariableRole role_)
-      : Def<Node<DataVariable>>(this),
-        role(role_),
-        id(id_) {}
+  explicit Node(unsigned id_, VariableRole role_);
 
   void Accept(ProgramVisitor &visitor);
 
@@ -214,7 +214,7 @@ template <>
 class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
  public:
   virtual ~Node(void);
-  explicit Node(Node<ProgramProcedure> *containing_procedure_);
+  explicit Node(Node<ProgramProcedure> *containing_procedure_, bool);
   explicit Node(Node<ProgramRegion> *parent_);
 
   virtual void Accept(ProgramVisitor &visitor) = 0;
@@ -231,8 +231,11 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
 
   inline void ReplaceAllUsesWith(Node<ProgramRegion> *that) {
     this->Def<Node<ProgramRegion>>::ReplaceAllUsesWith(that);
-    that->parent = this->parent;
-    this->parent = nullptr;
+    if (!this->AsProcedure()) {
+      assert(!that->AsProcedure());
+      that->parent = this->parent;
+      this->parent = nullptr;
+    }
   }
 
   // Returns 'true' if 'this' was able to merge all of the regions in 'merges'.
@@ -297,7 +300,7 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   // A comment about the creation of this node.
   std::string comment;
 
-  unsigned depth{0};
+  unsigned cached_depth{0};
 };
 
 using REGION = Node<ProgramRegion>;
@@ -322,6 +325,8 @@ struct RegionRef : public UseRef<REGION> {
 
 enum class ProgramOperation {
   kInvalid,
+
+  kClearVectorBeforePrimaryFlowFunction,
 
   // Insert into a table. Can be interpreted as conditional (a runtime may
   // choose to check if the insert is new or not). If the insert succeeds, then
@@ -891,10 +896,11 @@ class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
 
-  Node(Node<ProgramRegion> *parent_, ParsedMessage message_,
+  Node(Node<ProgramRegion> *parent_, ParsedMessage message_, unsigned id_,
        ProgramOperation op_ = ProgramOperation::kPublishMessage)
       : Node<ProgramOperationRegion>(parent_, op_),
         message(message_),
+        id(id_),
         arg_vars(this) {}
 
   void Accept(ProgramVisitor &visitor) override;
@@ -912,6 +918,9 @@ class Node<ProgramPublishRegion> final : public Node<ProgramOperationRegion> {
 
   // Message being published.
   const ParsedMessage message;
+
+  // ID of this node.
+  const unsigned id;
 
   // Variables passed as arguments.
   UseList<VAR> arg_vars;
@@ -984,14 +993,26 @@ class Node<ProgramTableJoinRegion> final : public Node<ProgramOperationRegion> {
   const unsigned id;
 
   UseList<TABLE> tables;
+
+  // NOTE(pag): There might be fewer indices than tables. If the Nth table's
+  //            index is not present then `index_of_index[N]` will have a value
+  //            of `0`, otherwise its index can be found as:
+  //
+  //                    indices[index_of_index[N] - 1u]
+  //
+  //            The only case where an index is absent is when it covers all
+  //            columns of a table.
+  std::vector<unsigned> index_of_index;
   UseList<TABLEINDEX> indices;
+
   UseRef<VECTOR> pivot_vec;
 
   // There is a `1:N` correspondence between `pivot_vars` and `pivot_cols`.
   DefList<VAR> pivot_vars;
   std::vector<UseList<TABLECOLUMN>> pivot_cols;
 
-  // There is a 1:1 correspondence between `output_vars` and `output_cols`.
+  // There is a 1:1 correspondence between `output_vars` and columns in the
+  // selected tables. Not all of those columns will necessarily be used.
   std::vector<DefList<VAR>> output_vars;
   std::vector<UseList<TABLECOLUMN>> output_cols;
 };
@@ -1043,11 +1064,13 @@ class Node<ProgramTableScanRegion> final : public Node<ProgramOperationRegion> {
  public:
   virtual ~Node(void);
 
-  inline Node(Node<ProgramRegion> *parent_)
+  inline Node(unsigned id_, Node<ProgramRegion> *parent_)
       : Node<ProgramOperationRegion>(parent_, ProgramOperation::kScanTable),
+        id(id_),
         out_cols(this),
         in_cols(this),
-        in_vars(this) {}
+        in_vars(this),
+        out_vars(this) {}
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;
@@ -1063,14 +1086,19 @@ class Node<ProgramTableScanRegion> final : public Node<ProgramOperationRegion> {
 
   Node<ProgramTableScanRegion> *AsTableScan(void) noexcept override;
 
+  const unsigned id;
+
   UseRef<TABLE> table;
   UseList<TABLECOLUMN> out_cols;
 
   UseRef<TABLEINDEX> index;
   UseList<TABLECOLUMN> in_cols;
+
+  // One variable for each column in `in_cols`.
   UseList<VAR> in_vars;
 
-  UseRef<VECTOR> output_vector;
+  // Output variables, one per column in the table!
+  DefList<VAR> out_vars;
 };
 
 using TABLESCAN = Node<ProgramTableScanRegion>;
@@ -1176,15 +1204,7 @@ class Node<ProgramProcedure> : public Node<ProgramRegion> {
  public:
   virtual ~Node(void);
 
-  inline Node(unsigned id_, ProcedureKind kind_)
-      : Node<ProgramRegion>(this),
-        id(id_),
-        kind(kind_),
-        tables(this),
-        body(this),
-        input_vecs(this),
-        input_vars(this),
-        vectors(this) {}
+  Node(unsigned id_, ProcedureKind kind_);
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;
@@ -1413,6 +1433,7 @@ class ProgramImpl : public User {
         parallel_regions(this),
         induction_regions(this),
         operation_regions(this),
+        join_regions(this),
         tables(this),
         global_vars(this),
         const_vars(this),
@@ -1441,6 +1462,7 @@ class ProgramImpl : public User {
   DefList<PARALLEL> parallel_regions;
   DefList<INDUCTION> induction_regions;
   DefList<OP> operation_regions;
+  DefList<TABLEJOIN> join_regions;
   DefList<TABLE> tables;
 
   // List of variables associated with globals (e.g. reference counts).

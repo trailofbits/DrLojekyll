@@ -6,6 +6,7 @@
 #include <functional>
 #include <optional>
 #include <sstream>
+#include <unordered_set>
 
 #include "EquivalenceSet.h"
 
@@ -220,21 +221,17 @@ const char *QueryView::KindName(void) const noexcept {
 }
 
 void QueryView::SetTableId(unsigned id) const noexcept {
-  impl->table_id = id;
+  impl->table_id.emplace(id);
 }
 
-unsigned QueryView::TableId(void) const noexcept {
+std::optional<unsigned> QueryView::TableId(void) const noexcept {
   return impl->table_id;
 }
 
 // Id assigned by building the equivalence set in BuildEquivalenceSets
 // return std::nullopt if the EquivalenceSet hasn't been built yet
-std::optional<unsigned> QueryView::EquivalenceSetId(void) const noexcept {
-  if (auto equivalence_set = impl->equivalence_set.get()) {
-    return equivalence_set->Find()->id;
-  } else {
-    return std::nullopt;
-  }
+unsigned QueryView::EquivalenceSetId(void) const noexcept {
+  return impl->equivalence_set->Find()->id;
 }
 
 // VIEWs in this nodes equivelence set
@@ -245,6 +242,10 @@ UsedNodeRange<QueryView> QueryView::EquivalenceSetViews(void) const {
   } else {
     return {};
   }
+}
+
+bool QueryView::IsConstantAfterInitialization(void) const noexcept {
+  return impl->is_const_after_init;
 }
 
 bool QueryView::IsSelect(void) const noexcept {
@@ -556,6 +557,14 @@ void QueryColumn::ForEachUser(std::function<void(QueryView)> user_cb) const {
       [&user_cb](VIEW *view, COL *) { user_cb(QueryView(view)); });
 }
 
+std::optional<QueryColumn> QueryColumn::AsConstantColumn(void) const noexcept {
+  if (auto const_col = impl->TryResolveToConstant()) {
+    return QueryColumn(const_col);
+  } else {
+    return std::nullopt;
+  }
+}
+
 std::optional<ParsedVariable> QueryColumn::Variable(void) const noexcept {
   return impl->var;
 }
@@ -628,7 +637,7 @@ unsigned QueryCondition::Depth(void) const noexcept {
   }
   impl->in_depth_calc = true;
   auto depth = 1u;
-  for (auto setter : impl->setters) {
+  for (VIEW *setter : impl->setters) {
     depth = std::max(depth, setter->Depth());
   }
   impl->in_depth_calc = false;
@@ -780,12 +789,22 @@ void QuerySelect::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
 void QueryJoin::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
                                               std::optional<QueryColumn>)>
                                with_col) const {
-  for (auto out_col : impl->columns) {
-    auto in_cols_it = impl->out_to_in.find(out_col);
-    auto &in_cols = in_cols_it->second;
+#ifndef NDEBUG
+  std::unordered_set<COL *> seen;
+#endif
+
+  for (COL *out_col : impl->columns) {
+    auto &in_cols = impl->out_to_in.at(out_col);
     const auto role = in_cols.Size() == 1u ? InputColumnRole::kJoinNonPivot
                                            : InputColumnRole::kJoinPivot;
-    for (const auto in_col : in_cols) {
+    for (COL *in_col : in_cols) {
+#ifndef NDEBUG
+      if (seen.count(in_col)) {
+        impl->color = 0xff;
+      }
+      //assert(!seen.count(in_col));
+      seen.insert(in_col);
+#endif
       with_col(QueryColumn(in_col), role, QueryColumn(out_col));
     }
   }
@@ -1396,6 +1415,13 @@ QueryColumn QueryNegate::NthColumn(unsigned n) const noexcept {
   return QueryColumn(impl->columns[n]);
 }
 
+// If a negation has a never hint, then we know that if some data goes through
+// the output, then it will always go through, and nothing will get set in
+// the negated view that will result in the prior data being retracted.
+bool QueryNegate::HasNeverHint(void) const noexcept {
+  return impl->is_never;
+}
+
 // The resulting copied columns.
 DefinedNodeRange<QueryColumn> QueryNegate::CopiedColumns(void) const {
   return {DefinedNodeIterator<QueryColumn>(impl->columns.begin() +
@@ -1606,7 +1632,7 @@ void QueryTuple::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
 }
 
 QueryKVIndex QueryKVIndex::From(QueryView view) {
-  assert(view.IsTuple());
+  assert(view.IsKVIndex());
   return reinterpret_cast<QueryKVIndex &>(view);
 }
 

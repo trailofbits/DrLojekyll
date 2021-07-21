@@ -26,6 +26,7 @@ static void ForEachPredecessorOf(VIEW *view, T cb) {
   }
 
   if (auto negate = view->AsNegate()) {
+    assert(negate->negated_view->is_used_by_negation);
     cb(negate->negated_view.get());
   }
 }
@@ -41,11 +42,8 @@ static void ForEachSuccessorOf(VIEW *view, T cb) {
     cb(negate);
     found = true;
   });
-  if (!found) {
-    assert(!view->is_used_by_negation);
-  } else {
-    assert(view->is_used_by_negation);
-  }
+  assert(view->is_used_by_negation == found);
+  (void) found;
 }
 
 // Return the set of all views that contribute data to `view`. This includes
@@ -364,6 +362,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     assert(!view->AsInsert());
 
     MERGE *const new_union = merges.Create();
+    new_union->color = 0xff00;
 
     auto col_index = 0u;
     for (auto col : view->columns) {
@@ -374,7 +373,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     }
 
     // We don't want to replace the weak uses of `this` in any condition's
-    // `positive_users` or `negative_users`.
+    // `positive_users`, `negative_users`, or `setters`.
     view->VIEW::ReplaceUsesWithIf<User>(new_union, [=](User *user, VIEW *) {
       // We'll let all conditions continue to use `view`.
       //
