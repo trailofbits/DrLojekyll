@@ -9,13 +9,13 @@
 #include <memory>
 #include <optional>
 #include <utility>
+#include <unordered_set>
 
 namespace hyde {
 
 class ErrorLog;
 class QueryImpl;
-template <typename>
-class TaintTracker;
+//class ColumnTainting;
 class OutputStream;
 
 namespace query {
@@ -43,9 +43,7 @@ class QueryNode {
 
  protected:
   friend class ::hyde::QueryImpl;
-
-  template <typename>
-  friend class ::hyde::TaintTracker;
+  //friend class ::hyde::ColumnTainting;
 
   Node<T> *impl;
 };
@@ -113,8 +111,12 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
 
 #ifndef NDEBUG
   // Comma separated list of all column ids in this columns taint set
-  std::string TaintIds(void) const;
+  std::string ForwardsTaintIds(void) const;
+  std::string BackwardsTaintIds(void) const;
 #endif
+
+  std::unordered_set<Node<QueryColumn> *> ForwardsColumnTaints(void) const;
+  std::unordered_set<Node<QueryColumn> *> BackwardsColumnTaints(void) const;
 
   // Index of this column in its defining view. Returns nothing if this column
   // is a constant.

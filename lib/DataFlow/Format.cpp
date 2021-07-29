@@ -111,7 +111,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << col.Variable() << ":" << *(col.Index());
     }
 #ifndef NDEBUG
-    os << "<BR />" << col.Id() << ": " << col.TaintIds();
+    os << " " << col.Id();
+    os << "<BR />" << "F: " << col.ForwardsTaintIds();
+    os << "<BR />" << "B: " << col.BackwardsTaintIds();
 #endif
     return os;
   };

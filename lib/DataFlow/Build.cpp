@@ -21,7 +21,7 @@
 
 #include "EquivalenceSet.h"
 #include "Query.h"
-#include "Taint.h"
+#include "Taint.cpp"
 
 #define DEBUG(...)
 
@@ -2156,9 +2156,16 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   impl->TrackDifferentialUpdates(log, true);
   impl->TrackConstAfterInit();
 
-  TaintTracker<COL *> t (impl);
-  //t.RunBackwardAnalysis();
-  t.RunForwardAnalysis();
+
+//  impl->forwards_col_taints = std::make_shared<ColumnTainting>(impl);
+//  impl->backwards_col_taints = impl->forwards_col_taints;
+//
+//  impl->backwards_col_taints.get()->RunBackwardAnalysis();
+//  impl->forwards_col_taints.get()->RunForwardAnalysis();
+
+  //auto taints = ColumnTainting(impl);
+  impl->RunBackwardsTaintAnalysis();
+  impl->RunForwardsTaintAnalysis();
 
   BuildEquivalenceSets(impl.get());
 

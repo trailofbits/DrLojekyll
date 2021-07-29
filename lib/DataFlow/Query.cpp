@@ -17,6 +17,9 @@
 
 namespace hyde {
 
+QueryImpl::QueryImpl(const ParsedModule &module_)
+    : module(module_.RootModule()) {}
+
 QueryImpl::~QueryImpl(void) {
 
   for (auto rel : relations) {
@@ -574,12 +577,49 @@ unsigned QueryColumn::Id(void) const noexcept {
   return impl->id;
 }
 
-#ifndef NDEBUG
-// Comma separated list of all column ids in this columns taint set
-std::string QueryColumn::TaintIds(void) const {
-  return impl->taint_ids;
+// Comma separated list of all column ids in forwards column taint set
+std::string QueryColumn::ForwardsTaintIds(void) const {
+  if (!impl->forwards_col_taints || impl->forwards_col_taints->empty()) {
+    return "";
+  }
+
+  std::stringstream ss;
+  for (auto col : *impl->forwards_col_taints) {
+    ss << col->id << ", ";
+  }
+
+  return ss.str().substr(0, ss.str().length() - 2);
 }
-#endif
+
+// Comma separated list of all column ids in backwards column taint set
+std::string QueryColumn::BackwardsTaintIds(void) const {
+  if (!impl->backwards_col_taints || impl->backwards_col_taints->empty()) {
+    return "";
+  }
+
+  std::stringstream ss;
+  for (auto col : *impl->backwards_col_taints) {
+    ss << col->id << ", ";
+  }
+
+  return ss.str().substr(0, ss.str().length() - 2);
+}
+
+// Forwards column taint set
+std::unordered_set<COL *> QueryColumn::ForwardsColumnTaints(void) const {
+  if (!impl->forwards_col_taints || impl->forwards_col_taints->empty()) {
+    return {};
+  }
+  return *impl->forwards_col_taints;
+}
+
+// Backwards column taint set
+std::unordered_set<COL *> QueryColumn::BackwardsColumnTaints(void) const {
+  if (!impl->backwards_col_taints || impl->backwards_col_taints->empty()) {
+    return {};
+  }
+  return *impl->backwards_col_taints;
+}
 
 // Index of this column in its defining view. Returns nothing if this column
 // is a constant.

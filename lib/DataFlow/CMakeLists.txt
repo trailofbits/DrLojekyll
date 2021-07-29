@@ -9,7 +9,6 @@ set(DataFlow_SRCS
     "EquivalenceSet.h"
     "Optimize.h"
     "Query.h"
-    "Taint.h"
 
     "Aggregate.cpp"
     "Build.cpp"
@@ -36,6 +35,7 @@ set(DataFlow_SRCS
     "Query.cpp"
     "Select.cpp"
     "Stream.cpp"
+    "Taint.cpp"
     "Tuple.cpp"
     "View.cpp"
 )

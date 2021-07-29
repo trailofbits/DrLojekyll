@@ -857,14 +857,14 @@ class DefList {
   DefList(User *owner_) : owner(owner_) {}
 
   template <typename... Args>
-  T *Create(Args &&...args) {
+  T *Create(Args &&... args) {
     auto new_def = new T(std::forward<Args>(args)...);
     defs.emplace_back(new_def);
     return new_def;
   }
 
   template <typename D, typename... Args>
-  D *CreateDerived(Args &&...args) {
+  D *CreateDerived(Args &&... args) {
     auto new_def = new D(std::forward<Args>(args)...);
     defs.emplace_back(new_def);
     return new_def;
