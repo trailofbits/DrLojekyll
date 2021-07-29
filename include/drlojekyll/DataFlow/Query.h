@@ -112,8 +112,8 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   std::string BackwardsTaintIds(void) const;
 
   // Taint Sets
-  std::unordered_set<Node<QueryColumn> *> ForwardsColumnTaints(void) const;
-  std::unordered_set<Node<QueryColumn> *> BackwardsColumnTaints(void) const;
+  const std::unordered_set<Node<QueryColumn> *> ForwardsColumnTaints(void) const;
+  const std::unordered_set<Node<QueryColumn> *> BackwardsColumnTaints(void) const;
 
   // Index of this column in its defining view. Returns nothing if this column
   // is a constant.

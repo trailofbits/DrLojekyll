@@ -5,14 +5,12 @@
 
 #include "Query.h"
 
-//#include <iostream>
-#include <sstream>
+//#include <sstream>
 
 
 namespace hyde {
 
 namespace {
-
 bool TaintWithCol(COL *col, COL *taint_col, std::vector<std::shared_ptr<std::unordered_set<COL *>>> &col_taints, bool is_backward = false) {
   auto old_size = col_taints[col->id]->size();
   auto index = taint_col->id;
@@ -23,29 +21,6 @@ bool TaintWithCol(COL *col, COL *taint_col, std::vector<std::shared_ptr<std::uno
                              col_taints[index]->end());
   return old_size != col_taints[col->id]->size();
 }
-
-const std::unordered_set<COL *> &Taints(COL *col, std::vector<std::shared_ptr<std::unordered_set<COL *>>> &col_taints) {
-  return *col_taints[col->id];
-}
-
-const std::unordered_set<COL *> &Taints(unsigned col_id, std::vector<std::shared_ptr<std::unordered_set<COL *>>> &col_taints) {
-  return *col_taints[col_id];
-}
-
-//const std::string TaintsAsString(unsigned col_id, std::vector<std::shared_ptr<std::unordered_set<COL *>>> &col_taints) {
-//  if (col_taints[col_id]->empty()) {
-//    return "";
-//  }
-//
-//  std::stringstream ss;
-//  for (auto col : *(col_taints[col_id])) {
-//    ss << col->id << ", ";
-//  }
-//
-//  return ss.str().substr(0, ss.str().length() - 2);
-//}
-
-
 } // namespace
 
 // Taint all columns with the insert columns they are derived from
@@ -57,6 +32,7 @@ void QueryImpl::RunForwardsTaintAnalysis(void) {
   ForEachViewInReverseDepthOrder([&](VIEW *view) {
     sorted_views.push_back(view);
     for (auto c : view->columns) {
+      c->forwards_col_taints.reset();
       auto col_taints = std::make_shared<std::unordered_set<COL *>>();
       forwards_col_taints.emplace_back(col_taints);
       c->forwards_col_taints = col_taints;
@@ -66,10 +42,6 @@ void QueryImpl::RunForwardsTaintAnalysis(void) {
   for (auto insert : inserts) {
     for (auto col : insert->input_columns) {
       forwards_col_taints[col->id]->insert(col);
-
-//#ifndef NDEBUG
-//        col->forwards_col_taint_ids = TaintsAsString(col->id, impl->forwards_col_taints);
-//#endif
     }
   }
 
@@ -119,13 +91,6 @@ void QueryImpl::RunForwardsTaintAnalysis(void) {
             }
             break;
         }
-
-#ifndef NDEBUG
-//          in_col.impl->forwards_col_taint_ids = TaintsAsString(in_col.impl->id, impl->forwards_col_taints);
-//          if (out_col) {
-//            out_col->impl->forwards_col_taint_ids = TaintsAsString(out_col->impl->id, impl->forwards_col_taints);
-//          }
-#endif
       });
     }
   }
@@ -140,6 +105,7 @@ void QueryImpl::RunBackwardsTaintAnalysis(void) {
   ForEachViewInReverseDepthOrder([&](VIEW *view) {
     sorted_views.push_back(view);
     for (auto c : view->columns) {
+      c->backwards_col_taints.reset();
       auto col_taints = std::make_shared<std::unordered_set<COL *>>();
       backwards_col_taints.emplace_back(col_taints);
       c->backwards_col_taints = col_taints;
@@ -187,4 +153,19 @@ void QueryImpl::RunBackwardsTaintAnalysis(void) {
     }
   }
 }
+
+const std::unordered_set<COL *> & QueryImpl::GetForwardsTaintsFromColId(unsigned col_id) {
+  if (forwards_col_taints.empty() || !forwards_col_taints[col_id]) {
+    return std::unordered_set<COL *>();
+  }
+  return *forwards_col_taints[col_id];
+}
+
+const std::unordered_set<COL *> & QueryImpl::GetBackwardsTaintsFromColId(unsigned col_id) {
+  if (backwards_col_taints.empty() || !backwards_col_taints[col_id]) {
+    return std::unordered_set<COL *>();
+  }
+  return *backwards_col_taints[col_id];
+}
+
 }  // namespace hyde

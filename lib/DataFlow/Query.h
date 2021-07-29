@@ -1460,9 +1460,11 @@ class QueryImpl {
   void RunForwardsTaintAnalysis(void);
   void RunBackwardsTaintAnalysis(void);
 
+  const std::unordered_set<COL *> &GetForwardsTaintsFromColId(unsigned col_id);
+  const std::unordered_set<COL *> &GetBackwardsTaintsFromColId(unsigned col_id);
+
   std::vector<std::shared_ptr<std::unordered_set<COL *>>> forwards_col_taints;
   std::vector<std::shared_ptr<std::unordered_set<COL *>>> backwards_col_taints;
-
 
   DefList<REL> relations;
   DefList<CONST> constants;

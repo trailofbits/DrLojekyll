@@ -603,7 +603,7 @@ std::string QueryColumn::BackwardsTaintIds(void) const {
 }
 
 // Forwards column taint set
-std::unordered_set<COL *> QueryColumn::ForwardsColumnTaints(void) const {
+const std::unordered_set<COL *> QueryColumn::ForwardsColumnTaints(void) const {
   if (!impl->forwards_col_taints || impl->forwards_col_taints->empty()) {
     return {};
   }
@@ -611,7 +611,7 @@ std::unordered_set<COL *> QueryColumn::ForwardsColumnTaints(void) const {
 }
 
 // Backwards column taint set
-std::unordered_set<COL *> QueryColumn::BackwardsColumnTaints(void) const {
+const std::unordered_set<COL *> QueryColumn::BackwardsColumnTaints(void) const {
   if (!impl->backwards_col_taints || impl->backwards_col_taints->empty()) {
     return {};
   }
