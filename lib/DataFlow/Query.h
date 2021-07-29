@@ -20,7 +20,6 @@ class EqualitySet;
 class EquivalenceSet;
 class ErrorLog;
 class OptimizationContext;
-//class ColumnTainting;
 
 // Represents all values that could inhabit some relation's tuple.
 template <>
@@ -135,19 +134,10 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   // After optimizing a dataflow, we replace all ID values
   unsigned id;
 
-//#ifndef NDEBUG
-////  std::string forwards_col_taint_ids;
-////  std::string backwards_col_taint_ids;
-//
-//#endif
-  std::shared_ptr<std::unordered_set<Node<QueryColumn> *>> forwards_col_taints;
-  std::shared_ptr<std::unordered_set<Node<QueryColumn> *>> backwards_col_taints;
-
   // Display the range of column nodes in this columns forwards (or backwards)
   // taint set.
-  //std::shared_ptr<ColumnTainting> col_tainting;
-  //std::unique_ptr<WeakUseList<Node<QueryColumn>>> forwards_taint_columns;
-  //std::unique_ptr<WeakUseList<Node<QueryColumn>>> backwards_taint_columns;
+  std::shared_ptr<std::unordered_set<Node<QueryColumn> *>> forwards_col_taints;
+  std::shared_ptr<std::unordered_set<Node<QueryColumn> *>> backwards_col_taints;
 
   // The index of this column within its view. This will have a value of
   // `kInvalidIndex` if we don't have the information.
@@ -1123,8 +1113,8 @@ void Node<QueryColumn>::ForEachUser(T user_cb) const {
 
 class QueryImpl {
  public:
-  QueryImpl(const ParsedModule &module_);
-//      : module(module_.RootModule()) {}
+  inline explicit QueryImpl(const ParsedModule &module_)
+      : module(module_.RootModule()) {}
 
   ~QueryImpl(void);
 

@@ -17,9 +17,6 @@
 
 namespace hyde {
 
-QueryImpl::QueryImpl(const ParsedModule &module_)
-    : module(module_.RootModule()) {}
-
 QueryImpl::~QueryImpl(void) {
 
   for (auto rel : relations) {

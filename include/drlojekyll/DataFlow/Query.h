@@ -15,7 +15,6 @@ namespace hyde {
 
 class ErrorLog;
 class QueryImpl;
-//class ColumnTainting;
 class OutputStream;
 
 namespace query {
@@ -43,7 +42,6 @@ class QueryNode {
 
  protected:
   friend class ::hyde::QueryImpl;
-  //friend class ::hyde::ColumnTainting;
 
   Node<T> *impl;
 };
@@ -109,12 +107,11 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   // Unique identifier for columns.
   unsigned Id(void) const noexcept;
 
-#ifndef NDEBUG
   // Comma separated list of all column ids in this columns taint set
   std::string ForwardsTaintIds(void) const;
   std::string BackwardsTaintIds(void) const;
-#endif
 
+  // Taint Sets
   std::unordered_set<Node<QueryColumn> *> ForwardsColumnTaints(void) const;
   std::unordered_set<Node<QueryColumn> *> BackwardsColumnTaints(void) const;
 
