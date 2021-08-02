@@ -5,9 +5,6 @@
 
 #include "Query.h"
 
-//#include <sstream>
-
-
 namespace hyde {
 
 namespace {
@@ -154,14 +151,14 @@ void QueryImpl::RunBackwardsTaintAnalysis(void) {
   }
 }
 
-const std::unordered_set<COL *> & QueryImpl::GetForwardsTaintsFromColId(unsigned col_id) {
+std::unordered_set<COL *> QueryImpl::GetForwardsTaintsFromColId(unsigned col_id) {
   if (forwards_col_taints.empty() || !forwards_col_taints[col_id]) {
     return std::unordered_set<COL *>();
   }
   return *forwards_col_taints[col_id];
 }
 
-const std::unordered_set<COL *> & QueryImpl::GetBackwardsTaintsFromColId(unsigned col_id) {
+std::unordered_set<COL *> QueryImpl::GetBackwardsTaintsFromColId(unsigned col_id) {
   if (backwards_col_taints.empty() || !backwards_col_taints[col_id]) {
     return std::unordered_set<COL *>();
   }
