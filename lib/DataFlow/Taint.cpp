@@ -8,7 +8,10 @@
 namespace hyde {
 
 namespace {
-bool TaintWithCol(COL *col, COL *taint_col, std::vector<std::shared_ptr<std::unordered_set<COL *>>> &col_taints, bool is_backward = false) {
+bool TaintWithCol(
+    COL *col, COL *taint_col,
+    std::vector<std::shared_ptr<std::unordered_set<COL*>>> &col_taints,
+    bool is_backward = false) {
   auto old_size = col_taints[col->id]->size();
   auto index = taint_col->id;
   if (is_backward) {
@@ -24,13 +27,15 @@ bool TaintWithCol(COL *col, COL *taint_col, std::vector<std::shared_ptr<std::uno
 // Taint all columns with the insert columns they are derived from
 void QueryImpl::RunForwardsTaintAnalysis(void) {
   forwards_col_taints.clear();
-  forwards_col_taints.emplace_back(std::make_shared<std::unordered_set<COL *>>());
+  forwards_col_taints.emplace_back(
+      std::make_shared<std::unordered_set<COL*>>());
 
   std::vector<VIEW *> sorted_views;
   ForEachViewInReverseDepthOrder([&](VIEW *view) {
     sorted_views.push_back(view);
     for (auto c : view->columns) {
-      forwards_col_taints.emplace_back(std::make_shared<std::unordered_set<COL *>>());
+      forwards_col_taints.emplace_back(
+          std::make_shared<std::unordered_set<COL*>>());
     }
   });
 
@@ -57,16 +62,20 @@ void QueryImpl::RunForwardsTaintAnalysis(void) {
 
             // TODO(sonya): Check this for robustness. It might recursion or another loop
             for (auto in : in_col.impl->view->input_columns) {
-              if (in_col.impl->view->in_to_out.find(in) != in_col.impl->view->in_to_out.end() &&
-                  in_col.impl->view->in_to_out.find(in)->second == in_col.impl) {
-                auto res = TaintWithCol(in_col.impl, in, forwards_col_taints);
-                changed = changed || res;
+                  if (in_col.impl->view->in_to_out.find(in)
+                        != in_col.impl->view->in_to_out.end()
+                      && in_col.impl->view->in_to_out.find(in)->second
+                        == in_col.impl) {
+                changed = changed
+                    || TaintWithCol(in_col.impl, in, forwards_col_taints)
+                    || TaintWithCol(in, in_col.impl, forwards_col_taints);
               }
             }
-            auto res = TaintWithCol(out_col->impl, in_col.impl, forwards_col_taints);
-            changed = changed || res;
-            res = TaintWithCol(in_col.impl, out_col->impl, forwards_col_taints);
-            changed = changed || res;
+            changed = changed
+                || TaintWithCol(out_col->impl, in_col.impl,
+                                forwards_col_taints)
+                || TaintWithCol(in_col.impl, out_col->impl,
+                                forwards_col_taints);
             break;
           }
           case InputColumnRole::kNegated:
@@ -79,8 +88,11 @@ void QueryImpl::RunForwardsTaintAnalysis(void) {
           case InputColumnRole::kFunctorInput:
           case InputColumnRole::kJoinNonPivot:
           case InputColumnRole::kMergedColumn: {
-            auto res = TaintWithCol(in_col.impl, out_col->impl, forwards_col_taints);
-            changed = changed || res;
+            changed = changed
+                || TaintWithCol(out_col->impl, in_col.impl,
+                                forwards_col_taints)
+                || TaintWithCol(in_col.impl, out_col->impl,
+                                forwards_col_taints);
             break;
           }
           case InputColumnRole::kAggregatedColumn:
@@ -88,8 +100,11 @@ void QueryImpl::RunForwardsTaintAnalysis(void) {
           case InputColumnRole::kPublished: break;
           case InputColumnRole::kMaterialized:
             if (out_col) {
-              auto res = TaintWithCol(in_col.impl, out_col->impl, forwards_col_taints);
-              changed = changed || res;
+              changed = changed
+                  || TaintWithCol(out_col->impl, in_col.impl,
+                                  forwards_col_taints)
+                  || TaintWithCol(in_col.impl, out_col->impl,
+                                  forwards_col_taints);
             }
             break;
         }
@@ -101,14 +116,16 @@ void QueryImpl::RunForwardsTaintAnalysis(void) {
 // Taint all columns with the list of columns which their outputs effect
 void QueryImpl::RunBackwardsTaintAnalysis(void) {
   backwards_col_taints.clear();
-  backwards_col_taints.emplace_back(std::make_shared<std::unordered_set<COL *>>());
+  backwards_col_taints.emplace_back(
+      std::make_shared<std::unordered_set<COL*>>());
 
   std::vector<VIEW *> sorted_views;
 
   ForEachViewInReverseDepthOrder([&](VIEW *view) {
     sorted_views.push_back(view);
     for (auto c : view->columns) {
-      backwards_col_taints.emplace_back(std::make_shared<std::unordered_set<COL *>>());
+      backwards_col_taints.emplace_back(
+          std::make_shared<std::unordered_set<COL*>>());
     }
   });
 
@@ -135,14 +152,15 @@ void QueryImpl::RunBackwardsTaintAnalysis(void) {
           case InputColumnRole::kCopied:
           case InputColumnRole::kMergedColumn:
           case InputColumnRole::kJoinNonPivot: {
-            auto res = TaintWithCol(out_col->impl, in_col.impl, backwards_col_taints, true);
-            changed = changed || res;
+            changed = changed
+                || TaintWithCol(out_col->impl, in_col.impl,
+                                backwards_col_taints, true);
             break;
           }
           case InputColumnRole::kJoinPivot: {
-            //auto res = TaintWithCol(in_col.impl, out_col->impl, backwards_col_taints, true);
-            auto res = TaintWithCol(out_col->impl, in_col.impl, backwards_col_taints, true);
-            changed = changed || res;
+            changed = changed
+                || TaintWithCol(out_col->impl, in_col.impl,
+                                backwards_col_taints, true);
             break;
           }
           case InputColumnRole::kAggregatedColumn:
@@ -150,8 +168,9 @@ void QueryImpl::RunBackwardsTaintAnalysis(void) {
           case InputColumnRole::kPublished: break;
           case InputColumnRole::kMaterialized:
             if (out_col) {
-              auto res = TaintWithCol(out_col->impl, in_col.impl, backwards_col_taints, true);
-              changed = changed || res;
+              changed = changed
+                  || TaintWithCol(out_col->impl, in_col.impl,
+                                  backwards_col_taints, true);
             }
             break;
         }
@@ -160,7 +179,8 @@ void QueryImpl::RunBackwardsTaintAnalysis(void) {
   }
 }
 
-std::unordered_set<COL *> QueryImpl::GetForwardsTaintsFromColId(unsigned col_id) {
+std::unordered_set<COL *>
+QueryImpl::GetForwardsTaintsFromColId(unsigned col_id) {
   if (forwards_col_taints.empty() || !forwards_col_taints[col_id]) {
     return std::unordered_set<COL *>();
   }
@@ -168,7 +188,8 @@ std::unordered_set<COL *> QueryImpl::GetForwardsTaintsFromColId(unsigned col_id)
   return *forwards_col_taints[col_id];
 }
 
-std::unordered_set<COL *> QueryImpl::GetBackwardsTaintsFromColId(unsigned col_id) {
+std::unordered_set<COL *>
+QueryImpl::GetBackwardsTaintsFromColId(unsigned col_id) {
   if (backwards_col_taints.empty() || !backwards_col_taints[col_id]) {
     return std::unordered_set<COL *>();
   }
