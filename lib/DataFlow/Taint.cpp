@@ -36,12 +36,12 @@ void QueryImpl::RunForwardsTaintAnalysis(void) {
     for (auto c : view->columns) {
       forwards_col_taints.emplace_back(
           std::make_shared<std::unordered_set<COL*>>());
+      c->forwards_col_taints.reset();
     }
   });
 
   ForEachView([&](VIEW *v) {
    for (auto c : v->columns) {
-     c->forwards_col_taints.reset();
      c->forwards_col_taints = forwards_col_taints[c->id];
    }
   });
@@ -126,12 +126,12 @@ void QueryImpl::RunBackwardsTaintAnalysis(void) {
     for (auto c : view->columns) {
       backwards_col_taints.emplace_back(
           std::make_shared<std::unordered_set<COL*>>());
+      c->backwards_col_taints.reset();
     }
   });
 
   ForEachView([&](VIEW *v) {
    for (auto c : v->columns) {
-     c->backwards_col_taints.reset();
      c->backwards_col_taints = backwards_col_taints[c->id];
    }
   });
