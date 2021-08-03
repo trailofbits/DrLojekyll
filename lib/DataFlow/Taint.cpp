@@ -67,13 +67,15 @@ void QueryImpl::RunForwardsTaintAnalysis(void) {
                       && in_col.impl->view->in_to_out.find(in)->second
                         == in_col.impl) {
                 changed = changed
-                    || TaintWithCol(in_col.impl, in, forwards_col_taints)
+                    || TaintWithCol(in_col.impl, in, forwards_col_taints);
+                changed = changed
                     || TaintWithCol(in, in_col.impl, forwards_col_taints);
               }
             }
             changed = changed
                 || TaintWithCol(out_col->impl, in_col.impl,
-                                forwards_col_taints)
+                                forwards_col_taints);
+            changed = changed
                 || TaintWithCol(in_col.impl, out_col->impl,
                                 forwards_col_taints);
             break;
@@ -90,7 +92,8 @@ void QueryImpl::RunForwardsTaintAnalysis(void) {
           case InputColumnRole::kMergedColumn: {
             changed = changed
                 || TaintWithCol(out_col->impl, in_col.impl,
-                                forwards_col_taints)
+                                forwards_col_taints);
+            changed = changed
                 || TaintWithCol(in_col.impl, out_col->impl,
                                 forwards_col_taints);
             break;
@@ -102,7 +105,8 @@ void QueryImpl::RunForwardsTaintAnalysis(void) {
             if (out_col) {
               changed = changed
                   || TaintWithCol(out_col->impl, in_col.impl,
-                                  forwards_col_taints)
+                                  forwards_col_taints);
+              changed = changed
                   || TaintWithCol(in_col.impl, out_col->impl,
                                   forwards_col_taints);
             }
