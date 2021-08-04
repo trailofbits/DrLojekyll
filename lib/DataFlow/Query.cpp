@@ -590,7 +590,7 @@ std::string QueryColumn::ForwardsTaintIds(void) const {
 
 // Comma separated list of all column ids in backwards column taint set
 std::string QueryColumn::BackwardsTaintIds(void) const {
-  if (!impl->backwards_col_taints || impl->backwards_col_taints->empty()) {
+  if (!impl->backwards_col_taints || impl->backwards_col_taints->Empty()) {
     return "";
   }
 
@@ -602,20 +602,21 @@ std::string QueryColumn::BackwardsTaintIds(void) const {
   return ss.str().substr(0, ss.str().length() - 2);
 }
 
-// Forwards column taint set
-const std::unordered_set<COL *> QueryColumn::ForwardsColumnTaints(void) const {
-  if (!impl->forwards_col_taints || impl->forwards_col_taints->empty()) {
-    return {};
-  }
-  return *impl->forwards_col_taints;
-}
-
+//// Forwards column taint set
+//const std::unordered_set<COL *> QueryColumn::ForwardsColumnTaints(void) const {
+//  if (!impl->forwards_col_taints || impl->forwards_col_taints->empty()) {
+//    return {};
+//  }
+//  return *impl->forwards_col_taints;
+//}
+//
 // Backwards column taint set
-const std::unordered_set<COL *> QueryColumn::BackwardsColumnTaints(void) const {
-  if (!impl->backwards_col_taints || impl->backwards_col_taints->empty()) {
+UsedNodeRange<QueryColumn> QueryColumn::BackwardsColumnTaints(void) const {
+  if (!impl->backwards_col_taints || impl->backwards_col_taints->Empty()) {
     return {};
   }
-  return *impl->backwards_col_taints;
+  return {UsedNodeIterator<QueryColumn>(impl->backwards_col_taints->begin()),
+          UsedNodeIterator<QueryColumn>(impl->backwards_col_taints->end())};
 }
 
 // Index of this column in its defining view. Returns nothing if this column
