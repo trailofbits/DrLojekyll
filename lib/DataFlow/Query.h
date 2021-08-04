@@ -136,7 +136,7 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
 
   // Display the range of column nodes in this columns forwards (or backwards)
   // taint set.
-  std::shared_ptr<std::unordered_set<Node<QueryColumn> *>> forwards_col_taints;
+  std::shared_ptr<UseList<Node<QueryColumn>>> forwards_col_taints;
   std::shared_ptr<UseList<Node<QueryColumn>>> backwards_col_taints;
 
   // The index of this column within its view. This will have a value of
@@ -1460,10 +1460,10 @@ class QueryImpl {
   void RunForwardsTaintAnalysis(void);
   void RunBackwardsTaintAnalysis(void);
 
-//  std::unordered_set<COL *> GetForwardsTaintsFromColId(unsigned col_id);
+  UsedNodeRange<QueryColumn> GetForwardsTaintsFromColId(unsigned col_id);
   UsedNodeRange<QueryColumn> GetBackwardsTaintsFromColId(unsigned col_id);
 
-  std::vector<std::shared_ptr<std::unordered_set<COL *>>> forwards_col_taints;
+  std::vector<std::shared_ptr<UseList<COL>>> forwards_col_taints;
   std::vector<std::shared_ptr<UseList<COL>>> backwards_col_taints;
 
   DefList<REL> relations;
