@@ -9,7 +9,6 @@
 #include <memory>
 #include <optional>
 #include <utility>
-#include <unordered_set>
 
 namespace hyde {
 

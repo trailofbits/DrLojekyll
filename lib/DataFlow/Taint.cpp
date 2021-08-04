@@ -25,21 +25,21 @@ bool TaintWithCol(
 
 // Taint all columns with the insert columns they are derived from
 void QueryImpl::RunForwardsTaintAnalysis(void) {
+  // col_taints exists to simplify building taint sets using std::unordered_set.
+  // Once the taint sets are built the data will be copied into
+  // forwards_col_taints to be stored as a UsedList
   std::vector<std::unordered_set<COL *>> col_taints;
-  forwards_col_taints.clear();
 
+  // Padding for index 0 since column IDs are > 0.
   col_taints.emplace_back(std::unordered_set<COL*>());
-  forwards_col_taints.emplace_back(nullptr);
 
   std::vector<VIEW *> sorted_views;
 
+  // Create sorted views list to expedite taint list building and determine the
+  // appropriate length for col_taints
   ForEachViewInReverseDepthOrder([&](VIEW *view) {
     sorted_views.push_back(view);
-    for (auto c : view->columns) {
-      col_taints.emplace_back(std::unordered_set<COL*>());
-      forwards_col_taints.emplace_back(nullptr);
-      c->forwards_col_taints.reset(new UseList<COL>(view));
-    }
+    col_taints.resize(col_taints.size() + view->columns.Size());
   });
 
   for (auto insert : inserts) {
@@ -112,8 +112,14 @@ void QueryImpl::RunForwardsTaintAnalysis(void) {
     }
   }
 
-  ForEachView([&](VIEW *v) {
-   for (auto c : v->columns) {
+  forwards_col_taints.clear();
+  forwards_col_taints.resize(col_taints.size());
+
+  // Copy data from the set to the UsedList and match shared pointers between
+  // a col and forwards_col_taints[col->id].
+  ForEachView([&](VIEW *view) {
+   for (auto c : view->columns) {
+     c->forwards_col_taints.reset(new UseList<COL>(view));
      forwards_col_taints[c->id] = c->forwards_col_taints;
        for (auto taint : col_taints[c->id]) {
          forwards_col_taints[c->id]->AddUse(taint);
@@ -125,21 +131,19 @@ void QueryImpl::RunForwardsTaintAnalysis(void) {
 
 // Taint all columns with the list of columns which their outputs effect
 void QueryImpl::RunBackwardsTaintAnalysis(void) {
+  // col_taints exists to simplify building taint sets using std::unordered_set.
+  // Once the taint sets are built the data will be copied into
+  // backwards_col_taints to be stored as a UsedList
   std::vector<std::unordered_set<COL *>> col_taints;
-  backwards_col_taints.clear();
 
+  // Padding for index 0 since column IDs are > 0.
   col_taints.emplace_back(std::unordered_set<COL*>());
-  backwards_col_taints.emplace_back(nullptr);
 
   std::vector<VIEW *> sorted_views;
 
   ForEachViewInReverseDepthOrder([&](VIEW *view) {
     sorted_views.push_back(view);
-    for (auto c : view->columns) {
-      col_taints.emplace_back(std::unordered_set<COL*>());
-      backwards_col_taints.emplace_back(nullptr);
-      c->backwards_col_taints.reset(new UseList<COL>(view));
-    }
+    col_taints.resize(col_taints.size() + view->columns.Size());
   });
 
   for (auto changed = true; changed;) {
@@ -184,8 +188,14 @@ void QueryImpl::RunBackwardsTaintAnalysis(void) {
     }
   }
 
-  ForEachView([&](VIEW *v) {
-   for (auto c : v->columns) {
+  backwards_col_taints.clear();
+  backwards_col_taints.resize(col_taints.size());
+
+  // Copy data from the set to the UsedList and match shared pointers between
+  // a col and forwards_col_taints[col->id]
+  ForEachView([&](VIEW *view) {
+   for (auto c : view->columns) {
+     c->backwards_col_taints.reset(new UseList<COL>(view));
      backwards_col_taints[c->id] = c->backwards_col_taints;
        for (auto taint : col_taints[c->id]) {
          backwards_col_taints[c->id]->AddUse(taint);
@@ -197,6 +207,7 @@ void QueryImpl::RunBackwardsTaintAnalysis(void) {
 
 UsedNodeRange<QueryColumn>
 QueryImpl::GetForwardsTaintsFromColId(unsigned col_id) {
+  assert(col_id > 0);
   if (forwards_col_taints.empty() || !forwards_col_taints[col_id]) {
     return {};
   }
@@ -206,6 +217,7 @@ QueryImpl::GetForwardsTaintsFromColId(unsigned col_id) {
 
 UsedNodeRange<QueryColumn>
 QueryImpl::GetBackwardsTaintsFromColId(unsigned col_id) {
+  assert(col_id > 0);
   if (backwards_col_taints.empty() || !backwards_col_taints[col_id]) {
     return {};
   } else {
