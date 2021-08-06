@@ -117,6 +117,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     } else {
       os << col.Variable() << ":" << *(col.Index());
     }
+    os << ", Id:" << col.Id();
+    os << "<BR />" << "F: " << col.ForwardsTaintIds();
+    os << "<BR />" << "B: " << col.BackwardsTaintIds();
     return os;
   };
 

@@ -2155,6 +2155,9 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   impl->FinalizeColumnIDs();
   impl->TrackDifferentialUpdates(log, true);
   impl->TrackConstAfterInit();
+  impl->RunBackwardsTaintAnalysis();
+  impl->RunForwardsTaintAnalysis();
+
   BuildEquivalenceSets(impl.get());
 
   return Query(std::move(impl));
