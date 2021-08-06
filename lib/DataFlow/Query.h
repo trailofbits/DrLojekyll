@@ -133,6 +133,11 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   // After optimizing a dataflow, we replace all ID values
   unsigned id;
 
+  // Display the range of column nodes in this columns forwards (or backwards)
+  // taint set.
+  std::shared_ptr<UseList<Node<QueryColumn>>> forwards_col_taints;
+  std::shared_ptr<UseList<Node<QueryColumn>>> backwards_col_taints;
+
   // The index of this column within its view. This will have a value of
   // `kInvalidIndex` if we don't have the information.
   unsigned index;
@@ -1449,6 +1454,16 @@ class QueryImpl {
 
   // The streams associated with messages and other concrete inputs.
   DefList<Node<QueryIO>> ios;
+
+  // Forwards and Backwards Column Tainting
+  void RunForwardsTaintAnalysis(void);
+  void RunBackwardsTaintAnalysis(void);
+
+  UsedNodeRange<QueryColumn> GetForwardsTaintsFromColId(unsigned col_id);
+  UsedNodeRange<QueryColumn> GetBackwardsTaintsFromColId(unsigned col_id);
+
+  std::vector<std::shared_ptr<UseList<COL>>> forwards_col_taints;
+  std::vector<std::shared_ptr<UseList<COL>>> backwards_col_taints;
 
   DefList<REL> relations;
   DefList<CONST> constants;
