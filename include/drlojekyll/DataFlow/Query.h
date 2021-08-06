@@ -85,6 +85,7 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   bool IsMap(void) const noexcept;
   bool IsMerge(void) const noexcept;
   bool IsConstraint(void) const noexcept;
+  bool IsSubgraph(void) const noexcept;
   bool IsAggregate(void) const noexcept;
   bool IsConstant(void) const noexcept;
   bool IsConstantRef(void) const noexcept;

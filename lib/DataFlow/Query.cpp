@@ -513,6 +513,9 @@ void QueryView::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
   } else if (auto neg = impl->AsNegate(); neg) {
     QueryNegate(neg).ForEachUse(std::move(with_col));
 
+  } else if (auto sub = impl->AsSubgraph(); sub) {
+    QuerySubgraph(sub).ForEachUse(std::move(with_col));
+
   } else {
     assert(false);
   }
@@ -548,6 +551,10 @@ bool QueryColumn::IsNegate(void) const noexcept {
 
 bool QueryColumn::IsConstraint(void) const noexcept {
   return impl->view->AsCompare() != nullptr;
+}
+
+bool QueryColumn::IsSubgraph(void) const noexcept {
+  return impl->view->AsSubgraph() != nullptr;
 }
 
 bool QueryColumn::IsConstant(void) const noexcept {
