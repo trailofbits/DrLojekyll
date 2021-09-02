@@ -4,13 +4,13 @@
 
 namespace hyde {
 
-Node<QueryIO>::~Node(void) {}
+QueryIOImpl::~QueryIOImpl(void) {}
 
-Node<QueryIO> *Node<QueryIO>::AsIO(void) noexcept {
+QueryIOImpl *QueryIOImpl::AsIO(void) noexcept {
   return this;
 }
 
-const char *Node<QueryIO>::KindName(void) const noexcept {
+const char *QueryIOImpl::KindName(void) const noexcept {
   return "I/O";
 }
 

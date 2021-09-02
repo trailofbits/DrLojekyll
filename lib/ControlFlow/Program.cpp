@@ -189,13 +189,13 @@ const std::vector<ProgramQuery> &Program::Queries(void) const noexcept {
 }
 
 ProgramRegion::ProgramRegion(const ProgramInductionRegion &region)
-    : program::ProgramNode<ProgramRegion>(region.impl) {}
+    : program::ProgramProgramRegionImpl(region.impl) {}
 
 ProgramRegion::ProgramRegion(const ProgramParallelRegion &region)
-    : program::ProgramNode<ProgramRegion>(region.impl) {}
+    : program::ProgramProgramRegionImpl(region.impl) {}
 
 ProgramRegion::ProgramRegion(const ProgramSeriesRegion &region)
-    : program::ProgramNode<ProgramRegion>(region.impl) {}
+    : program::ProgramProgramRegionImpl(region.impl) {}
 
 std::optional<ProgramRegion>
 ProgramRegion::Containing(ProgramRegion &self) noexcept {
@@ -467,7 +467,7 @@ static VectorUsage VectorUsageOfOp(ProgramOperation op) {
     return VectorUsageOfOp(impl->OP::op); \
   } \
   DataVector name::Vector(void) const noexcept { \
-    return DataVector(impl->Node<name>::vector.get()); \
+    return DataVector(impl->nameImpl::vector.get()); \
   } \
   std::optional<DataVariable> name::WorkerId(void) const { \
     if (impl->worker_id) { \
@@ -766,16 +766,16 @@ unsigned DataTable::Id(void) const noexcept {
 
 // Visit the users of this vector.
 void DataTable::VisitUsers(ProgramVisitor &visitor) {
-  impl->ForEachUse<Node<ProgramRegion>>(
-      [&](Node<ProgramRegion> *region, Node<DataTable> *) {
+  impl->ForEachUse<ProgramRegionImpl>(
+      [&](ProgramRegionImpl *region, DataTableImpl *) {
         region->Accept(visitor);
       });
 }
 
 // Apply a function to each user.
 void DataTable::ForEachUser(std::function<void(ProgramRegion)> cb) {
-  impl->ForEachUse<Node<ProgramRegion>>(
-      [&](Node<ProgramRegion> *region, Node<DataTable> *) { cb(region); });
+  impl->ForEachUse<ProgramRegionImpl>(
+      [&](ProgramRegionImpl *region, DataTableImpl *) { cb(region); });
 }
 
 VectorKind DataVector::Kind(void) const noexcept {
@@ -808,16 +808,16 @@ const std::vector<TypeKind> DataVector::ColumnTypes(void) const noexcept {
 
 // Visit the users of this vector.
 void DataVector::VisitUsers(ProgramVisitor &visitor) {
-  impl->ForEachUse<Node<ProgramRegion>>(
-      [&](Node<ProgramRegion> *region, Node<DataVector> *) {
+  impl->ForEachUse<ProgramRegionImpl>(
+      [&](ProgramRegionImpl *region, DataVectorImpl *) {
         region->Accept(visitor);
       });
 }
 
 // Apply a function to each user.
 void DataVector::ForEachUser(std::function<void(ProgramRegion)> cb) {
-  impl->ForEachUse<Node<ProgramRegion>>(
-      [&](Node<ProgramRegion> *region, Node<DataVector> *) { cb(region); });
+  impl->ForEachUse<ProgramRegionImpl>(
+      [&](ProgramRegionImpl *region, DataVectorImpl *) { cb(region); });
 }
 
 // Return the procedure containing another region.

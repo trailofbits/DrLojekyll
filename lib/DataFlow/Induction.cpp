@@ -11,7 +11,7 @@
 
 namespace hyde {
 
-InductionInfo::InductionInfo(Node<QueryView> *owner)
+InductionInfo::InductionInfo(QueryViewImpl *owner)
     : inductive_predecessors(owner),
       inductive_successors(owner),
       noninductive_predecessors(owner),

@@ -7,13 +7,13 @@
 
 namespace hyde {
 
-Node<QueryAggregate>::~Node(void) {}
+QueryAggregateImpl::~QueryAggregateImpl(void) {}
 
-Node<QueryAggregate> *Node<QueryAggregate>::AsAggregate(void) noexcept {
+QueryAggregateImpl *QueryAggregateImpl::AsAggregate(void) noexcept {
   return this;
 }
 
-uint64_t Node<QueryAggregate>::Hash(void) noexcept {
+uint64_t QueryAggregateImpl::Hash(void) noexcept {
   if (hash) {
     return hash;
   }
@@ -43,7 +43,7 @@ uint64_t Node<QueryAggregate>::Hash(void) noexcept {
   return hash;
 }
 
-unsigned Node<QueryAggregate>::Depth(void) noexcept {
+unsigned QueryAggregateImpl::Depth(void) noexcept {
   if (depth) {
     return depth;
   }
@@ -67,7 +67,7 @@ unsigned Node<QueryAggregate>::Depth(void) noexcept {
 
 // Put this aggregate into a canonical form, which will make comparisons and
 // replacements easier.
-bool Node<QueryAggregate>::Canonicalize(QueryImpl *query,
+bool QueryAggregateImpl::Canonicalize(QueryImpl *query,
                                         const OptimizationContext &opt,
                                         const ErrorLog &) {
   if (is_canonical) {
@@ -194,8 +194,8 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query,
 }
 
 // Equality over aggregates is structural.
-bool Node<QueryAggregate>::Equals(EqualitySet &eq,
-                                  Node<QueryView> *that_) noexcept {
+bool QueryAggregateImpl::Equals(EqualitySet &eq,
+                                  QueryViewImpl *that_) noexcept {
 
   if (eq.Contains(this, that_)) {
     return true;

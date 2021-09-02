@@ -4,17 +4,17 @@
 
 namespace hyde {
 
-Node<QueryStream>::~Node(void) {}
+QueryStreamImpl::~QueryStreamImpl(void) {}
 
-Node<QueryConstant> *Node<QueryStream>::AsConstant(void) noexcept {
+QueryConstantImpl *QueryStreamImpl::AsConstant(void) noexcept {
   return nullptr;
 }
 
-Node<QueryTag> *Node<QueryStream>::AsTag(void) noexcept {
+QueryTagImpl *QueryStreamImpl::AsTag(void) noexcept {
   return nullptr;
 }
 
-Node<QueryIO> *Node<QueryStream>::AsIO(void) noexcept {
+QueryIOImpl *QueryStreamImpl::AsIO(void) noexcept {
   return nullptr;
 }
 

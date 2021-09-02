@@ -7,9 +7,9 @@
 namespace hyde {
 namespace {
 
-VIEW *CreateProxyOfInserts(QueryImpl *impl, UseList<Node<QueryView>> &inserts) {
+VIEW *CreateProxyOfInserts(QueryImpl *impl, UseList<QueryViewImpl> &inserts) {
 
-  UseList<Node<QueryView>> old_inserts(inserts.Owner());
+  UseList<QueryViewImpl> old_inserts(inserts.Owner());
   old_inserts.Swap(inserts);
 
   MERGE *merge = nullptr;
@@ -116,9 +116,9 @@ static VIEW *CreateProxyForMutableParams(QueryImpl *impl, VIEW *view,
   return proxy;
 }
 
-static void ProxySelects(QueryImpl *impl, UseList<Node<QueryView>> &selects,
+static void ProxySelects(QueryImpl *impl, UseList<QueryViewImpl> &selects,
                          VIEW *insert_proxy) {
-  UseList<Node<QueryView>> old_selects(selects.Owner());
+  UseList<QueryViewImpl> old_selects(selects.Owner());
   old_selects.Swap(selects);
 
   for (VIEW *select : old_selects) {

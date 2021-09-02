@@ -21,17 +21,16 @@ class ErrorLog;
 class OptimizationContext;
 
 // Represents all values that could inhabit some relation's tuple.
-template <>
-class Node<QueryColumn> : public Def<Node<QueryColumn>> {
+class QueryColumnImpl : public Def<QueryColumnImpl> {
  public:
-  ~Node(void);
+  ~QueryColumnImpl(void);
 
   static constexpr unsigned kInvalidIndex = ~0u;
 
-  inline explicit Node(std::optional<ParsedVariable> var_, TypeLoc type_,
-                       Node<QueryView> *view_, unsigned id_,
-                       unsigned index_ = kInvalidIndex)
-      : Def<Node<QueryColumn>>(this),
+  inline explicit QueryColumnImpl(
+      std::optional<ParsedVariable> var_, TypeLoc type_,
+      QueryViewImpl *view_, unsigned id_, unsigned index_ = kInvalidIndex)
+      : Def<QueryColumnImpl>(this),
         var(var_),
         type(type_),
         view(view_),
@@ -41,9 +40,10 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
     assert(type.UnderlyingKind() != TypeKind::kInvalid);
   }
 
-  inline explicit Node(ParsedVariable var_, Node<QueryView> *view_,
-                       unsigned id_, unsigned index_ = kInvalidIndex)
-      : Def<Node<QueryColumn>>(this),
+  inline explicit QueryColumnImpl(
+      ParsedVariable var_, QueryViewImpl *view_,
+      unsigned id_, unsigned index_ = kInvalidIndex)
+      : Def<QueryColumnImpl>(this),
         var(var_),
         type(var_.Type()),
         view(view_),
@@ -53,9 +53,10 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
     assert(type.UnderlyingKind() != TypeKind::kInvalid);
   }
 
-  inline explicit Node(TypeLoc type_, Node<QueryView> *view_, unsigned id_,
-                       unsigned index_ = kInvalidIndex)
-      : Def<Node<QueryColumn>>(this),
+  inline explicit QueryColumnImpl(
+      TypeLoc type_, QueryViewImpl *view_, unsigned id_,
+      unsigned index_ = kInvalidIndex)
+      : Def<QueryColumnImpl>(this),
         var(std::nullopt),
         type(type_),
         view(view_),
@@ -65,9 +66,9 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
     assert(type.UnderlyingKind() != TypeKind::kInvalid);
   }
 
-  void CopyConstantFrom(Node<QueryColumn> *maybe_const_col);
+  void CopyConstantFrom(QueryColumnImpl *maybe_const_col);
 
-  void ReplaceAllUsesWith(Node<QueryColumn> *that);
+  void ReplaceAllUsesWith(QueryColumnImpl *that);
 
   // Return the index of this column inside of its view.
   unsigned Index(void) noexcept;
@@ -82,11 +83,11 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
 
   // Returns the real constant associated with this column if this column is
   // a constant or constant reference. Otherwise it returns `nullptr`.
-  Node<QueryColumn> *AsConstant(void) noexcept;
+  QueryColumnImpl *AsConstant(void) noexcept;
 
   // Try to resolve this column to a constant, and return it, otherwise returns
   // `this`.
-  Node<QueryColumn> *TryResolveToConstant(void) noexcept;
+  QueryColumnImpl *TryResolveToConstant(void) noexcept;
 
   // Returns `true` if will have a constant value at runtime.
   bool IsConstantRef(void) const noexcept;
@@ -110,7 +111,7 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
 
   // Basic form of `IsUsed`.
   inline bool IsUsedIgnoreMerges(void) const noexcept {
-    return this->Def<Node<QueryColumn>>::IsUsed();
+    return this->Def<QueryColumnImpl>::IsUsed();
   }
 
   // Parsed variable associated with this column.
@@ -120,7 +121,7 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   const TypeLoc type;
 
   // View to which this column belongs.
-  Node<QueryView> *const view;
+  QueryViewImpl *const view;
 
   // Reference to a use of a real constant. We need this indirection because
   // we depend on dataflow to sometimes encode control dependencies, but if we
@@ -128,7 +129,7 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   // we could actually lose the control aspects needed by the data dependencies.
   // The `conflicting_constants.dr` example is an example that requires data
   // and control dependencies to forced together.
-  UseRef<Node<QueryColumn>> referenced_constant;
+  UseRef<QueryColumnImpl> referenced_constant;
 
   // The ID of the column. During building of a dataflow, this roughly
   // corresponds to the smallest `ParsedVariable::Order` value within the
@@ -145,29 +146,28 @@ class Node<QueryColumn> : public Def<Node<QueryColumn>> {
   uint64_t hash{0};
 };
 
-using COL = Node<QueryColumn>;
+using COL = QueryColumnImpl;
 
 // A condition to be tested in order to admit tuples into a relation or
 // produce tuples.
-template <>
-class Node<QueryCondition> : public Def<Node<QueryCondition>>, public User {
+class QueryConditionImpl : public Def<QueryConditionImpl>, public User {
  public:
-  ~Node(void);
+  ~QueryConditionImpl(void);
 
   // An anonymous, not-user-defined condition that is instead inferred based
   // off of optmizations.
-  Node(void);
+  QueryConditionImpl(void);
 
   // An explicit, user-defined condition. Usually associated with there-exists
   // checks or configuration options.
-  explicit Node(ParsedExport decl_);
+  explicit QueryConditionImpl(ParsedExport decl_);
 
   inline uint64_t Sort(void) const noexcept {
     return declaration ? declaration->Id() : reinterpret_cast<uintptr_t>(this);
   }
 
   // Is this a trivial condition?
-  bool IsTrivial(std::unordered_map<Node<QueryView> *, bool> &conditional_views);
+  bool IsTrivial(std::unordered_map<QueryViewImpl *, bool> &conditional_views);
 
   // Is this a trivial condition?
   bool IsTrivial(void);
@@ -183,13 +183,13 @@ class Node<QueryCondition> : public Def<Node<QueryCondition>>, public User {
   const std::optional<ParsedDeclaration> declaration;
 
   // List of views using this condition.
-  WeakUseList<Node<QueryView>> positive_users;
-  WeakUseList<Node<QueryView>> negative_users;
+  WeakUseList<QueryViewImpl> positive_users;
+  WeakUseList<QueryViewImpl> negative_users;
 
   // List of views that produce values for this condition.
   //
   // TODO(pag): Consider making this not be a weak use list.
-  WeakUseList<Node<QueryView>> setters;
+  WeakUseList<QueryViewImpl> setters;
 
   bool in_trivial_check{false};
 
@@ -198,14 +198,13 @@ class Node<QueryCondition> : public Def<Node<QueryCondition>>, public User {
   bool is_dead{false};
 };
 
-using COND = Node<QueryCondition>;
+using COND = QueryConditionImpl;
 
 // A "table" of data.
-template <>
-class Node<QueryRelation> : public Def<Node<QueryRelation>>, public User {
+class QueryRelationImpl : public Def<QueryRelationImpl>, public User {
  public:
-  inline explicit Node(ParsedDeclaration decl_)
-      : Def<Node<QueryRelation>>(this),
+  inline explicit QueryRelationImpl(ParsedDeclaration decl_)
+      : Def<QueryRelationImpl>(this),
         User(this),
         declaration(decl_),
         inserts(this),
@@ -214,90 +213,86 @@ class Node<QueryRelation> : public Def<Node<QueryRelation>>, public User {
   const ParsedDeclaration declaration;
 
   // List of nodes that insert data into this relation.
-  UseList<Node<QueryView>> inserts;
+  UseList<QueryViewImpl> inserts;
 
   // List of nodes that select data from this relation.
-  UseList<Node<QueryView>> selects;
+  UseList<QueryViewImpl> selects;
 };
 
-using REL = Node<QueryRelation>;
+using REL = QueryRelationImpl;
 
 // A stream of values.
-template <>
-class Node<QueryStream> : public Def<Node<QueryStream>> {
+class QueryStreamImpl : public Def<QueryStreamImpl> {
  public:
-  virtual ~Node(void);
+  virtual ~QueryStreamImpl(void);
 
-  Node(void) : Def<Node<QueryStream>>(this) {}
+  QueryStreamImpl(void) : Def<QueryStreamImpl>(this) {}
 
-  virtual Node<QueryConstant> *AsConstant(void) noexcept;
-  virtual Node<QueryTag> *AsTag(void) noexcept;
-  virtual Node<QueryIO> *AsIO(void) noexcept;
+  virtual QueryConstantImpl *AsConstant(void) noexcept;
+  virtual QueryTagImpl *AsTag(void) noexcept;
+  virtual QueryIOImpl *AsIO(void) noexcept;
   virtual const char *KindName(void) const noexcept = 0;
 };
 
-using STREAM = Node<QueryStream>;
+using STREAM = QueryStreamImpl;
 
 // Use of a constant.
-template <>
-class Node<QueryConstant> : public Node<QueryStream> {
+class QueryConstantImpl : public QueryStreamImpl {
  public:
-  virtual ~Node(void);
+  virtual ~QueryConstantImpl(void);
 
-  inline Node(ParsedLiteral literal_) : literal(literal_) {}
+  inline QueryConstantImpl(ParsedLiteral literal_) : literal(literal_) {}
 
-  Node<QueryConstant> *AsConstant(void) noexcept override;
+  QueryConstantImpl *AsConstant(void) noexcept override;
   const char *KindName(void) const noexcept override;
 
   const std::optional<ParsedLiteral> literal;
 
  protected:
-  inline Node(void) {}
+  inline QueryConstantImpl(void) {}
 };
 
-using CONST = Node<QueryConstant>;
+using CONST = QueryConstantImpl;
 
 // Use of a constant.
-template <>
-class Node<QueryTag> final : public Node<QueryConstant> {
+class QueryTagImpl final : public QueryConstantImpl {
  public:
-  virtual ~Node(void);
+  virtual ~QueryTagImpl(void);
 
-  inline Node(uint16_t val_) : val(val_) {}
+  inline QueryTagImpl(uint16_t val_) : val(val_) {}
 
-  Node<QueryTag> *AsTag(void) noexcept override;
+  QueryTagImpl *AsTag(void) noexcept override;
   const char *KindName(void) const noexcept override;
 
   const uint16_t val;
 };
 
-using TAG = Node<QueryTag>;
+using TAG = QueryTagImpl;
 
 // Input, i.e. a messsage.
-template <>
-class Node<QueryIO> final : public STREAM, public User {
+class QueryIOImpl final : public STREAM, public User {
  public:
-  virtual ~Node(void);
+  virtual ~QueryIOImpl(void);
 
-  inline Node(ParsedDeclaration declaration_)
+  inline QueryIOImpl(ParsedDeclaration declaration_)
       : User(this),
         declaration(declaration_),
         transmits(this),
         receives(this) {}
 
-  Node<QueryIO> *AsIO(void) noexcept override;
+  QueryIOImpl *AsIO(void) noexcept override;
   const char *KindName(void) const noexcept override;
 
   const ParsedDeclaration declaration;
 
   // List of nodes that send data to this I/O operation.
-  UseList<Node<QueryView>> transmits;
+  UseList<QueryViewImpl> transmits;
 
   // List of nodes that receive data from this I/O operation.
-  UseList<Node<QueryView>> receives;
+  UseList<QueryViewImpl> receives;
 };
 
-using IO = Node<QueryIO>;
+using IO = QueryIOImpl;
 
 // Information about this node as it relates to being inside of an induction.
 // This affects MERGE, JOIN, and NEGATE nodes, as these are the only nodes which
@@ -310,10 +305,10 @@ using IO = Node<QueryIO>;
 // fixpoint cycle region.
 struct InductionInfo {
  public:
-  explicit InductionInfo(Node<QueryView> *owner);
+  explicit InductionInfo(QueryViewImpl *owner);
 
-  std::vector<Node<QueryView> *> predecessors;
-  std::vector<Node<QueryView> *> successors;
+  std::vector<QueryViewImpl *> predecessors;
+  std::vector<QueryViewImpl *> successors;
 
   // Initially, when learning about inductions, we use a mask to figure out
   // which of the predecessors/successors are inductive. This is so that with
@@ -325,14 +320,14 @@ struct InductionInfo {
   // Can we reach back to ourselves by not flowing through another induction?
   bool can_reach_self_not_through_another_induction{false};
 
-  WeakUseList<Node<QueryView>> inductive_predecessors;
-  WeakUseList<Node<QueryView>> inductive_successors;
+  WeakUseList<QueryViewImpl> inductive_predecessors;
+  WeakUseList<QueryViewImpl> inductive_successors;
 
-  WeakUseList<Node<QueryView>> noninductive_predecessors;
-  WeakUseList<Node<QueryView>> noninductive_successors;
+  WeakUseList<QueryViewImpl> noninductive_predecessors;
+  WeakUseList<QueryViewImpl> noninductive_successors;
 
   // List of UNION, JOIN, and NEGATE nodes.
-  std::shared_ptr<WeakUseList<Node<QueryView>>> cyclic_views;
+  std::shared_ptr<WeakUseList<QueryViewImpl>> cyclic_views;
 
   unsigned merge_set_id{0};
   unsigned merge_depth{0};
@@ -340,12 +335,11 @@ struct InductionInfo {
 
 
 // A view "owns" its the columns pointed to by `columns`.
-template <>
-class Node<QueryView> : public Def<Node<QueryView>>, public User {
+class QueryViewImpl : public Def<QueryViewImpl>, public User {
  public:
-  virtual ~Node(void);
+  virtual ~QueryViewImpl(void);
 
-  Node(void);
+  QueryViewImpl(void);
 
   // Returns the kind name, e.g. UNION, JOIN, etc.
   virtual const char *KindName(void) const noexcept = 0;
@@ -361,10 +355,10 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   bool PrepareToDelete(void);
 
   // Copy all positive and negative conditions from `this` into `that`.
-  void CopyTestedConditionsTo(Node<QueryView> *that);
+  void CopyTestedConditionsTo(QueryViewImpl *that);
 
   // Transfer all positive and negative conditions from `this` into `that`.
-  void TransferTestedConditionsTo(Node<QueryView> *that);
+  void TransferTestedConditionsTo(QueryViewImpl *that);
 
   // Converts this node to be unconditional, it doesn't affect set conditions.
   void DropTestedConditions(void);
@@ -373,18 +367,18 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   void DropSetConditions(void);
 
   // If `sets_condition` is non-null, then transfer the setter to `that`.
-  void TransferSetConditionTo(Node<QueryView> *that);
+  void TransferSetConditionTo(QueryViewImpl *that);
 
   // Copy the group IDs and the receive/produce deletions from `this` to `that`.
-  void CopyDifferentialAndGroupIdsTo(Node<QueryView> *that);
+  void CopyDifferentialAndGroupIdsTo(QueryViewImpl *that);
 
   // Replace all uses of `this` with `that`. The semantic here is that `this`
   // remains valid and used.
-  void SubstituteAllUsesWith(Node<QueryView> *that);
+  void SubstituteAllUsesWith(QueryViewImpl *that);
 
   // Replace all uses of `this` with `that`. The semantic here is that `this`
   // is completely subsumed/replaced by `that`.
-  void ReplaceAllUsesWith(Node<QueryView> *that);
+  void ReplaceAllUsesWith(QueryViewImpl *that);
 
   // Does this view introduce a control dependency? If a node introduces a
   // control dependency then it generally needs to be kept around.
@@ -395,7 +389,7 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
 
   // Returns `true` if we had to "guard" this view with a tuple so that we
   // can put it into canonical form.
-  Node<QueryTuple> *GuardWithTuple(QueryImpl *query, bool force = false);
+  QueryTupleImpl *GuardWithTuple(QueryImpl *query, bool force = false);
 
   // This is like an "optimized" form of `GuardWithTuple`, that also knows
   // about attached columns. It tries to propagate constants, and maintains
@@ -407,13 +401,13 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   //            in `this` for `incoming_view`, to force a non-NULL.
   //
   // NOTE(pag): This assumes `in_to_out` is filled up!!
-  Node<QueryTuple> *GuardWithOptimizedTuple(QueryImpl *query,
+  QueryTupleImpl *GuardWithOptimizedTuple(QueryImpl *query,
                                             unsigned first_attached_col,
-                                            Node<QueryView> *incoming_view);
+                                            QueryViewImpl *incoming_view);
 
   // Proxy this node with a comparison of `lhs_col` and `rhs_col`, where
   // `lhs_col` and `rhs_col` either belong to `this->columns` or are constants.
-  Node<QueryTuple> *ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
+  QueryTupleImpl *ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
                                         COL *lhs_col, COL *rhs_col);
 
   // Returns `true` if this view is being used.
@@ -458,16 +452,16 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
                                  COL *out_col, bool is_attached,
                                  Discoveries has);
 
-  virtual Node<QuerySelect> *AsSelect(void) noexcept;
-  virtual Node<QueryTuple> *AsTuple(void) noexcept;
-  virtual Node<QueryKVIndex> *AsKVIndex(void) noexcept;
-  virtual Node<QueryJoin> *AsJoin(void) noexcept;
-  virtual Node<QueryMap> *AsMap(void) noexcept;
-  virtual Node<QueryAggregate> *AsAggregate(void) noexcept;
-  virtual Node<QueryMerge> *AsMerge(void) noexcept;
-  virtual Node<QueryNegate> *AsNegate(void) noexcept;
-  virtual Node<QueryCompare> *AsCompare(void) noexcept;
-  virtual Node<QueryInsert> *AsInsert(void) noexcept;
+  virtual QuerySelectImpl *AsSelect(void) noexcept;
+  virtual QueryTupleImpl *AsTuple(void) noexcept;
+  virtual QueryKVIndexImpl *AsKVIndex(void) noexcept;
+  virtual QueryJoinImpl *AsJoin(void) noexcept;
+  virtual QueryMapImpl *AsMap(void) noexcept;
+  virtual QueryAggregateImpl *AsAggregate(void) noexcept;
+  virtual QueryMergeImpl *AsMerge(void) noexcept;
+  virtual QueryNegateImpl *AsNegate(void) noexcept;
+  virtual QueryCompareImpl *AsCompare(void) noexcept;
+  virtual QueryInsertImpl *AsInsert(void) noexcept;
 
   // Useful for communicating low-level debug info back to the formatter.
   virtual OutputStream &DebugString(OutputStream &os) noexcept;
@@ -491,7 +485,7 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   //
   // NOTE(pag): Some nodes use structural equivalence, and others pointer-
   //            equivalence, just to keep things sane.
-  virtual bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept = 0;
+  virtual bool Equals(EqualitySet &eq, QueryViewImpl *that) noexcept = 0;
 
   // Return the number of uses of this view.
   unsigned NumUses(void) const noexcept;
@@ -539,8 +533,8 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   //
   // NOTE(pag): These are only filled in *after* all optimizations. They exist
   //            for external/public users.
-  WeakUseList<Node<QueryView>> predecessors;
-  WeakUseList<Node<QueryView>> successors;
+  WeakUseList<QueryViewImpl> predecessors;
+  WeakUseList<QueryViewImpl> successors;
 
   // Used during canonicalization. Mostly just convenient to have around for
   // re-use of memory.
@@ -673,35 +667,35 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
   // updated `incoming_view`.
   //
   // NOTE(pag): This updates `is_canonical = false` if it changes anything.
-  Node<QueryView> *
-  PullDataFromBeyondTrivialTuples(Node<QueryView> *incoming_view,
+  QueryViewImpl *
+  PullDataFromBeyondTrivialTuples(QueryViewImpl *incoming_view,
                                   UseList<COL> &cols1, UseList<COL> &cols2);
 
  private:
   // Similar to, and called by, `PullDataFromBeyondTrivialTuples`.
-  Node<QueryView> *
-  PullDataFromBeyondTrivialUnions(Node<QueryView> *incoming_view,
+  QueryViewImpl *
+  PullDataFromBeyondTrivialUnions(QueryViewImpl *incoming_view,
                                   UseList<COL> &cols1, UseList<COL> &cols2);
 
  public:
   // Figure out what the incoming view to `cols1` is.
-  static Node<QueryView> *GetIncomingView(const UseList<COL> &cols1);
-  static Node<QueryView> *GetIncomingView(const UseList<COL> &cols1,
+  static QueryViewImpl *GetIncomingView(const UseList<COL> &cols1);
+  static QueryViewImpl *GetIncomingView(const UseList<COL> &cols1,
                                           const UseList<COL> &cols2);
 
   // Try to figure out if `view` is conditional. That could mean that it
   // depends directly on a condition, or that it depends on something that
   // may be present or may be absent (e.g. the output of a `JOIN`).
   static bool IsConditional(
-      Node<QueryView> *view,
-      std::unordered_map<Node<QueryView> *, bool> &conditional_views);
+      QueryViewImpl *view,
+      std::unordered_map<QueryViewImpl *, bool> &conditional_views);
 
   // Returns a pointer to the only user of this node, or nullptr if there are
   // zero users, or more than one users.
-  Node<QueryView> *OnlyUser(void) const noexcept;
+  QueryViewImpl *OnlyUser(void) const noexcept;
 
   // Create or inherit a condition created on `view`.
-  void CreateDependencyOnView(QueryImpl *query, Node<QueryView> *view);
+  void CreateDependencyOnView(QueryImpl *query, QueryViewImpl *view);
 
  protected:
   // Utilities for depth calculation.
@@ -715,24 +709,23 @@ class Node<QueryView> : public Def<Node<QueryView>>, public User {
                         const UseList<COL> &c2s);
 
   // Check if the `group_ids` of two views have any overlaps.
-  static bool InsertSetsOverlap(Node<QueryView> *a, Node<QueryView> *b);
+  static bool InsertSetsOverlap(QueryViewImpl *a, QueryViewImpl *b);
 
   // Mark this node as being unsatisfiable.
   void MarkAsUnsatisfiable(void);
 };
 
-using VIEW = Node<QueryView>;
+using VIEW = QueryViewImpl;
 
-template <>
-class Node<QuerySelect> final : public VIEW {
+class QuerySelectImpl final : public VIEW {
  public:
-  inline Node(Node<QueryRelation> *relation_, ParsedPredicate pred_)
+  inline QuerySelectImpl(QueryRelationImpl *relation_, ParsedPredicate pred_)
       : pred(pred_),
         position(pred_.SpellingRange().From()),
         relation(this, relation_),
         inserts(this) {}
 
-  inline Node(Node<QueryStream> *stream_, ParsedPredicate pred_)
+  inline QuerySelectImpl(QueryStreamImpl *stream_, ParsedPredicate pred_)
       : pred(pred_),
         position(pred_.SpellingRange().From()),
         stream(this, stream_),
@@ -744,7 +737,7 @@ class Node<QuerySelect> final : public VIEW {
     }
   }
 
-  inline Node(Node<QueryStream> *stream_, DisplayRange spelling_range)
+  inline QuerySelectImpl(QueryStreamImpl *stream_, DisplayRange spelling_range)
       : pred(std::nullopt),
         position(spelling_range.From()),
         stream(this, stream_),
@@ -756,15 +749,15 @@ class Node<QuerySelect> final : public VIEW {
     }
   }
 
-  virtual ~Node(void);
+  virtual ~QuerySelectImpl(void);
 
   const char *KindName(void) const noexcept override;
-  Node<QuerySelect> *AsSelect(void) noexcept override;
+  QuerySelectImpl *AsSelect(void) noexcept override;
 
   uint64_t Sort(void) noexcept override;
   uint64_t Hash(void) noexcept override;
   unsigned Depth(void) noexcept override;
-  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
+  bool Equals(EqualitySet &eq, QueryViewImpl *that) noexcept override;
 
   // Put this view into a canonical form. Returns `true` if changes were made
   // beyond the scope of this view.
@@ -782,21 +775,20 @@ class Node<QuerySelect> final : public VIEW {
   WeakUseRef<STREAM> stream;
 
   // List of views that might feed this SELECT.
-  WeakUseList<Node<QueryView>> inserts;
+  WeakUseList<QueryViewImpl> inserts;
 };
 
-using SELECT = Node<QuerySelect>;
+using SELECT = QuerySelectImpl;
 
-template <>
-class Node<QueryTuple> final : public VIEW {
+class QueryTupleImpl final : public VIEW {
  public:
-  virtual ~Node(void);
+  virtual ~QueryTupleImpl(void);
 
   const char *KindName(void) const noexcept override;
-  Node<QueryTuple> *AsTuple(void) noexcept override;
+  QueryTupleImpl *AsTuple(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
-  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
+  bool Equals(EqualitySet &eq, QueryViewImpl *that) noexcept override;
 
   // Does this tuple forward all of its inputs to the same columns as the
   // outputs, and if so, does it forward all columns of its input?
@@ -811,24 +803,23 @@ class Node<QueryTuple> final : public VIEW {
                     const ErrorLog &) override;
 };
 
-using TUPLE = Node<QueryTuple>;
+using TUPLE = QueryTupleImpl;
 
 // The KV index will have the `input_columns` as the keys, and the
 // `attached_columns` as the values.
-template <>
-class Node<QueryKVIndex> final : public VIEW {
+class QueryKVIndexImpl final : public VIEW {
  public:
-  Node(void) : Node<QueryView>() {
+  QueryKVIndexImpl(void) : QueryViewImpl() {
     can_produce_deletions = true;
   }
 
-  virtual ~Node(void);
+  virtual ~QueryKVIndexImpl(void);
 
   const char *KindName(void) const noexcept override;
-  Node<QueryKVIndex> *AsKVIndex(void) noexcept override;
+  QueryKVIndexImpl *AsKVIndex(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
-  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
+  bool Equals(EqualitySet &eq, QueryViewImpl *that) noexcept override;
 
   // Put the KV index into a canonical form. The only real internal optimization
   // that will happen is constant propagation of keys, but NOT values (as we can't
@@ -840,21 +831,20 @@ class Node<QueryKVIndex> final : public VIEW {
   std::vector<ParsedFunctor> merge_functors;
 };
 
-using KVINDEX = Node<QueryKVIndex>;
+using KVINDEX = QueryKVIndexImpl;
 
-template <>
-class Node<QueryJoin> final : public VIEW {
+class QueryJoinImpl final : public VIEW {
  public:
-  virtual ~Node(void);
+  virtual ~QueryJoinImpl(void);
 
-  Node(void) : joined_views(this) {}
+  QueryJoinImpl(void) : joined_views(this) {}
 
   const char *KindName(void) const noexcept override;
-  Node<QueryJoin> *AsJoin(void) noexcept override;
+  QueryJoinImpl *AsJoin(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
   unsigned Depth(void) noexcept override;
-  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
+  bool Equals(EqualitySet &eq, QueryViewImpl *that) noexcept override;
 
   // Put this join into a canonical form, which will make comparisons and
   // replacements easier.
@@ -887,27 +877,26 @@ class Node<QueryJoin> final : public VIEW {
   unsigned num_pivots{0};
 };
 
-using JOIN = Node<QueryJoin>;
+using JOIN = QueryJoinImpl;
 
-template <>
-class Node<QueryMap> final : public VIEW {
+class QueryMapImpl final : public VIEW {
  public:
-  virtual ~Node(void);
+  virtual ~QueryMapImpl(void);
 
   const char *KindName(void) const noexcept override;
-  Node<QueryMap> *AsMap(void) noexcept override;
+  QueryMapImpl *AsMap(void) noexcept override;
 
   uint64_t Sort(void) noexcept override;
   uint64_t Hash(void) noexcept override;
-  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
+  bool Equals(EqualitySet &eq, QueryViewImpl *that) noexcept override;
 
   // Put this map into a canonical form, which will make comparisons and
   // replacements easier.
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
                     const ErrorLog &) override;
 
-  inline explicit Node(ParsedFunctor functor_, DisplayRange range_,
-                       bool is_positive_)
+  inline explicit QueryMapImpl(ParsedFunctor functor_, DisplayRange range_,
+                               bool is_positive_)
       : range(range_),
         functor(functor_),
         is_positive(is_positive_) {
@@ -930,12 +919,11 @@ class Node<QueryMap> final : public VIEW {
   const bool is_positive;
 };
 
-using MAP = Node<QueryMap>;
+using MAP = QueryMapImpl;
 
-template <>
-class Node<QueryAggregate> : public VIEW {
+class QueryAggregateImpl : public VIEW {
  public:
-  inline explicit Node(ParsedFunctor functor_)
+  inline explicit QueryAggregateImpl(ParsedFunctor functor_)
       : functor(functor_),
         group_by_columns(this),
         config_columns(this),
@@ -943,14 +931,14 @@ class Node<QueryAggregate> : public VIEW {
     can_produce_deletions = true;
   }
 
-  virtual ~Node(void);
+  virtual ~QueryAggregateImpl(void);
 
   const char *KindName(void) const noexcept override;
-  Node<QueryAggregate> *AsAggregate(void) noexcept override;
+  QueryAggregateImpl *AsAggregate(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
   unsigned Depth(void) noexcept override;
-  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
+  bool Equals(EqualitySet &eq, QueryViewImpl *that) noexcept override;
 
   // Put this aggregate into a canonical form, which will make comparisons and
   // replacements easier.
@@ -975,21 +963,20 @@ class Node<QueryAggregate> : public VIEW {
   UseList<COL> aggregated_columns;
 };
 
-using AGG = Node<QueryAggregate>;
+using AGG = QueryAggregateImpl;
 
-template <>
-class Node<QueryMerge> : public VIEW {
+class QueryMergeImpl : public VIEW {
  public:
-  Node(void) : merged_views(this) {}
+  QueryMergeImpl(void) : merged_views(this) {}
 
-  virtual ~Node(void);
+  virtual ~QueryMergeImpl(void);
 
   const char *KindName(void) const noexcept override;
-  Node<QueryMerge> *AsMerge(void) noexcept override;
+  QueryMergeImpl *AsMerge(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
   unsigned Depth(void) noexcept override;
-  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
+  bool Equals(EqualitySet &eq, QueryViewImpl *that) noexcept override;
 
   // Convert two or more tuples into a single tuple that reads its data from
   // a union, where that union reads its data from the sources of the two
@@ -1023,20 +1010,19 @@ class Node<QueryMerge> : public VIEW {
   UseList<VIEW> merged_views;
 };
 
-using MERGE = Node<QueryMerge>;
+using MERGE = QueryMergeImpl;
 
-template <>
-class Node<QueryCompare> : public VIEW {
+class QueryCompareImpl : public VIEW {
  public:
-  Node(ComparisonOperator op_) : op(op_) {}
+  QueryCompareImpl(ComparisonOperator op_) : op(op_) {}
 
-  virtual ~Node(void);
+  virtual ~QueryCompareImpl(void);
 
   const char *KindName(void) const noexcept override;
-  Node<QueryCompare> *AsCompare(void) noexcept override;
+  QueryCompareImpl *AsCompare(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
-  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
+  bool Equals(EqualitySet &eq, QueryViewImpl *that) noexcept override;
 
   // Put this constraint into a canonical form, which will make comparisons and
   // replacements easier. If this constraint's operator is unordered, then we
@@ -1051,7 +1037,7 @@ class Node<QueryCompare> : public VIEW {
   bool TrySinkThroughMerge(QueryImpl *query, MERGE *merge);
 
   // Try to sink this comparison through a NEGATION node.
-  bool TrySinkThroughNegate(QueryImpl *query, Node<QueryNegate> *negate);
+  bool TrySinkThroughNegate(QueryImpl *query, QueryNegateImpl *negate);
 
   const ComparisonOperator op;
 
@@ -1067,23 +1053,22 @@ class Node<QueryCompare> : public VIEW {
   bool can_sink{true};
 };
 
-using CMP = Node<QueryCompare>;
+using CMP = QueryCompareImpl;
 
 // Represents the check of the absence of a tuple from a relation.
-template <>
-class Node<QueryNegate> : public VIEW {
+class QueryNegateImpl : public VIEW {
  public:
-  virtual ~Node(void);
+  virtual ~QueryNegateImpl(void);
 
-  inline Node(void) : Node<QueryView>() {
+  inline QueryNegateImpl(void) : QueryViewImpl() {
     can_receive_deletions = true;
   }
 
   const char *KindName(void) const noexcept override;
-  Node<QueryNegate> *AsNegate(void) noexcept override;
+  QueryNegateImpl *AsNegate(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
-  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
+  bool Equals(EqualitySet &eq, QueryViewImpl *that) noexcept override;
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
                     const ErrorLog &) override;
   unsigned Depth(void) noexcept override;
@@ -1095,28 +1080,27 @@ class Node<QueryNegate> : public VIEW {
   std::vector<ParsedPredicate> negations;
 };
 
-using NEGATION = Node<QueryNegate>;
+using NEGATION = QueryNegateImpl;
 
 // Inserts are technically views as that makes some things easier, but they
 // are not exposed as such.
-template <>
-class Node<QueryInsert> : public VIEW {
+class QueryInsertImpl : public VIEW {
  public:
-  virtual ~Node(void);
+  virtual ~QueryInsertImpl(void);
 
-  inline Node(Node<QueryRelation> *relation_, ParsedDeclaration decl_)
+  inline QueryInsertImpl(QueryRelationImpl *relation_, ParsedDeclaration decl_)
       : relation(this, relation_),
         declaration(decl_) {}
 
-  inline Node(Node<QueryStream> *stream_, ParsedDeclaration decl_)
+  inline QueryInsertImpl(QueryStreamImpl *stream_, ParsedDeclaration decl_)
       : stream(this, stream_),
         declaration(decl_) {}
 
   const char *KindName(void) const noexcept override;
-  Node<QueryInsert> *AsInsert(void) noexcept override;
+  QueryInsertImpl *AsInsert(void) noexcept override;
 
   uint64_t Hash(void) noexcept override;
-  bool Equals(EqualitySet &eq, Node<QueryView> *that) noexcept override;
+  bool Equals(EqualitySet &eq, QueryViewImpl *that) noexcept override;
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
                     const ErrorLog &) override;
 
@@ -1125,10 +1109,10 @@ class Node<QueryInsert> : public VIEW {
   const ParsedDeclaration declaration;
 };
 
-using INSERT = Node<QueryInsert>;
+using INSERT = QueryInsertImpl;
 
 template <typename T>
-void Node<QueryColumn>::ForEachUser(T user_cb) const {
+void QueryColumnImpl::ForEachUser(T user_cb) const {
   view->ForEachUse<VIEW>([&user_cb](VIEW *user, VIEW *) { user_cb(user); });
 
   ForEachUse<VIEW>([&user_cb](VIEW *view, COL *) { user_cb(view); });
@@ -1469,15 +1453,15 @@ class QueryImpl {
 
   // String version of the constant's spelling and type, mapped to the constant
   // stream.
-  std::unordered_map<std::string, Node<QueryConstant> *> spelling_to_constant;
+  std::unordered_map<std::string, QueryConstantImpl *> spelling_to_constant;
 
   // Mapping between export conditions and actual condition nodes.
-  std::unordered_map<ParsedExport, Node<QueryCondition> *> decl_to_condition;
+  std::unordered_map<ParsedExport, QueryConditionImpl *> decl_to_condition;
 
   std::vector<COL *> tag_columns;
 
   // The streams associated with messages and other concrete inputs.
-  DefList<Node<QueryIO>> ios;
+  DefList<QueryIOImpl> ios;
 
   DefList<REL> relations;
   DefList<CONST> constants;

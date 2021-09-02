@@ -6,7 +6,7 @@ namespace hyde {
 
 // Try to parse `sub_range` as an inlining of of C/C++/Python code into the Datalog
 // module.
-void ParserImpl::ParseInlineCode(Node<ParsedModule> *module) {
+void ParserImpl::ParseInlineCode(ParsedModuleImpl *module) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
@@ -92,12 +92,7 @@ void ParserImpl::ParseInlineCode(Node<ParsedModule> *module) {
     return;
   }
 
-  const auto inline_node =
-      new Node<ParsedInline>(scope_range, code, language, is_prologue);
-  if (!module->inlines.empty()) {
-    module->inlines.back()->next = inline_node;
-  }
-  module->inlines.emplace_back(inline_node);
+  (void) module->inlines.Create(scope_range, code, language, is_prologue);
 }
 
 }  // namespace hyde

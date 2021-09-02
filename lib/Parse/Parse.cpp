@@ -13,44 +13,15 @@
 namespace hyde {
 namespace parse {
 
-DisplayRange UseAccessor::GetUseSpellingRange(void *impl_) {
-  const auto impl = reinterpret_cast<UseBase *>(impl_);
-  return ParsedVariable(impl->used_var).SpellingRange();
-}
-
-UseKind UseAccessor::GetUseKind(void *impl_) {
-  return reinterpret_cast<UseBase *>(impl_)->use_kind;
-}
-
-const void *UseAccessor::GetUser(void *impl_) {
-  switch (reinterpret_cast<UseBase *>(impl_)->use_kind) {
-    case UseKind::kParameter: {
-      auto impl = reinterpret_cast<Node<ParsedUse<ParsedClause>> *>(impl_);
-      return &(impl->user);
-    }
-    case UseKind::kArgument: {
-      auto impl = reinterpret_cast<Node<ParsedUse<ParsedPredicate>> *>(impl_);
-      return &(impl->user);
-    }
-    case UseKind::kAssignmentLHS: {
-      auto impl = reinterpret_cast<Node<ParsedUse<ParsedAssignment>> *>(impl_);
-      return &(impl->user);
-    }
-    case UseKind::kComparisonLHS: {
-      auto impl = reinterpret_cast<Node<ParsedUse<ParsedComparison>> *>(impl_);
-      return &(impl->user);
-    }
-    case UseKind::kComparisonRHS: {
-      auto impl = reinterpret_cast<Node<ParsedUse<ParsedComparison>> *>(impl_);
-      return &(impl->user);
-    }
-  }
-  return nullptr;
-}
+DeclarationContext::~DeclarationContext(void) {}
 
 }  // namespace parse
 
-const char *Node<ParsedDeclaration>::KindName(void) const {
+ParsedComparisonImpl::~ParsedComparisonImpl(void) {}
+ParsedAssignmentImpl::~ParsedAssignmentImpl(void) {}
+ParsedPredicateImpl::~ParsedPredicateImpl(void) {}
+
+const char *ParsedDeclarationImpl::KindName(void) const {
   switch (context->kind) {
     case DeclarationKind::kQuery: return "query";
     case DeclarationKind::kMessage: return "message";
@@ -68,7 +39,7 @@ const char *Node<ParsedDeclaration>::KindName(void) const {
 #endif
 
 // Compute a unique identifier for this declaration.
-uint64_t Node<ParsedDeclaration>::Id(void) const noexcept {
+uint64_t ParsedDeclarationImpl::Id(void) const noexcept {
   auto &id = context->id;
   if (id.flat) {
     return id.flat;
@@ -98,7 +69,7 @@ uint64_t Node<ParsedDeclaration>::Id(void) const noexcept {
 #endif
 
 // Return a list of clauses associated with this declaration.
-NodeRange<ParsedClause> Node<ParsedDeclaration>::Clauses(void) const {
+NodeRange<ParsedClause> ParsedDeclarationImpl::Clauses(void) const {
   if (context->clauses.empty()) {
     return NodeRange<ParsedClause>();
   } else {
@@ -107,29 +78,29 @@ NodeRange<ParsedClause> Node<ParsedDeclaration>::Clauses(void) const {
 }
 
 // Return a list of positive uses of this definition.
-NodeRange<ParsedPredicate> Node<ParsedDeclaration>::PositiveUses(void) const {
+NodeRange<ParsedPredicate> ParsedDeclarationImpl::PositiveUses(void) const {
   if (context->positive_uses.empty()) {
     return NodeRange<ParsedPredicate>();
   } else {
     return NodeRange<ParsedPredicate>(context->positive_uses.front(),
                                       static_cast<intptr_t>(__builtin_offsetof(
-                                          Node<ParsedPredicate>, next_use)));
+                                          ParsedPredicateImpl, next_use)));
   }
 }
 
 // Return a list of negative uses of this definition.
-NodeRange<ParsedPredicate> Node<ParsedDeclaration>::NegativeUses(void) const {
+NodeRange<ParsedPredicate> ParsedDeclarationImpl::NegativeUses(void) const {
   if (context->negated_uses.empty()) {
     return NodeRange<ParsedPredicate>();
   } else {
     return NodeRange<ParsedPredicate>(context->negated_uses.front(),
                                       static_cast<intptr_t>(__builtin_offsetof(
-                                          Node<ParsedPredicate>, next_use)));
+                                          ParsedPredicateImpl, next_use)));
   }
 }
 
 // Compute the unique identifier for this variable.
-uint64_t Node<ParsedVariable>::Id(void) noexcept {
+uint64_t ParsedVariableImpl::Id(void) noexcept {
   auto &id = context->id;
   if (id.flat) {
     return id.flat;
@@ -164,18 +135,18 @@ uint64_t Node<ParsedVariable>::Id(void) noexcept {
 }
 
 // Compute the unique identifier for this variable, local to its clause.
-uint64_t Node<ParsedVariable>::IdInClause(void) noexcept {
+uint64_t ParsedVariableImpl::IdInClause(void) noexcept {
   (void) Id();
   return context->id.info.var_id;
 }
 
 // Compute the identifier for this clause.
-uint64_t Node<ParsedPredicate>::Id(void) const noexcept {
+uint64_t ParsedPredicateImpl::Id(void) const noexcept {
   return declaration->Id();
 }
 
 // Compute the identifier for this clause.
-uint64_t Node<ParsedClause>::Id(void) const noexcept {
+uint64_t ParsedClauseImpl::Id(void) const noexcept {
   assert(declaration != nullptr);
   if (!id.flat) {
     id.flat = declaration->Id();
@@ -248,7 +219,7 @@ unsigned ParsedVariable::Order(void) const noexcept {
 NodeRange<ParsedVariable> ParsedVariable::Uses(void) const {
   return NodeRange<ParsedVariable>(impl->context->first_use,
                                    static_cast<intptr_t>(__builtin_offsetof(
-                                       Node<ParsedVariable>, next_use)));
+                                       ParsedVariableImpl, next_use)));
 }
 
 // Return the number of uses of this variable.
@@ -379,16 +350,6 @@ ComparisonOperator ParsedComparison::Operator(void) const noexcept {
   }
 }
 
-// Return the list of all comparisons with `var`.
-NodeRange<ParsedComparisonUse> ParsedComparison::Using(ParsedVariable var) {
-  if (var.impl->context->comparison_uses.empty()) {
-    return NodeRange<ParsedComparisonUse>();
-  } else {
-    return NodeRange<ParsedComparisonUse>(
-        var.impl->context->comparison_uses.front());
-  }
-}
-
 DisplayRange ParsedAssignment::SpellingRange(void) const noexcept {
   return DisplayRange(impl->lhs.UseBase::used_var->name.Position(),
                       impl->rhs.literal.NextPosition());
@@ -400,26 +361,6 @@ ParsedVariable ParsedAssignment::LHS(void) const noexcept {
 
 ParsedLiteral ParsedAssignment::RHS(void) const noexcept {
   return ParsedLiteral(&(impl->rhs));
-}
-
-// Return the list of all assignments to `var`.
-NodeRange<ParsedAssignmentUse> ParsedAssignment::Using(ParsedVariable var) {
-  if (var.impl->context->assignment_uses.empty()) {
-    return NodeRange<ParsedAssignmentUse>();
-  } else {
-    return NodeRange<ParsedAssignmentUse>(
-        var.impl->context->assignment_uses.front());
-  }
-}
-
-// Return the list of all uses of `var` as an argument to a predicate.
-NodeRange<ParsedArgumentUse> ParsedPredicate::Using(ParsedVariable var) {
-  if (var.impl->context->argument_uses.empty()) {
-    return NodeRange<ParsedArgumentUse>();
-  } else {
-    return NodeRange<ParsedArgumentUse>(
-        var.impl->context->argument_uses.front());
-  }
 }
 
 DisplayRange ParsedPredicate::SpellingRange(void) const noexcept {
@@ -468,7 +409,7 @@ NodeRange<ParsedVariable> ParsedPredicate::Arguments(void) const {
   return NodeRange<ParsedVariable>(
       impl->argument_uses.front()->UseBase::used_var,
       static_cast<intptr_t>(
-          __builtin_offsetof(Node<ParsedVariable>, next_var_in_arg_list)));
+          __builtin_offsetof(ParsedVariableImpl, next_var_in_arg_list)));
 }
 
 DisplayRange ParsedAggregate::SpellingRange(void) const noexcept {
@@ -490,7 +431,7 @@ ParsedAggregate::GroupVariablesFromPredicate(void) const {
   if (impl->first_group_var) {
     return NodeRange<ParsedVariable>(
         impl->first_group_var, static_cast<intptr_t>(__builtin_offsetof(
-                                   Node<ParsedVariable>, next_group_var)));
+                                   ParsedVariableImpl, next_group_var)));
   } else {
     return NodeRange<ParsedVariable>();
   }
@@ -504,7 +445,7 @@ ParsedAggregate::AggregatedVariablesFromPredicate(void) const {
     return NodeRange<ParsedVariable>(
         impl->first_aggregate_var,
         static_cast<intptr_t>(
-            __builtin_offsetof(Node<ParsedVariable>, next_aggregate_var)));
+            __builtin_offsetof(ParsedVariableImpl, next_aggregate_var)));
   } else {
     return NodeRange<ParsedVariable>();
   }
@@ -517,7 +458,7 @@ ParsedAggregate::ConfigurationVariablesFromPredicate(void) const {
   if (impl->first_config_var) {
     return NodeRange<ParsedVariable>(
         impl->first_config_var, static_cast<intptr_t>(__builtin_offsetof(
-                                    Node<ParsedVariable>, next_config_var)));
+                                    ParsedVariableImpl, next_config_var)));
   } else {
     return NodeRange<ParsedVariable>();
   }
@@ -561,37 +502,36 @@ bool ParsedParameter::IsUnnamed(void) const noexcept {
   return impl->name.Lexeme() == Lexeme::kIdentifierUnnamedVariable;
 }
 
-// Applies only to `bound` parameters of functors.
-bool ParsedParameter::CanBeReordered(void) const noexcept {
-  return impl->opt_unordered_name.IsValid();
-}
-
 ParsedDeclaration::ParsedDeclaration(const ParsedQuery &query)
-    : parse::ParsedNode<ParsedDeclaration>(query.impl) {}
+    : parse::ParsedParsedDeclarationImpl(query.impl) {}
 
 ParsedDeclaration::ParsedDeclaration(const ParsedMessage &message)
-    : parse::ParsedNode<ParsedDeclaration>(message.impl) {}
+    : parse::ParsedParsedDeclarationImpl(message.impl) {}
 
 ParsedDeclaration::ParsedDeclaration(const ParsedFunctor &functor)
-    : parse::ParsedNode<ParsedDeclaration>(functor.impl) {}
+    : parse::ParsedParsedDeclarationImpl(functor.impl) {}
 
 ParsedDeclaration::ParsedDeclaration(const ParsedExport &exp)
-    : parse::ParsedNode<ParsedDeclaration>(exp.impl) {}
+    : parse::ParsedParsedDeclarationImpl(exp.impl) {}
 
 ParsedDeclaration::ParsedDeclaration(const ParsedLocal &local)
-    : parse::ParsedNode<ParsedDeclaration>(local.impl) {}
+    : parse::ParsedParsedDeclarationImpl(local.impl) {}
 
 ParsedDeclaration::ParsedDeclaration(const ParsedPredicate &pred)
-    : parse::ParsedNode<ParsedDeclaration>(ParsedDeclaration::Of(pred)) {}
+    : parse::ParsedParsedDeclarationImpl(ParsedDeclaration::Of(pred)) {}
 
 DisplayRange ParsedDeclaration::SpellingRange(void) const noexcept {
-  if (impl->rparen.IsValid()) {
-    auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->rparen;
-    return DisplayRange(impl->directive_pos.IsValid() ? impl->directive_pos
-                                                      : impl->name.Position(),
-                        last_tok.NextPosition());
+  if (impl->parsed_tokens.empty()) {
+    if (impl->rparen.IsValid()) {
+      auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->rparen;
+      return DisplayRange(impl->directive_pos.IsValid() ? impl->directive_pos
+                                                        : impl->name.Position(),
+                          last_tok.NextPosition());
+    } else {
+      return impl->name.SpellingRange();
+    }
   } else {
-    return impl->name.SpellingRange();
+    return impl->ParsedRange();
   }
 }
 
@@ -771,10 +711,10 @@ NodeRange<ParsedParameter> ParsedDeclaration::Parameters(void) const {
 NodeRange<ParsedDeclaration> ParsedDeclaration::Redeclarations(void) const {
   assert(!impl->context->redeclarations.empty());
   return NodeRange<ParsedDeclaration>(
-      reinterpret_cast<Node<ParsedDeclaration> *>(
+      reinterpret_cast<ParsedDeclarationImpl *>(
           impl->context->redeclarations.front()),
       static_cast<intptr_t>(
-          __builtin_offsetof(Node<ParsedDeclaration>, next_redecl)));
+          __builtin_offsetof(ParsedDeclarationImpl, next_redecl)));
 }
 
 NodeRange<ParsedClause> ParsedDeclaration::Clauses(void) const {
@@ -861,7 +801,7 @@ ParsedDeclaration ParsedDeclaration::Of(ParsedPredicate pred) {
 // Create a new variable in this context of this clause.
 ParsedVariable ParsedClause::CreateVariable(Token name, TypeLoc type) {
   assert(type.UnderlyingKind() != TypeKind::kInvalid);
-  auto var = new Node<ParsedVariable>;
+  auto var = new ParsedVariableImpl;
   var->type = type;
   var->name = name.IsValid()
                   ? name
@@ -968,7 +908,7 @@ NodeRange<ParsedVariable> ParsedClause::Variables(void) const {
 NodeRange<ParsedVariable> ParsedClause::Uses(ParsedVariable var) {
   return NodeRange<ParsedVariable>(var.impl->context->first_use,
                                    static_cast<intptr_t>(__builtin_offsetof(
-                                       Node<ParsedVariable>, next_use)));
+                                       ParsedVariableImpl, next_use)));
 }
 
 // All positive predicates in the clause.
@@ -1037,10 +977,10 @@ DisplayRange ParsedQuery::SpellingRange(void) const noexcept {
 }
 
 NodeRange<ParsedQuery> ParsedQuery::Redeclarations(void) const {
-  return NodeRange<ParsedQuery>(reinterpret_cast<Node<ParsedQuery> *>(
+  return NodeRange<ParsedQuery>(reinterpret_cast<ParsedQueryImpl *>(
                                     impl->context->redeclarations.front()),
                                 static_cast<intptr_t>(__builtin_offsetof(
-                                    Node<ParsedQuery>, next_redecl)));
+                                    ParsedQueryImpl, next_redecl)));
 }
 
 NodeRange<ParsedClause> ParsedQuery::Clauses(void) const {
@@ -1074,10 +1014,10 @@ DisplayRange ParsedExport::SpellingRange(void) const noexcept {
 }
 
 NodeRange<ParsedExport> ParsedExport::Redeclarations(void) const {
-  return NodeRange<ParsedExport>(reinterpret_cast<Node<ParsedExport> *>(
+  return NodeRange<ParsedExport>(reinterpret_cast<ParsedExportImpl *>(
                                      impl->context->redeclarations.front()),
                                  static_cast<intptr_t>(__builtin_offsetof(
-                                     Node<ParsedExport>, next_redecl)));
+                                     ParsedExportImpl, next_redecl)));
 }
 
 NodeRange<ParsedClause> ParsedExport::Clauses(void) const {
@@ -1111,10 +1051,10 @@ DisplayRange ParsedLocal::SpellingRange(void) const noexcept {
 }
 
 NodeRange<ParsedLocal> ParsedLocal::Redeclarations(void) const {
-  return NodeRange<ParsedLocal>(reinterpret_cast<Node<ParsedLocal> *>(
+  return NodeRange<ParsedLocal>(reinterpret_cast<ParsedLocalImpl *>(
                                     impl->context->redeclarations.front()),
                                 static_cast<intptr_t>(__builtin_offsetof(
-                                    Node<ParsedLocal>, next_redecl)));
+                                    ParsedLocalImpl, next_redecl)));
 }
 
 NodeRange<ParsedPredicate> ParsedLocal::PositiveUses(void) const {
@@ -1185,10 +1125,10 @@ DisplayRange ParsedFunctor::SpellingRange(void) const noexcept {
 }
 
 NodeRange<ParsedFunctor> ParsedFunctor::Redeclarations(void) const {
-  return NodeRange<ParsedFunctor>(reinterpret_cast<Node<ParsedFunctor> *>(
+  return NodeRange<ParsedFunctor>(reinterpret_cast<ParsedFunctorImpl *>(
                                       impl->context->redeclarations.front()),
                                   static_cast<intptr_t>(__builtin_offsetof(
-                                      Node<ParsedFunctor>, next_redecl)));
+                                      ParsedFunctorImpl, next_redecl)));
 }
 
 NodeRange<ParsedParameter> ParsedFunctor::Parameters(void) const {
@@ -1230,10 +1170,10 @@ NodeRange<ParsedParameter> ParsedMessage::Parameters(void) const {
 }
 
 NodeRange<ParsedMessage> ParsedMessage::Redeclarations(void) const {
-  return NodeRange<ParsedMessage>(reinterpret_cast<Node<ParsedMessage> *>(
+  return NodeRange<ParsedMessage>(reinterpret_cast<ParsedMessageImpl *>(
                                       impl->context->redeclarations.front()),
                                   static_cast<intptr_t>(__builtin_offsetof(
-                                      Node<ParsedMessage>, next_redecl)));
+                                      ParsedMessageImpl, next_redecl)));
 }
 
 NodeRange<ParsedClause> ParsedMessage::Clauses(void) const {
@@ -1354,7 +1294,7 @@ NodeRange<ParsedClause> ParsedModule::Clauses(void) const {
   } else {
     return NodeRange<ParsedClause>(
         impl->clauses.front(),
-        __builtin_offsetof(Node<ParsedClause>, next_in_module));
+        __builtin_offsetof(ParsedClauseImpl, next_in_module));
   }
 }
 
@@ -1364,7 +1304,7 @@ NodeRange<ParsedClause> ParsedModule::DeletionClauses(void) const {
   } else {
     return NodeRange<ParsedClause>(
         impl->deletion_clauses.front(),
-        __builtin_offsetof(Node<ParsedClause>, next_in_module));
+        __builtin_offsetof(ParsedClauseImpl, next_in_module));
   }
 }
 
@@ -1375,7 +1315,7 @@ NodeRange<ParsedForeignType> ParsedModule::ForeignTypes(void) const {
   } else {
     return NodeRange<ParsedForeignType>(
         impl->root_module->types.front().get(),
-        __builtin_offsetof(Node<ParsedForeignType>, next));
+        __builtin_offsetof(ParsedForeignTypeImpl, next));
   }
 }
 
@@ -1396,7 +1336,7 @@ ParsedModule::ForeignType(TypeKind kind_) const noexcept {
     return std::nullopt;
   }
 
-  const auto &types = impl->root_module->foreign_types;
+  const auto &types = impl->root_module->id_to_foreign_type;
   auto it = types.find(hi);
   if (it == types.end()) {
     return std::nullopt;
@@ -1508,7 +1448,7 @@ ParsedForeignType::Constants(Language lang_) const noexcept {
   } else {
     return NodeRange<ParsedForeignConstant>(
         info.constants.front().get(),
-        __builtin_offsetof(Node<ParsedForeignConstant>, next));
+        __builtin_offsetof(ParsedForeignConstantImpl, next));
   }
 }
 

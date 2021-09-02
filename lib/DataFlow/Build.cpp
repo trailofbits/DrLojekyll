@@ -240,7 +240,7 @@ static VIEW *BuildPredicate(QueryImpl *query, ClauseContext &context,
     assert(false);
 
   } else if (decl.IsExport() || decl.IsLocal() || decl.IsQuery()) {
-    Node<QueryRelation> *input = nullptr;
+    QueryRelationImpl *input = nullptr;
 
     auto &rel = query->decl_to_relation[decl];
     if (!rel) {
@@ -2076,15 +2076,6 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
 
   for (auto sub_module : ParsedModuleIterator(module)) {
     for (auto clause : sub_module.Clauses()) {
-      if (!clause.IsDisabled()) {
-        context.Reset();
-        if (!BuildClause(impl.get(), clause, context, log)) {
-          return std::nullopt;
-        }
-      }
-    }
-
-    for (auto clause : sub_module.DeletionClauses()) {
       if (!clause.IsDisabled()) {
         context.Reset();
         if (!BuildClause(impl.get(), clause, context, log)) {

@@ -374,10 +374,6 @@ OutputStream &operator<<(OutputStream &os, ParsedModule module) {
       os << clause << "\n";
     }
 
-    for (auto clause : sub_module.DeletionClauses()) {
-      os << clause << "\n";
-    }
-
     for (auto code : sub_module.Inlines()) {
       if (!code.IsPrologue()) {
         os << code << "\n";

@@ -5,19 +5,19 @@
 namespace hyde {
 namespace {
 
-static void AnalyzeAggregateVars(Node<ParsedAggregate> *impl,
+static void AnalyzeAggregateVars(ParsedAggregateImpl *impl,
                                  const ErrorLog &log) {
   auto next_group_var_ptr = &(impl->first_group_var);
   auto next_config_var_ptr = &(impl->first_config_var);
   auto next_aggregate_var_ptr = &(impl->first_aggregate_var);
 
   for (auto &param_use : impl->predicate->argument_uses) {
-    Node<ParsedVariable> *param_var = param_use->used_var;
+    ParsedVariableImpl *param_var = param_use->used_var;
 
-    Node<ParsedVariable> *found_as = nullptr;
+    ParsedVariableImpl *found_as = nullptr;
     auto arg_num = 0u;
     for (auto &arg_use : impl->functor->argument_uses) {
-      Node<ParsedVariable> *arg_var = arg_use->used_var;
+      ParsedVariableImpl *arg_var = arg_use->used_var;
       if (param_var->Id() == arg_var->Id()) {
         found_as = arg_var;
         break;
@@ -75,17 +75,17 @@ static void AnalyzeAggregateVars(Node<ParsedAggregate> *impl,
 // Try to parse the predicate application following a use of an aggregating
 // functor.
 bool ParserImpl::ParseAggregatedPredicate(
-    Node<ParsedModule> *module, Node<ParsedClause> *clause,
-    std::unique_ptr<Node<ParsedPredicate>> functor, Token &tok,
+    ParsedModuleImpl *module, ParsedClauseImpl *clause,
+    std::unique_ptr<ParsedPredicateImpl> functor, Token &tok,
     DisplayPosition &next_pos) {
 
   auto state = 0;
 
-  std::unique_ptr<Node<ParsedLocal>> anon_decl;
-  std::unique_ptr<Node<ParsedPredicate>> pred;
-  std::unique_ptr<Node<ParsedParameter>> anon_param;
+  std::unique_ptr<ParsedLocalImpl> anon_decl;
+  std::unique_ptr<ParsedPredicateImpl> pred;
+  std::unique_ptr<ParsedParameterImpl> anon_param;
 
-  Node<ParsedVariable> *arg = nullptr;
+  ParsedVariableImpl *arg = nullptr;
 
   // Build up a token list representing a synthetic clause definition
   // associated with `anon_decl`.
@@ -106,7 +106,7 @@ bool ParserImpl::ParseAggregatedPredicate(
         // clause for it.
         if (Lexeme::kPuncOpenParen == lexeme) {
           anon_decl.reset(
-              new Node<ParsedLocal>(module, DeclarationKind::kLocal));
+              new ParsedLocalImpl(module, DeclarationKind::kLocal));
           anon_decl->directive_pos = tok.Position();
           anon_decl->name =
               Token::Synthetic(Lexeme::kIdentifierUnnamedAtom, tok_range);
@@ -117,7 +117,7 @@ bool ParserImpl::ParseAggregatedPredicate(
 
           assert(tok.Lexeme() == Lexeme::kPuncOpenParen);
           anon_clause_toks.push_back(tok);
-          pred.reset(new Node<ParsedPredicate>(module, clause));
+          pred.reset(new ParsedPredicateImpl(module, clause));
           pred->declaration = anon_decl.get();
           pred->name = anon_decl->name;
           state = 1;
@@ -125,7 +125,7 @@ bool ParserImpl::ParseAggregatedPredicate(
 
         // Direct application.
         } else if (Lexeme::kIdentifierAtom == lexeme) {
-          pred.reset(new Node<ParsedPredicate>(module, clause));
+          pred.reset(new ParsedPredicateImpl(module, clause));
           pred->name = tok;
           state = 6;
           continue;
@@ -139,7 +139,7 @@ bool ParserImpl::ParseAggregatedPredicate(
 
       case 1:
         if (tok.IsType()) {
-          anon_param.reset(new Node<ParsedParameter>);
+          anon_param.reset(new ParsedParameterImpl);
           anon_param->opt_type = tok;
           anon_param->parsed_opt_type = true;
           state = 2;
@@ -382,7 +382,7 @@ bool ParserImpl::ParseAggregatedPredicate(
 
 done:
 
-  std::unique_ptr<Node<ParsedAggregate>> agg(new Node<ParsedAggregate>);
+  std::unique_ptr<ParsedAggregateImpl> agg(new ParsedAggregateImpl);
   agg->spelling_range = DisplayRange(functor->name.Position(), last_pos);
   agg->functor = std::move(functor);
   agg->predicate = std::move(pred);

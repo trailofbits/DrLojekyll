@@ -9,13 +9,13 @@
 
 namespace hyde {
 
-Node<QueryMerge>::~Node(void) {}
+QueryMergeImpl::~QueryMergeImpl(void) {}
 
-Node<QueryMerge> *Node<QueryMerge>::AsMerge(void) noexcept {
+QueryMergeImpl *QueryMergeImpl::AsMerge(void) noexcept {
   return this;
 }
 
-uint64_t Node<QueryMerge>::Hash(void) noexcept {
+uint64_t QueryMergeImpl::Hash(void) noexcept {
   if (hash) {
     return hash;
   }
@@ -40,7 +40,7 @@ uint64_t Node<QueryMerge>::Hash(void) noexcept {
   return hash;
 }
 
-unsigned Node<QueryMerge>::Depth(void) noexcept {
+unsigned QueryMergeImpl::Depth(void) noexcept {
   if (depth) {
     return depth;
   }
@@ -70,7 +70,7 @@ unsigned Node<QueryMerge>::Depth(void) noexcept {
 // views might be the same.
 //
 // NOTE(pag): If a merge directly merges with itself then we filter it out.
-bool Node<QueryMerge>::Canonicalize(QueryImpl *query,
+bool QueryMergeImpl::Canonicalize(QueryImpl *query,
                                     const OptimizationContext &opt,
                                     const ErrorLog &) {
 
@@ -368,7 +368,7 @@ done:
 // wider than the tuple itself, hence the returned tuple).
 // Returns `true` if successful, and updates `tuples` in place with the
 // new merged entries.
-bool Node<QueryMerge>::SinkThroughTuples(QueryImpl *impl,
+bool QueryMergeImpl::SinkThroughTuples(QueryImpl *impl,
                                          std::vector<VIEW *> &inout_views) {
   VIEW *first_tuple_pred = nullptr;
   TUPLE *first_tuple = nullptr;
@@ -570,7 +570,7 @@ static TUPLE *MakeSameShapedTuple(QueryImpl *impl, MAP *map) {
 // Convert two or more MAPs into a single MAP that reads its data from
 // a union, where that union reads its data from the sources of the two
 // MAPs.
-bool Node<QueryMerge>::SinkThroughMaps(QueryImpl *impl,
+bool QueryMergeImpl::SinkThroughMaps(QueryImpl *impl,
                                        std::vector<VIEW *> &inout_views) {
 
   MAP *first_map = nullptr;
@@ -836,7 +836,7 @@ static COL *CreateTag(QueryImpl *impl, unsigned &num_used_tags) {
 
 }  // namespace
 
-bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
+bool QueryMergeImpl::SinkThroughNegations(QueryImpl *impl,
                                             std::vector<VIEW *> &inout_views) {
 
   auto first_negate_index = 0u;
@@ -1094,7 +1094,7 @@ bool Node<QueryMerge>::SinkThroughNegations(QueryImpl *impl,
 }
 
 // Similar to above, but for joins.
-bool Node<QueryMerge>::SinkThroughJoins(
+bool QueryMergeImpl::SinkThroughJoins(
     QueryImpl *impl, std::vector<VIEW *> &inout_views, bool recursive) {
 
   if (inout_views.size() == 1u) {
@@ -1445,8 +1445,8 @@ bool Node<QueryMerge>::SinkThroughJoins(
 }
 
 // Equality over merge is structural.
-bool Node<QueryMerge>::Equals(EqualitySet &eq,
-                              Node<QueryView> *that_) noexcept {
+bool QueryMergeImpl::Equals(EqualitySet &eq,
+                              QueryViewImpl *that_) noexcept {
   if (eq.Contains(this, that_)) {
     return true;
   }

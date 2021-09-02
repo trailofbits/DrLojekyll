@@ -357,9 +357,6 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module,
     for (auto clause : sub_module.Clauses()) {
       all_clauses.push_back(clause);
     }
-    for (auto clause : sub_module.DeletionClauses()) {
-      all_clauses.push_back(clause);
-    }
     Shuffle(all_clauses.begin(), all_clauses.end(), gen);
     for (auto clause : all_clauses) {
       ShuffleClause(cxt, os, clause, gen);

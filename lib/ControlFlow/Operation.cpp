@@ -14,163 +14,163 @@
 
 namespace hyde {
 
-Node<ProgramOperationRegion>::~Node(void) {}
-Node<ProgramCallRegion>::~Node(void) {}
-Node<ProgramReturnRegion>::~Node(void) {}
-Node<ProgramTestAndSetRegion>::~Node(void) {}
-Node<ProgramGenerateRegion>::~Node(void) {}
-Node<ProgramModeSwitchRegion>::~Node(void) {}
-Node<ProgramLetBindingRegion>::~Node(void) {}
-Node<ProgramWorkerIdRegion>::~Node(void) {}
-Node<ProgramPublishRegion>::~Node(void) {}
-Node<ProgramChangeTupleRegion>::~Node(void) {}
-Node<ProgramChangeRecordRegion>::~Node(void) {}
-Node<ProgramCheckTupleRegion>::~Node(void) {}
-Node<ProgramCheckRecordRegion>::~Node(void) {}
-Node<ProgramTableJoinRegion>::~Node(void) {}
-Node<ProgramTableProductRegion>::~Node(void) {}
-Node<ProgramTableScanRegion>::~Node(void) {}
-Node<ProgramTupleCompareRegion>::~Node(void) {}
-Node<ProgramVectorLoopRegion>::~Node(void) {}
-Node<ProgramVectorAppendRegion>::~Node(void) {}
-Node<ProgramVectorClearRegion>::~Node(void) {}
-Node<ProgramVectorSwapRegion>::~Node(void) {}
-Node<ProgramVectorUniqueRegion>::~Node(void) {}
+ProgramOperationRegionImpl::~ProgramOperationRegionImpl(void) {}
+ProgramCallRegionImpl::~ProgramCallRegionImpl(void) {}
+ProgramReturnRegionImpl::~ProgramReturnRegionImpl(void) {}
+ProgramTestAndSetRegionImpl::~ProgramTestAndSetRegionImpl(void) {}
+ProgramGenerateRegionImpl::~ProgramGenerateRegionImpl(void) {}
+ProgramModeSwitchRegionImpl::~ProgramModeSwitchRegionImpl(void) {}
+ProgramLetBindingRegionImpl::~ProgramLetBindingRegionImpl(void) {}
+ProgramWorkerIdRegionImpl::~ProgramWorkerIdRegionImpl(void) {}
+ProgramPublishRegionImpl::~ProgramPublishRegionImpl(void) {}
+ProgramChangeTupleRegionImpl::~ProgramChangeTupleRegionImpl(void) {}
+ProgramChangeRecordRegionImpl::~ProgramChangeRecordRegionImpl(void) {}
+ProgramCheckTupleRegionImpl::~ProgramCheckTupleRegionImpl(void) {}
+ProgramCheckRecordRegionImpl::~ProgramCheckRecordRegionImpl(void) {}
+ProgramTableJoinRegionImpl::~ProgramTableJoinRegionImpl(void) {}
+ProgramTableProductRegionImpl::~ProgramTableProductRegionImpl(void) {}
+ProgramTableScanRegionImpl::~ProgramTableScanRegionImpl(void) {}
+ProgramTupleCompareRegionImpl::~ProgramTupleCompareRegionImpl(void) {}
+ProgramVectorLoopRegionImpl::~ProgramVectorLoopRegionImpl(void) {}
+ProgramVectorAppendRegionImpl::~ProgramVectorAppendRegionImpl(void) {}
+ProgramVectorClearRegionImpl::~ProgramVectorClearRegionImpl(void) {}
+ProgramVectorSwapRegionImpl::~ProgramVectorSwapRegionImpl(void) {}
+ProgramVectorUniqueRegionImpl::~ProgramVectorUniqueRegionImpl(void) {}
 
-Node<ProgramOperationRegion>::Node(REGION *parent_, ProgramOperation op_)
+ProgramOperationRegionImpl::ProgramOperationRegionImpl(REGION *parent_, ProgramOperation op_)
     : REGION(parent_),
       op(op_),
       body(this) {
   assert(parent_->Ancestor()->AsProcedure());
 }
 
-Node<ProgramOperationRegion> *
-Node<ProgramOperationRegion>::AsOperation(void) noexcept {
+ProgramOperationRegionImpl *
+ProgramOperationRegionImpl::AsOperation(void) noexcept {
   return this;
 }
 
 // Returns `true` if all paths through `this` ends with a `return` region.
-bool Node<ProgramOperationRegion>::EndsWithReturn(void) const noexcept {
+bool ProgramOperationRegionImpl::EndsWithReturn(void) const noexcept {
   return false;
 }
 
-Node<ProgramCallRegion>::Node(unsigned id_, REGION *parent_,
-                              Node<ProgramProcedure> *called_proc_,
-                              ProgramOperation op_)
-    : Node<ProgramOperationRegion>(parent_, op_),
+ProgramCallRegionImpl::ProgramCallRegionImpl(unsigned id_, REGION *parent_,
+                                             ProgramProcedureImpl *called_proc_,
+                                             ProgramOperation op_)
+    : ProgramOperationRegionImpl(parent_, op_),
       called_proc(this, called_proc_),
       arg_vars(this),
       arg_vecs(this),
       false_body(this),
       id(id_) {}
 
-Node<ProgramCallRegion> *Node<ProgramOperationRegion>::AsCall(void) noexcept {
+ProgramCallRegionImpl *ProgramOperationRegionImpl::AsCall(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramReturnRegion> *
-Node<ProgramOperationRegion>::AsReturn(void) noexcept {
+ProgramReturnRegionImpl *
+ProgramOperationRegionImpl::AsReturn(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramPublishRegion> *
-Node<ProgramOperationRegion>::AsPublish(void) noexcept {
+ProgramPublishRegionImpl *
+ProgramOperationRegionImpl::AsPublish(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramVectorLoopRegion> *
-Node<ProgramOperationRegion>::AsVectorLoop(void) noexcept {
+ProgramVectorLoopRegionImpl *
+ProgramOperationRegionImpl::AsVectorLoop(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramVectorAppendRegion> *
-Node<ProgramOperationRegion>::AsVectorAppend(void) noexcept {
+ProgramVectorAppendRegionImpl *
+ProgramOperationRegionImpl::AsVectorAppend(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramVectorClearRegion> *
-Node<ProgramOperationRegion>::AsVectorClear(void) noexcept {
+ProgramVectorClearRegionImpl *
+ProgramOperationRegionImpl::AsVectorClear(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramVectorSwapRegion> *
-Node<ProgramOperationRegion>::AsVectorSwap(void) noexcept {
+ProgramVectorSwapRegionImpl *
+ProgramOperationRegionImpl::AsVectorSwap(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramVectorUniqueRegion> *
-Node<ProgramOperationRegion>::AsVectorUnique(void) noexcept {
+ProgramVectorUniqueRegionImpl *
+ProgramOperationRegionImpl::AsVectorUnique(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramWorkerIdRegion> *
-Node<ProgramOperationRegion>::AsWorkerId(void) noexcept {
+ProgramWorkerIdRegionImpl *
+ProgramOperationRegionImpl::AsWorkerId(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramModeSwitchRegion> *
-Node<ProgramOperationRegion>::AsModeSwitch(void) noexcept {
+ProgramModeSwitchRegionImpl *
+ProgramOperationRegionImpl::AsModeSwitch(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramLetBindingRegion> *
-Node<ProgramOperationRegion>::AsLetBinding(void) noexcept {
+ProgramLetBindingRegionImpl *
+ProgramOperationRegionImpl::AsLetBinding(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramChangeTupleRegion> *
-Node<ProgramOperationRegion>::AsChangeTuple(void) noexcept {
+ProgramChangeTupleRegionImpl *
+ProgramOperationRegionImpl::AsChangeTuple(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramChangeRecordRegion> *
-Node<ProgramOperationRegion>::AsChangeRecord(void) noexcept {
+ProgramChangeRecordRegionImpl *
+ProgramOperationRegionImpl::AsChangeRecord(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramCheckTupleRegion> *
-Node<ProgramOperationRegion>::AsCheckTuple(void) noexcept {
+ProgramCheckTupleRegionImpl *
+ProgramOperationRegionImpl::AsCheckTuple(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramCheckRecordRegion> *
-Node<ProgramOperationRegion>::AsCheckRecord(void) noexcept {
+ProgramCheckRecordRegionImpl *
+ProgramOperationRegionImpl::AsCheckRecord(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramTableJoinRegion> *
-Node<ProgramOperationRegion>::AsTableJoin(void) noexcept {
+ProgramTableJoinRegionImpl *
+ProgramOperationRegionImpl::AsTableJoin(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramTableProductRegion> *
-Node<ProgramOperationRegion>::AsTableProduct(void) noexcept {
+ProgramTableProductRegionImpl *
+ProgramOperationRegionImpl::AsTableProduct(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramTableScanRegion> *
-Node<ProgramOperationRegion>::AsTableScan(void) noexcept {
+ProgramTableScanRegionImpl *
+ProgramOperationRegionImpl::AsTableScan(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramTestAndSetRegion> *
-Node<ProgramOperationRegion>::AsTestAndSet(void) noexcept {
+ProgramTestAndSetRegionImpl *
+ProgramOperationRegionImpl::AsTestAndSet(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramGenerateRegion> *
-Node<ProgramOperationRegion>::AsGenerate(void) noexcept {
+ProgramGenerateRegionImpl *
+ProgramOperationRegionImpl::AsGenerate(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramTupleCompareRegion> *
-Node<ProgramOperationRegion>::AsTupleCompare(void) noexcept {
+ProgramTupleCompareRegionImpl *
+ProgramOperationRegionImpl::AsTupleCompare(void) noexcept {
   return nullptr;
 }
 
 // -----------------------------------------------------------------------------
 
-bool Node<ProgramVectorLoopRegion>::Equals(EqualitySet &eq,
+bool ProgramVectorLoopRegionImpl::Equals(EqualitySet &eq,
                                            REGION *that_,
                                            uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
@@ -206,7 +206,7 @@ bool Node<ProgramVectorLoopRegion>::Equals(EqualitySet &eq,
   return true;
 }
 
-const bool Node<ProgramVectorLoopRegion>::MergeEqual(
+const bool ProgramVectorLoopRegionImpl::MergeEqual(
     ProgramImpl *impl, std::vector<REGION *> &merges) {
 
   auto par = impl->parallel_regions.Create(this);
@@ -246,12 +246,12 @@ const bool Node<ProgramVectorLoopRegion>::MergeEqual(
   return true;
 }
 
-Node<ProgramVectorLoopRegion> *
-Node<ProgramVectorLoopRegion>::AsVectorLoop(void) noexcept {
+ProgramVectorLoopRegionImpl *
+ProgramVectorLoopRegionImpl::AsVectorLoop(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramVectorLoopRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramVectorLoopRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(vector->kind) + 17u);
   if (auto table = induction_table.get()) {
@@ -270,18 +270,18 @@ uint64_t Node<ProgramVectorLoopRegion>::Hash(uint32_t depth) const {
   return hash;
 }
 
-bool Node<ProgramVectorLoopRegion>::IsNoOp(void) const noexcept {
+bool ProgramVectorLoopRegionImpl::IsNoOp(void) const noexcept {
   return !this->OP::body || this->OP::body->IsNoOp();
 }
 
 // -----------------------------------------------------------------------------
 
-Node<ProgramWorkerIdRegion> *
-Node<ProgramWorkerIdRegion>::AsWorkerId(void) noexcept {
+ProgramWorkerIdRegionImpl *
+ProgramWorkerIdRegionImpl::AsWorkerId(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramWorkerIdRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramWorkerIdRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   for (auto var : hashed_vars) {
     hash ^= RotateRight64(hash, 13) *
@@ -299,7 +299,7 @@ uint64_t Node<ProgramWorkerIdRegion>::Hash(uint32_t depth) const {
   return hash;
 }
 
-bool Node<ProgramWorkerIdRegion>::Equals(EqualitySet &eq,
+bool ProgramWorkerIdRegionImpl::Equals(EqualitySet &eq,
                                          REGION *that_,
                                          uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
@@ -341,7 +341,7 @@ bool Node<ProgramWorkerIdRegion>::Equals(EqualitySet &eq,
   }
 }
 
-const bool Node<ProgramWorkerIdRegion>::MergeEqual(
+const bool ProgramWorkerIdRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
 
   const auto num_hashed_vars = hashed_vars.Size();
@@ -377,18 +377,18 @@ const bool Node<ProgramWorkerIdRegion>::MergeEqual(
   return true;
 }
 
-bool Node<ProgramWorkerIdRegion>::IsNoOp(void) const noexcept {
+bool ProgramWorkerIdRegionImpl::IsNoOp(void) const noexcept {
   return !this->OP::body || this->OP::body->IsNoOp();
 }
 
 // -----------------------------------------------------------------------------
 
-Node<ProgramModeSwitchRegion> *
-Node<ProgramModeSwitchRegion>::AsModeSwitch(void) noexcept {
+ProgramModeSwitchRegionImpl *
+ProgramModeSwitchRegionImpl::AsModeSwitch(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramModeSwitchRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramModeSwitchRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 13) *
           static_cast<unsigned>(this->new_mode) * 17;
@@ -403,11 +403,11 @@ uint64_t Node<ProgramModeSwitchRegion>::Hash(uint32_t depth) const {
   return hash;
 }
 
-bool Node<ProgramModeSwitchRegion>::IsNoOp(void) const noexcept {
+bool ProgramModeSwitchRegionImpl::IsNoOp(void) const noexcept {
   return !this->OP::body || this->OP::body->IsNoOp();
 }
 
-bool Node<ProgramModeSwitchRegion>::Equals(EqualitySet &eq,
+bool ProgramModeSwitchRegionImpl::Equals(EqualitySet &eq,
                                            REGION *that_,
                                            uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
@@ -439,7 +439,7 @@ bool Node<ProgramModeSwitchRegion>::Equals(EqualitySet &eq,
   }
 }
 
-const bool Node<ProgramModeSwitchRegion>::MergeEqual(
+const bool ProgramModeSwitchRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
 
   auto par = prog->parallel_regions.Create(this);
@@ -471,12 +471,12 @@ const bool Node<ProgramModeSwitchRegion>::MergeEqual(
 
 // -----------------------------------------------------------------------------
 
-Node<ProgramLetBindingRegion> *
-Node<ProgramLetBindingRegion>::AsLetBinding(void) noexcept {
+ProgramLetBindingRegionImpl *
+ProgramLetBindingRegionImpl::AsLetBinding(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramLetBindingRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramLetBindingRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   for (auto var : used_vars) {
     hash ^= RotateRight64(hash, 13) *
@@ -493,11 +493,11 @@ uint64_t Node<ProgramLetBindingRegion>::Hash(uint32_t depth) const {
   return hash;
 }
 
-bool Node<ProgramLetBindingRegion>::IsNoOp(void) const noexcept {
+bool ProgramLetBindingRegionImpl::IsNoOp(void) const noexcept {
   return !this->OP::body || this->OP::body->IsNoOp();
 }
 
-bool Node<ProgramLetBindingRegion>::Equals(EqualitySet &eq,
+bool ProgramLetBindingRegionImpl::Equals(EqualitySet &eq,
                                            REGION *that_,
                                            uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
@@ -543,7 +543,7 @@ bool Node<ProgramLetBindingRegion>::Equals(EqualitySet &eq,
   }
 }
 
-const bool Node<ProgramLetBindingRegion>::MergeEqual(
+const bool ProgramLetBindingRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
 
   const auto num_defined_vars = defined_vars.Size();
@@ -587,7 +587,7 @@ const bool Node<ProgramLetBindingRegion>::MergeEqual(
 
 // -----------------------------------------------------------------------------
 
-uint64_t Node<ProgramVectorAppendRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramVectorAppendRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(vector->kind) + 17u);
   for (auto type : vector->col_types) {
@@ -607,7 +607,7 @@ uint64_t Node<ProgramVectorAppendRegion>::Hash(uint32_t depth) const {
   return hash;
 }
 
-bool Node<ProgramVectorAppendRegion>::Equals(EqualitySet &eq,
+bool ProgramVectorAppendRegionImpl::Equals(EqualitySet &eq,
                                              REGION *that_,
                                              uint32_t) const noexcept {
   const auto that_op = that_->AsOperation();
@@ -640,7 +640,7 @@ bool Node<ProgramVectorAppendRegion>::Equals(EqualitySet &eq,
   return true;
 }
 
-const bool Node<ProgramVectorAppendRegion>::MergeEqual(
+const bool ProgramVectorAppendRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
 
   assert(false && "Likely a bug has occurred somewhere");
@@ -650,19 +650,19 @@ const bool Node<ProgramVectorAppendRegion>::MergeEqual(
   return false;
 }
 
-Node<ProgramVectorAppendRegion> *
-Node<ProgramVectorAppendRegion>::AsVectorAppend(void) noexcept {
+ProgramVectorAppendRegionImpl *
+ProgramVectorAppendRegionImpl::AsVectorAppend(void) noexcept {
   return this;
 }
 
 // -----------------------------------------------------------------------------
 
-Node<ProgramChangeTupleRegion> *
-Node<ProgramChangeTupleRegion>::AsChangeTuple(void) noexcept {
+ProgramChangeTupleRegionImpl *
+ProgramChangeTupleRegionImpl::AsChangeTuple(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramChangeTupleRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramChangeTupleRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 13) * static_cast<unsigned>(from_state) * 13;
   hash ^= RotateRight64(hash, 13) * static_cast<unsigned>(to_state) * 17;
@@ -687,12 +687,12 @@ uint64_t Node<ProgramChangeTupleRegion>::Hash(uint32_t depth) const {
   return hash;
 }
 
-bool Node<ProgramChangeTupleRegion>::IsNoOp(void) const noexcept {
+bool ProgramChangeTupleRegionImpl::IsNoOp(void) const noexcept {
   assert(!col_values.Empty());
   return false;
 }
 
-bool Node<ProgramChangeTupleRegion>::Equals(EqualitySet &eq,
+bool ProgramChangeTupleRegionImpl::Equals(EqualitySet &eq,
                                                 REGION *that_,
                                                 uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
@@ -736,7 +736,7 @@ bool Node<ProgramChangeTupleRegion>::Equals(EqualitySet &eq,
 }
 
 // Returns `true` if all paths through `this` ends with a `return` region.
-bool Node<ProgramChangeTupleRegion>::EndsWithReturn(void) const noexcept {
+bool ProgramChangeTupleRegionImpl::EndsWithReturn(void) const noexcept {
   if (body && failed_body) {
     return body->EndsWithReturn() && failed_body->EndsWithReturn();
   } else {
@@ -744,7 +744,7 @@ bool Node<ProgramChangeTupleRegion>::EndsWithReturn(void) const noexcept {
   }
 }
 
-const bool Node<ProgramChangeTupleRegion>::MergeEqual(
+const bool ProgramChangeTupleRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
 
   // The implication is that two regions wanted to do the same transition. If
@@ -806,12 +806,12 @@ const bool Node<ProgramChangeTupleRegion>::MergeEqual(
 
 // -----------------------------------------------------------------------------
 
-Node<ProgramChangeRecordRegion> *
-Node<ProgramChangeRecordRegion>::AsChangeRecord(void) noexcept {
+ProgramChangeRecordRegionImpl *
+ProgramChangeRecordRegionImpl::AsChangeRecord(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramChangeRecordRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramChangeRecordRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 13) * static_cast<unsigned>(from_state) * 13;
   hash ^= RotateRight64(hash, 13) * static_cast<unsigned>(to_state) * 17;
@@ -836,13 +836,13 @@ uint64_t Node<ProgramChangeRecordRegion>::Hash(uint32_t depth) const {
   return hash;
 }
 
-bool Node<ProgramChangeRecordRegion>::IsNoOp(void) const noexcept {
+bool ProgramChangeRecordRegionImpl::IsNoOp(void) const noexcept {
   assert(!col_values.Empty());
   assert(!record_vars.Empty());
   return false;
 }
 
-bool Node<ProgramChangeRecordRegion>::Equals(EqualitySet &eq,
+bool ProgramChangeRecordRegionImpl::Equals(EqualitySet &eq,
                                              REGION *that_,
                                              uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
@@ -891,7 +891,7 @@ bool Node<ProgramChangeRecordRegion>::Equals(EqualitySet &eq,
 }
 
 // Returns `true` if all paths through `this` ends with a `return` region.
-bool Node<ProgramChangeRecordRegion>::EndsWithReturn(void) const noexcept {
+bool ProgramChangeRecordRegionImpl::EndsWithReturn(void) const noexcept {
   if (body && failed_body) {
     return body->EndsWithReturn() && failed_body->EndsWithReturn();
   } else {
@@ -899,7 +899,7 @@ bool Node<ProgramChangeRecordRegion>::EndsWithReturn(void) const noexcept {
   }
 }
 
-const bool Node<ProgramChangeRecordRegion>::MergeEqual(
+const bool ProgramChangeRecordRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
 
   // The implication is that two regions wanted to do the same transition. If
@@ -961,7 +961,7 @@ const bool Node<ProgramChangeRecordRegion>::MergeEqual(
 
 // -----------------------------------------------------------------------------
 
-uint64_t Node<ProgramTestAndSetRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramTestAndSetRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^=
       RotateRight64(hash, 13) *
@@ -991,11 +991,11 @@ uint64_t Node<ProgramTestAndSetRegion>::Hash(uint32_t depth) const {
   return hash;
 }
 
-bool Node<ProgramTestAndSetRegion>::IsNoOp(void) const noexcept {
+bool ProgramTestAndSetRegionImpl::IsNoOp(void) const noexcept {
   return false;
 }
 
-bool Node<ProgramTestAndSetRegion>::Equals(EqualitySet &eq,
+bool ProgramTestAndSetRegionImpl::Equals(EqualitySet &eq,
                                            REGION *that_,
                                            uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
@@ -1032,7 +1032,7 @@ bool Node<ProgramTestAndSetRegion>::Equals(EqualitySet &eq,
   return true;
 }
 
-const bool Node<ProgramTestAndSetRegion>::MergeEqual(
+const bool ProgramTestAndSetRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
   NOTE("TODO(ekilmer): Unimplemented merging of TestAndSetRegion");
   assert(false);
@@ -1041,29 +1041,29 @@ const bool Node<ProgramTestAndSetRegion>::MergeEqual(
 
 // -----------------------------------------------------------------------------
 
-Node<ProgramTestAndSetRegion> *
-Node<ProgramTestAndSetRegion>::AsTestAndSet(void) noexcept {
+ProgramTestAndSetRegionImpl *
+ProgramTestAndSetRegionImpl::AsTestAndSet(void) noexcept {
   return this;
 }
 
-Node<ProgramTableJoinRegion> *
-Node<ProgramTableJoinRegion>::AsTableJoin(void) noexcept {
+ProgramTableJoinRegionImpl *
+ProgramTableJoinRegionImpl::AsTableJoin(void) noexcept {
   return this;
 }
 
-Node<ProgramTableProductRegion> *
-Node<ProgramTableProductRegion>::AsTableProduct(void) noexcept {
+ProgramTableProductRegionImpl *
+ProgramTableProductRegionImpl::AsTableProduct(void) noexcept {
   return this;
 }
 
-Node<ProgramTableScanRegion> *
-Node<ProgramTableScanRegion>::AsTableScan(void) noexcept {
+ProgramTableScanRegionImpl *
+ProgramTableScanRegionImpl::AsTableScan(void) noexcept {
   return this;
 }
 
 // -----------------------------------------------------------------------------
 
-uint64_t Node<ProgramVectorClearRegion>::Hash(uint32_t) const {
+uint64_t ProgramVectorClearRegionImpl::Hash(uint32_t) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= (static_cast<unsigned>(vector->kind) + 1u) * 17;
   for (auto type : vector->col_types) {
@@ -1072,7 +1072,7 @@ uint64_t Node<ProgramVectorClearRegion>::Hash(uint32_t) const {
   return hash;
 }
 
-bool Node<ProgramVectorClearRegion>::Equals(EqualitySet &eq,
+bool ProgramVectorClearRegionImpl::Equals(EqualitySet &eq,
                                             REGION *that_,
                                             uint32_t) const noexcept {
   const auto that_op = that_->AsOperation();
@@ -1090,26 +1090,26 @@ bool Node<ProgramVectorClearRegion>::Equals(EqualitySet &eq,
   }
 }
 
-const bool Node<ProgramVectorClearRegion>::MergeEqual(
+const bool ProgramVectorClearRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
   NOTE("TODO(ekilmer): Unimplemented merging of ProgramVectorClearRegion");
   assert(false);
   return false;
 }
 
-Node<ProgramVectorClearRegion> *
-Node<ProgramVectorClearRegion>::AsVectorClear(void) noexcept {
+ProgramVectorClearRegionImpl *
+ProgramVectorClearRegionImpl::AsVectorClear(void) noexcept {
   return this;
 }
 
 // -----------------------------------------------------------------------------
 
-Node<ProgramVectorSwapRegion> *
-Node<ProgramVectorSwapRegion>::AsVectorSwap(void) noexcept {
+ProgramVectorSwapRegionImpl *
+ProgramVectorSwapRegionImpl::AsVectorSwap(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramVectorSwapRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramVectorSwapRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= (static_cast<unsigned>(lhs->kind) + 1u) * 17;
   hash ^= (static_cast<unsigned>(rhs->kind) + 1u) * 17;
@@ -1120,7 +1120,7 @@ uint64_t Node<ProgramVectorSwapRegion>::Hash(uint32_t depth) const {
   return hash;
 }
 
-bool Node<ProgramVectorSwapRegion>::Equals(EqualitySet &eq,
+bool ProgramVectorSwapRegionImpl::Equals(EqualitySet &eq,
                                            REGION *that_,
                                            uint32_t) const noexcept {
   const auto that_op = that_->AsOperation();
@@ -1147,7 +1147,7 @@ bool Node<ProgramVectorSwapRegion>::Equals(EqualitySet &eq,
   }
 }
 
-const bool Node<ProgramVectorSwapRegion>::MergeEqual(
+const bool ProgramVectorSwapRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
 
   // NOTE(pag): if this condition is ever satisfied, then a bug has probably
@@ -1158,7 +1158,7 @@ const bool Node<ProgramVectorSwapRegion>::MergeEqual(
 
 // -----------------------------------------------------------------------------
 
-uint64_t Node<ProgramVectorUniqueRegion>::Hash(uint32_t) const {
+uint64_t ProgramVectorUniqueRegionImpl::Hash(uint32_t) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= (static_cast<unsigned>(vector->kind) + 1u) * 17;
   for (auto type : vector->col_types) {
@@ -1167,7 +1167,7 @@ uint64_t Node<ProgramVectorUniqueRegion>::Hash(uint32_t) const {
   return hash;
 }
 
-bool Node<ProgramVectorUniqueRegion>::Equals(EqualitySet &eq,
+bool ProgramVectorUniqueRegionImpl::Equals(EqualitySet &eq,
                                              REGION *that_,
                                              uint32_t) const noexcept {
   const auto that_op = that_->AsOperation();
@@ -1185,21 +1185,21 @@ bool Node<ProgramVectorUniqueRegion>::Equals(EqualitySet &eq,
   }
 }
 
-const bool Node<ProgramVectorUniqueRegion>::MergeEqual(
+const bool ProgramVectorUniqueRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
   NOTE("TODO(ekilmer): Unimplemented merging of ProgramVectorUniqueRegion");
   assert(false);
   return false;
 }
 
-Node<ProgramVectorUniqueRegion> *
-Node<ProgramVectorUniqueRegion>::AsVectorUnique(void) noexcept {
+ProgramVectorUniqueRegionImpl *
+ProgramVectorUniqueRegionImpl::AsVectorUnique(void) noexcept {
   return this;
 }
 
 // -----------------------------------------------------------------------------
 
-uint64_t Node<ProgramTableJoinRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramTableJoinRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   for (auto table : this->tables) {
     hash ^= RotateRight64(hash, 17) * (table->id + 17u);
@@ -1216,11 +1216,11 @@ uint64_t Node<ProgramTableJoinRegion>::Hash(uint32_t depth) const {
   return hash;
 }
 
-bool Node<ProgramTableJoinRegion>::IsNoOp(void) const noexcept {
+bool ProgramTableJoinRegionImpl::IsNoOp(void) const noexcept {
   return !this->OP::body || this->OP::body->IsNoOp();
 }
 
-bool Node<ProgramTableJoinRegion>::Equals(EqualitySet &eq,
+bool ProgramTableJoinRegionImpl::Equals(EqualitySet &eq,
                                           REGION *that_,
                                           uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
@@ -1308,7 +1308,7 @@ bool Node<ProgramTableJoinRegion>::Equals(EqualitySet &eq,
   return true;
 }
 
-const bool Node<ProgramTableJoinRegion>::MergeEqual(
+const bool ProgramTableJoinRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
   NOTE("TODO(ekilmer): Unimplemented merging of ProgramTableJoinRegion");
   assert(false);
@@ -1317,11 +1317,11 @@ const bool Node<ProgramTableJoinRegion>::MergeEqual(
 
 // -----------------------------------------------------------------------------
 
-bool Node<ProgramTableProductRegion>::IsNoOp(void) const noexcept {
+bool ProgramTableProductRegionImpl::IsNoOp(void) const noexcept {
   return !this->OP::body || this->OP::body->IsNoOp();
 }
 
-uint64_t Node<ProgramTableProductRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramTableProductRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   for (auto table : this->tables) {
     hash ^= RotateRight64(hash, 17) * (table->id + 17u);
@@ -1336,7 +1336,7 @@ uint64_t Node<ProgramTableProductRegion>::Hash(uint32_t depth) const {
   return hash;
 }
 
-bool Node<ProgramTableProductRegion>::Equals(EqualitySet &eq,
+bool ProgramTableProductRegionImpl::Equals(EqualitySet &eq,
                                              REGION *that_,
                                              uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
@@ -1390,7 +1390,7 @@ bool Node<ProgramTableProductRegion>::Equals(EqualitySet &eq,
   return true;
 }
 
-const bool Node<ProgramTableProductRegion>::MergeEqual(
+const bool ProgramTableProductRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
   NOTE("TODO(ekilmer): Unimplemented merging of ProgramTableProductRegion");
   assert(false);
@@ -1399,7 +1399,7 @@ const bool Node<ProgramTableProductRegion>::MergeEqual(
 
 // -----------------------------------------------------------------------------
 
-uint64_t Node<ProgramTableScanRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramTableScanRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) * (table->id + 17u);
   hash ^= RotateRight64(hash, 15) * (index->id + 13u);
@@ -1413,11 +1413,11 @@ uint64_t Node<ProgramTableScanRegion>::Hash(uint32_t depth) const {
   return hash;
 }
 
-bool Node<ProgramTableScanRegion>::IsNoOp(void) const noexcept {
+bool ProgramTableScanRegionImpl::IsNoOp(void) const noexcept {
   return !this->OP::body || this->OP::body->IsNoOp();
 }
 
-bool Node<ProgramTableScanRegion>::Equals(EqualitySet &eq,
+bool ProgramTableScanRegionImpl::Equals(EqualitySet &eq,
                                           REGION *that_,
                                           uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
@@ -1468,7 +1468,7 @@ bool Node<ProgramTableScanRegion>::Equals(EqualitySet &eq,
   return true;
 }
 
-const bool Node<ProgramTableScanRegion>::MergeEqual(
+const bool ProgramTableScanRegionImpl::MergeEqual(
     ProgramImpl *impl, std::vector<REGION *> &merges) {
 
   auto par = impl->parallel_regions.Create(this);
@@ -1512,7 +1512,7 @@ const bool Node<ProgramTableScanRegion>::MergeEqual(
 
 // -----------------------------------------------------------------------------
 
-uint64_t Node<ProgramTupleCompareRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramTupleCompareRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) * (static_cast<unsigned>(this->cmp_op) + 17u);
   for (auto var : this->lhs_vars) {
@@ -1538,13 +1538,13 @@ uint64_t Node<ProgramTupleCompareRegion>::Hash(uint32_t depth) const {
   return hash;
 }
 
-Node<ProgramTupleCompareRegion> *
-Node<ProgramTupleCompareRegion>::AsTupleCompare(void) noexcept {
+ProgramTupleCompareRegionImpl *
+ProgramTupleCompareRegionImpl::AsTupleCompare(void) noexcept {
   return this;
 }
 
 // Returns `true` if all paths through `this` ends with a `return` region.
-bool Node<ProgramTupleCompareRegion>::EndsWithReturn(void) const noexcept {
+bool ProgramTupleCompareRegionImpl::EndsWithReturn(void) const noexcept {
   if (body && false_body) {
     return body->EndsWithReturn() && false_body->EndsWithReturn();
   } else {
@@ -1552,7 +1552,7 @@ bool Node<ProgramTupleCompareRegion>::EndsWithReturn(void) const noexcept {
   }
 }
 
-bool Node<ProgramTupleCompareRegion>::IsNoOp(void) const noexcept {
+bool ProgramTupleCompareRegionImpl::IsNoOp(void) const noexcept {
   if (body && !body->IsNoOp()) {
     return false;
   } else if (false_body && !false_body->IsNoOp()) {
@@ -1562,7 +1562,7 @@ bool Node<ProgramTupleCompareRegion>::IsNoOp(void) const noexcept {
   }
 }
 
-bool Node<ProgramTupleCompareRegion>::Equals(EqualitySet &eq,
+bool ProgramTupleCompareRegionImpl::Equals(EqualitySet &eq,
                                              REGION *that_,
                                              uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
@@ -1619,7 +1619,7 @@ bool Node<ProgramTupleCompareRegion>::Equals(EqualitySet &eq,
   return true;
 }
 
-const bool Node<ProgramTupleCompareRegion>::MergeEqual(
+const bool ProgramTupleCompareRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
 
   const auto num_vars = lhs_vars.Size();
@@ -1682,13 +1682,13 @@ const bool Node<ProgramTupleCompareRegion>::MergeEqual(
 
 // -----------------------------------------------------------------------------
 
-Node<ProgramGenerateRegion> *
-Node<ProgramGenerateRegion>::AsGenerate(void) noexcept {
+ProgramGenerateRegionImpl *
+ProgramGenerateRegionImpl::AsGenerate(void) noexcept {
   return this;
 }
 
 // Returns `true` if all paths through `this` ends with a `return` region.
-bool Node<ProgramGenerateRegion>::EndsWithReturn(void) const noexcept {
+bool ProgramGenerateRegionImpl::EndsWithReturn(void) const noexcept {
   if (body && empty_body) {
     return body->EndsWithReturn() && empty_body->EndsWithReturn();
   } else {
@@ -1696,7 +1696,7 @@ bool Node<ProgramGenerateRegion>::EndsWithReturn(void) const noexcept {
   }
 }
 
-uint64_t Node<ProgramGenerateRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramGenerateRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) *
           (static_cast<unsigned>(this->functor.Id()) + 17u);
@@ -1722,7 +1722,7 @@ uint64_t Node<ProgramGenerateRegion>::Hash(uint32_t depth) const {
   return hash;
 }
 
-bool Node<ProgramGenerateRegion>::IsNoOp(void) const noexcept {
+bool ProgramGenerateRegionImpl::IsNoOp(void) const noexcept {
   if (functor.IsPure()) {
     if (body && empty_body) {
       return body->IsNoOp() && empty_body->IsNoOp();
@@ -1741,7 +1741,7 @@ bool Node<ProgramGenerateRegion>::IsNoOp(void) const noexcept {
 // Returns `true` if `this` and `that` are structurally equivalent (after
 // variable renaming) after searching down `depth` levels or until leaf,
 // whichever is first, and where `depth` is 0, compare `this` to `that.
-bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
+bool ProgramGenerateRegionImpl::Equals(EqualitySet &eq,
                                          REGION *that_,
                                          uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
@@ -1801,7 +1801,7 @@ bool Node<ProgramGenerateRegion>::Equals(EqualitySet &eq,
   return true;
 }
 
-const bool Node<ProgramGenerateRegion>::MergeEqual(
+const bool ProgramGenerateRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
 
   // New parallel region for merged `body` into 'this'
@@ -1853,12 +1853,12 @@ const bool Node<ProgramGenerateRegion>::MergeEqual(
 
 // -----------------------------------------------------------------------------
 
-Node<ProgramCallRegion> *Node<ProgramCallRegion>::AsCall(void) noexcept {
+ProgramCallRegionImpl *ProgramCallRegionImpl::AsCall(void) noexcept {
   return this;
 }
 
 // Returns `true` if all paths through `this` ends with a `return` region.
-bool Node<ProgramCallRegion>::EndsWithReturn(void) const noexcept {
+bool ProgramCallRegionImpl::EndsWithReturn(void) const noexcept {
   if (body && false_body) {
     return body->EndsWithReturn() && false_body->EndsWithReturn();
   } else {
@@ -1866,7 +1866,7 @@ bool Node<ProgramCallRegion>::EndsWithReturn(void) const noexcept {
   }
 }
 
-uint64_t Node<ProgramCallRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramCallRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
 
   for (auto var : this->arg_vars) {
@@ -1897,7 +1897,7 @@ uint64_t Node<ProgramCallRegion>::Hash(uint32_t depth) const {
   return hash;
 }
 
-bool Node<ProgramCallRegion>::IsNoOp(void) const noexcept {
+bool ProgramCallRegionImpl::IsNoOp(void) const noexcept {
   return false;
 
   // NOTE(pag): Not really worth checking as even trivial procedures are
@@ -1907,7 +1907,7 @@ bool Node<ProgramCallRegion>::IsNoOp(void) const noexcept {
 // Returns `true` if `this` and `that` are structurally equivalent (after
 // variable renaming) after searching down `depth` levels or until leaf,
 // whichever is first, and where `depth` is 0, compare `this` to `that.
-bool Node<ProgramCallRegion>::Equals(EqualitySet &eq,
+bool ProgramCallRegionImpl::Equals(EqualitySet &eq,
                                      REGION *that_,
                                      uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
@@ -1988,7 +1988,7 @@ bool Node<ProgramCallRegion>::Equals(EqualitySet &eq,
   }
 }
 
-const bool Node<ProgramCallRegion>::MergeEqual(
+const bool ProgramCallRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
 
   // New parallel region for merged `body` into 'this'
@@ -2039,12 +2039,12 @@ const bool Node<ProgramCallRegion>::MergeEqual(
 
 // -----------------------------------------------------------------------------
 
-Node<ProgramPublishRegion> *
-Node<ProgramPublishRegion>::AsPublish(void) noexcept {
+ProgramPublishRegionImpl *
+ProgramPublishRegionImpl::AsPublish(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramPublishRegion>::Hash(uint32_t) const {
+uint64_t ProgramPublishRegionImpl::Hash(uint32_t) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) * this->message.Id();
 
@@ -2059,7 +2059,7 @@ uint64_t Node<ProgramPublishRegion>::Hash(uint32_t) const {
 // Returns `true` if `this` and `that` are structurally equivalent (after
 // variable renaming) after searching down `depth` levels or until leaf,
 // whichever is first, and where `depth` is 0, compare `this` to `that.
-bool Node<ProgramPublishRegion>::Equals(EqualitySet &eq,
+bool ProgramPublishRegionImpl::Equals(EqualitySet &eq,
                                         REGION *that_,
                                         uint32_t) const noexcept {
   const auto op = that_->AsOperation();
@@ -2084,29 +2084,29 @@ bool Node<ProgramPublishRegion>::Equals(EqualitySet &eq,
   return true;
 }
 
-const bool Node<ProgramPublishRegion>::MergeEqual(
+const bool ProgramPublishRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
   NOTE("TODO(ekilmer): Unimplemented merging of ProgramPublishRegion");
   assert(false);
   return false;
 }
 
-Node<ProgramReturnRegion> *Node<ProgramReturnRegion>::AsReturn(void) noexcept {
+ProgramReturnRegionImpl *ProgramReturnRegionImpl::AsReturn(void) noexcept {
   return this;
 }
 
 // -----------------------------------------------------------------------------
 
 // Returns `true` if all paths through `this` ends with a `return` region.
-bool Node<ProgramReturnRegion>::EndsWithReturn(void) const noexcept {
+bool ProgramReturnRegionImpl::EndsWithReturn(void) const noexcept {
   return true;
 }
 
-uint64_t Node<ProgramReturnRegion>::Hash(uint32_t) const {
+uint64_t ProgramReturnRegionImpl::Hash(uint32_t) const {
   return static_cast<unsigned>(this->OP::op) * 53;
 }
 
-bool Node<ProgramReturnRegion>::IsNoOp(void) const noexcept {
+bool ProgramReturnRegionImpl::IsNoOp(void) const noexcept {
 
   // NOTE(pag): This is a bit subtle, but basically, we'd like to be able to
   //            test if a procedure is a NOP, and to do so, we're really asking:
@@ -2121,7 +2121,7 @@ bool Node<ProgramReturnRegion>::IsNoOp(void) const noexcept {
 // Returns `true` if `this` and `that` are structurally equivalent (after
 // variable renaming) after searching down `depth` levels or until leaf,
 // whichever is first, and where `depth` is 0, compare `this` to `that.
-bool Node<ProgramReturnRegion>::Equals(EqualitySet &eq,
+bool ProgramReturnRegionImpl::Equals(EqualitySet &eq,
                                        REGION *that_,
                                        uint32_t) const noexcept {
   const auto op = that_->AsOperation();
@@ -2139,7 +2139,7 @@ bool Node<ProgramReturnRegion>::Equals(EqualitySet &eq,
   return this->OP::op == that->OP::op;
 }
 
-const bool Node<ProgramReturnRegion>::MergeEqual(
+const bool ProgramReturnRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
   NOTE("TODO(ekilmer): Unimplemented merging of ProgramReturnRegion");
   assert(false);
@@ -2148,13 +2148,13 @@ const bool Node<ProgramReturnRegion>::MergeEqual(
 
 // -----------------------------------------------------------------------------
 
-Node<ProgramCheckTupleRegion> *
-Node<ProgramCheckTupleRegion>::AsCheckTuple(void) noexcept {
+ProgramCheckTupleRegionImpl *
+ProgramCheckTupleRegionImpl::AsCheckTuple(void) noexcept {
   return this;
 }
 
 // Returns `true` if all paths through `this` ends with a `return` region.
-bool Node<ProgramCheckTupleRegion>::EndsWithReturn(void) const noexcept {
+bool ProgramCheckTupleRegionImpl::EndsWithReturn(void) const noexcept {
   if (body && absent_body && unknown_body) {
     return body->EndsWithReturn() && absent_body->EndsWithReturn() &&
            unknown_body->EndsWithReturn();
@@ -2163,7 +2163,7 @@ bool Node<ProgramCheckTupleRegion>::EndsWithReturn(void) const noexcept {
   }
 }
 
-uint64_t Node<ProgramCheckTupleRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramCheckTupleRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) * (this->table->id * 13u);
 
@@ -2188,7 +2188,7 @@ uint64_t Node<ProgramCheckTupleRegion>::Hash(uint32_t depth) const {
   return hash;
 }
 
-bool Node<ProgramCheckTupleRegion>::IsNoOp(void) const noexcept {
+bool ProgramCheckTupleRegionImpl::IsNoOp(void) const noexcept {
   if (body && !body->IsNoOp()) {
     return false;
   }
@@ -2207,7 +2207,7 @@ bool Node<ProgramCheckTupleRegion>::IsNoOp(void) const noexcept {
 // Returns `true` if `this` and `that` are structurally equivalent (after
 // variable renaming) after searching down `depth` levels or until leaf,
 // whichever is first, and where `depth` is 0, compare `this` to `that.
-bool Node<ProgramCheckTupleRegion>::Equals(EqualitySet &eq,
+bool ProgramCheckTupleRegionImpl::Equals(EqualitySet &eq,
                                            REGION *that_,
                                            uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
@@ -2258,7 +2258,7 @@ bool Node<ProgramCheckTupleRegion>::Equals(EqualitySet &eq,
   return true;
 }
 
-const bool Node<ProgramCheckTupleRegion>::MergeEqual(
+const bool ProgramCheckTupleRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
 
   // New parallel region for merged `body` into 'this'
@@ -2322,13 +2322,13 @@ const bool Node<ProgramCheckTupleRegion>::MergeEqual(
 
 // -----------------------------------------------------------------------------
 
-Node<ProgramCheckRecordRegion> *
-Node<ProgramCheckRecordRegion>::AsCheckRecord(void) noexcept {
+ProgramCheckRecordRegionImpl *
+ProgramCheckRecordRegionImpl::AsCheckRecord(void) noexcept {
   return this;
 }
 
 // Returns `true` if all paths through `this` ends with a `return` region.
-bool Node<ProgramCheckRecordRegion>::EndsWithReturn(void) const noexcept {
+bool ProgramCheckRecordRegionImpl::EndsWithReturn(void) const noexcept {
   if (body && absent_body && unknown_body) {
     return body->EndsWithReturn() && absent_body->EndsWithReturn() &&
            unknown_body->EndsWithReturn();
@@ -2337,7 +2337,7 @@ bool Node<ProgramCheckRecordRegion>::EndsWithReturn(void) const noexcept {
   }
 }
 
-uint64_t Node<ProgramCheckRecordRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramCheckRecordRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) * (this->table->id * 13u);
 
@@ -2362,7 +2362,7 @@ uint64_t Node<ProgramCheckRecordRegion>::Hash(uint32_t depth) const {
   return hash;
 }
 
-bool Node<ProgramCheckRecordRegion>::IsNoOp(void) const noexcept {
+bool ProgramCheckRecordRegionImpl::IsNoOp(void) const noexcept {
   if (body && !body->IsNoOp()) {
     return false;
   }
@@ -2381,7 +2381,7 @@ bool Node<ProgramCheckRecordRegion>::IsNoOp(void) const noexcept {
 // Returns `true` if `this` and `that` are structurally equivalent (after
 // variable renaming) after searching down `depth` levels or until leaf,
 // whichever is first, and where `depth` is 0, compare `this` to `that.
-bool Node<ProgramCheckRecordRegion>::Equals(EqualitySet &eq, REGION *that_,
+bool ProgramCheckRecordRegionImpl::Equals(EqualitySet &eq, REGION *that_,
                                           uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
@@ -2436,7 +2436,7 @@ bool Node<ProgramCheckRecordRegion>::Equals(EqualitySet &eq, REGION *that_,
   return true;
 }
 
-const bool Node<ProgramCheckRecordRegion>::MergeEqual(
+const bool ProgramCheckRecordRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
 
   // New parallel region for merged `body` into 'this'

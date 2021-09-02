@@ -7,19 +7,19 @@
 
 namespace hyde {
 
-Node<QueryMap>::~Node(void) {}
+QueryMapImpl::~QueryMapImpl(void) {}
 
-Node<QueryMap> *Node<QueryMap>::AsMap(void) noexcept {
+QueryMapImpl *QueryMapImpl::AsMap(void) noexcept {
   return this;
 }
 
-uint64_t Node<QueryMap>::Sort(void) noexcept {
+uint64_t QueryMapImpl::Sort(void) noexcept {
   return range.From().Index();
 }
 
 static const std::hash<std::string_view> kStringViewHasher;
 
-uint64_t Node<QueryMap>::Hash(void) noexcept {
+uint64_t QueryMapImpl::Hash(void) noexcept {
   if (hash) {
     return hash;
   }
@@ -55,7 +55,7 @@ uint64_t Node<QueryMap>::Hash(void) noexcept {
 // means that they can be re-ordered during canonicalization for the sake of
 // helping deduplicate common subexpressions. We also need to put the "attached"
 // outputs into the proper order.
-bool Node<QueryMap>::Canonicalize(QueryImpl *query,
+bool QueryMapImpl::Canonicalize(QueryImpl *query,
                                   const OptimizationContext &opt,
                                   const ErrorLog &) {
 
@@ -179,7 +179,7 @@ bool Node<QueryMap>::Canonicalize(QueryImpl *query,
 }
 
 // Equality over maps is pointer-based.
-bool Node<QueryMap>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
+bool QueryMapImpl::Equals(EqualitySet &eq, QueryViewImpl *that_) noexcept {
   if (eq.Contains(this, that_)) {
     return true;
   }

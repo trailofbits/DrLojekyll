@@ -7,13 +7,13 @@
 
 namespace hyde {
 
-Node<QueryNegate>::~Node(void) {}
+QueryNegateImpl::~QueryNegateImpl(void) {}
 
-Node<QueryNegate> *Node<QueryNegate>::AsNegate(void) noexcept {
+QueryNegateImpl *QueryNegateImpl::AsNegate(void) noexcept {
   return this;
 }
 
-uint64_t Node<QueryNegate>::Hash(void) noexcept {
+uint64_t QueryNegateImpl::Hash(void) noexcept {
   if (hash) {
     return hash;
   }
@@ -37,7 +37,7 @@ uint64_t Node<QueryNegate>::Hash(void) noexcept {
   return local_hash;
 }
 
-bool Node<QueryNegate>::Canonicalize(QueryImpl *query,
+bool QueryNegateImpl::Canonicalize(QueryImpl *query,
                                      const OptimizationContext &opt,
                                      const ErrorLog &) {
 
@@ -167,7 +167,7 @@ bool Node<QueryNegate>::Canonicalize(QueryImpl *query,
 }
 
 // Equality over inserts is structural.
-bool Node<QueryNegate>::Equals(EqualitySet &eq, VIEW *that_) noexcept {
+bool QueryNegateImpl::Equals(EqualitySet &eq, VIEW *that_) noexcept {
 
   if (eq.Contains(this, that_)) {
     return true;
@@ -192,7 +192,7 @@ bool Node<QueryNegate>::Equals(EqualitySet &eq, VIEW *that_) noexcept {
   return true;
 }
 
-unsigned Node<QueryNegate>::Depth(void) noexcept {
+unsigned QueryNegateImpl::Depth(void) noexcept {
   if (depth) {
     return depth;
   }

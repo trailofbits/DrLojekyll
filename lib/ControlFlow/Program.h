@@ -38,13 +38,18 @@ namespace hyde {
 class ProgramInductionRegion;
 class ProgramOperationRegion;
 
-// A column within a table.
-template <>
-class Node<DataColumn> final : public Def<Node<DataColumn>>, public User {
- public:
-  virtual ~Node(void);
+class DataColumnImpl;
+class DataIndexImpl;
+class DataTableImpl;
+class DataRecordImpl;
+class DataRecordCaseImpl;
 
-  Node(unsigned id_, TypeKind type_, Node<DataTable> *table_);
+// A column within a table.
+class DataColumnImpl final : public Def<DataColumnImpl>, public User {
+ public:
+  virtual ~DataColumnImpl(void);
+
+  DataColumnImpl(unsigned id_, TypeKind type_, DataTableImpl *table_);
 
   void Accept(ProgramVisitor &visitor);
 
@@ -54,18 +59,17 @@ class Node<DataColumn> final : public Def<Node<DataColumn>>, public User {
 
   std::vector<Token> names;
 
-  WeakUseRef<Node<DataTable>> table;
+  WeakUseRef<DataTableImpl> table;
 };
 
-using TABLECOLUMN = Node<DataColumn>;
+using TABLECOLUMN = DataColumnImpl;
 
 // Represents an index on some subset of columns in a table.
-template <>
-class Node<DataIndex> final : public Def<Node<DataIndex>>, public User {
+class DataIndexImpl final : public Def<DataIndexImpl>, public User {
  public:
-  virtual ~Node(void);
+  virtual ~DataIndexImpl(void);
 
-  Node(unsigned id_, Node<DataTable> *table_, std::string column_spec_);
+  DataIndexImpl(unsigned id_, DataTableImpl *table_, std::string column_spec_);
 
   void Accept(ProgramVisitor &visitor);
 
@@ -75,27 +79,26 @@ class Node<DataIndex> final : public Def<Node<DataIndex>>, public User {
   UseList<TABLECOLUMN> columns;
   UseList<TABLECOLUMN> mapped_columns;
 
-  WeakUseRef<Node<DataTable>> table;
+  WeakUseRef<DataTableImpl> table;
 };
 
-using TABLEINDEX = Node<DataIndex>;
+using TABLEINDEX = DataIndexImpl;
 
 class Context;
 
 // Represents a table of data.
 //
 // NOTE(pag): By default all tables already have a UNIQUE index on them.
-template <>
-class Node<DataTable> final : public Def<Node<DataTable>>, public User {
+class DataTableImpl final : public Def<DataTableImpl>, public User {
  public:
-  virtual ~Node(void);
+  virtual ~DataTableImpl(void);
 
-  Node(unsigned id_);
+  DataTableImpl(unsigned id_);
 
   void Accept(ProgramVisitor &visitor);
 
   // Get or create a table in the program.
-  static Node<DataTable> *GetOrCreate(ProgramImpl *impl, Context &context,
+  static DataTableImpl *GetOrCreate(ProgramImpl *impl, Context &context,
                                       QueryView view);
 
   // Get or create an index on the table.
@@ -111,13 +114,13 @@ class Node<DataTable> final : public Def<Node<DataTable>>, public User {
   DefList<TABLEINDEX> indices;
 
   // Records associated with this table.
-  DefList<Node<DataRecord>> records;
+  DefList<DataRecordImpl> records;
 
   // All views sharing this table.
   std::vector<QueryView> views;
 };
 
-using TABLE = Node<DataTable>;
+using TABLE = DataTableImpl;
 
 struct DataModel : public DisjointSet {
  public:
@@ -125,12 +128,11 @@ struct DataModel : public DisjointSet {
 };
 
 // A vector of tuples in the program.
-template <>
-class Node<DataVector> final : public Def<Node<DataVector>> {
+class DataVectorImpl final : public Def<DataVectorImpl> {
  public:
   template <typename ColList>
-  Node(unsigned id_, VectorKind kind_, ColList &&cols)
-      : Def<Node<DataVector>>(this),
+  DataVectorImpl(unsigned id_, VectorKind kind_, ColList &&cols)
+      : Def<DataVectorImpl>(this),
         id(id_),
         kind(kind_) {
 
@@ -139,8 +141,8 @@ class Node<DataVector> final : public Def<Node<DataVector>> {
     }
   }
 
-  Node(Node<DataVector> *that_)
-      : Def<Node<DataVector>>(this),
+  DataVectorImpl(DataVectorImpl *that_)
+      : Def<DataVectorImpl>(this),
         id(that_->id),
         kind(that_->kind),
         col_types(that_->col_types) {}
@@ -160,14 +162,13 @@ class Node<DataVector> final : public Def<Node<DataVector>> {
   bool is_sharded{false};
 };
 
-using VECTOR = Node<DataVector>;
+using VECTOR = DataVectorImpl;
 
 // A variable in the program. This could be a procedure parameter or a local
 // variable.
-template <>
-class Node<DataVariable> final : public Def<Node<DataVariable>> {
+class DataVariableImpl final : public Def<DataVariableImpl> {
  public:
-  explicit Node(unsigned id_, VariableRole role_);
+  explicit DataVariableImpl(unsigned id_, VariableRole role_);
 
   void Accept(ProgramVisitor &visitor);
 
@@ -178,7 +179,7 @@ class Node<DataVariable> final : public Def<Node<DataVariable>> {
 
   // NOTE(pag): Only valid after optimization when building the control flow
   //            IR is complete.
-  Node<ProgramRegion> *defining_region{nullptr};
+  ProgramRegionImpl *defining_region{nullptr};
 
   inline unsigned Sort(void) const noexcept {
     return id;
@@ -195,8 +196,7 @@ class Node<DataVariable> final : public Def<Node<DataVariable>> {
   std::optional<QueryCondition> query_cond;
 };
 
-using VAR = Node<DataVariable>;
-
+using VAR = DataVariableImpl;
 
 struct RecordColumn {
   RecordColumn(void) = default;
@@ -228,64 +228,66 @@ struct RecordColumn {
 
 // A record case is a particular instantiation or variant of a record.
 // A record might have multiple cases.
-template <>
-class Node<DataRecordCase> : public Def<Node<DataRecordCase>>, public User {
+class DataRecordCaseImpl : public Def<DataRecordCaseImpl>, public User {
  public:
-  Node(unsigned id_);
+  DataRecordCaseImpl(unsigned id_);
 
   const unsigned id;
 
-  UseList<Node<DataRecord>> derived_from;
+  UseList<DataRecordImpl> derived_from;
 
   std::vector<RecordColumn> columns;
 
-  WeakUseRef<Node<DataRecord>> record;
+  WeakUseRef<DataRecordImpl> record;
+
+ private:
+  DataRecordCaseImpl(void) = delete;
 };
 
-using DATARECORDCASE = Node<DataRecordCase>;
+using DATARECORDCASE = DataRecordCaseImpl;
 
 // A record is an abstraction over a persisted tuple. The storage for the
 // record is implemented in terms of one or more cases.
-template <>
-class Node<DataRecord> : public Def<Node<DataRecord>>, public User {
+class DataRecordImpl : public Def<DataRecordImpl>, public User {
  public:
-  explicit Node(unsigned id_, TABLE *table_);
+  explicit DataRecordImpl(unsigned id_, TABLE *table_);
 
   const unsigned id;
   UseList<DATARECORDCASE> cases;
   WeakUseRef<TABLE> table;
 
  private:
-  Node(void) = delete;
+  DataRecordImpl(void) = delete;
 };
 
-using DATARECORD = Node<DataRecord>;
+using DATARECORD = DataRecordImpl;
+
+class ProgramOperationRegionImpl;
 
 // A lexically scoped region in the program.
-template <>
-class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
+class ProgramRegionImpl : public Def<ProgramRegionImpl>, public User {
  public:
-  virtual ~Node(void);
-  explicit Node(Node<ProgramProcedure> *containing_procedure_, bool);
-  explicit Node(Node<ProgramRegion> *parent_);
+  virtual ~ProgramRegionImpl(void);
+  explicit ProgramRegionImpl(ProgramProcedureImpl *containing_procedure_, bool);
+  explicit ProgramRegionImpl(ProgramRegionImpl *parent_);
 
   virtual void Accept(ProgramVisitor &visitor) = 0;
   virtual uint64_t Hash(uint32_t depth) const = 0;
 
-  virtual Node<ProgramProcedure> *AsProcedure(void) noexcept;
-  virtual Node<ProgramOperationRegion> *AsOperation(void) noexcept;
-  virtual Node<ProgramSeriesRegion> *AsSeries(void) noexcept;
-  virtual Node<ProgramParallelRegion> *AsParallel(void) noexcept;
-  virtual Node<ProgramInductionRegion> *AsInduction(void) noexcept;
+  virtual ProgramProcedureImpl *AsProcedure(void) noexcept;
+  virtual ProgramOperationRegionImpl *AsOperation(void) noexcept;
+  virtual ProgramSeriesRegionImpl *AsSeries(void) noexcept;
+  virtual ProgramParallelRegionImpl *AsParallel(void) noexcept;
+  virtual ProgramInductionRegionImpl *AsInduction(void) noexcept;
 
   // Find the nearest containing mode switch.
-  Node<ProgramModeSwitchRegion> *ContainingModeSwitch(void) noexcept;
+  ProgramModeSwitchRegionImpl *ContainingModeSwitch(void) noexcept;
 
   // Returns `true` if all paths through `this` ends with a `return` region.
   virtual bool EndsWithReturn(void) const noexcept = 0;
 
-  inline void ReplaceAllUsesWith(Node<ProgramRegion> *that) {
-    this->Def<Node<ProgramRegion>>::ReplaceAllUsesWith(that);
+  inline void ReplaceAllUsesWith(ProgramRegionImpl *that) {
+    this->Def<ProgramRegionImpl>::ReplaceAllUsesWith(that);
     if (!this->AsProcedure()) {
       assert(!that->AsProcedure());
       that->parent = this->parent;
@@ -298,7 +300,7 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   // 'Equals' regions.
   // This method assumes that all elements in 'merges' are 'Equals' at depth 0.
   virtual const bool MergeEqual(ProgramImpl *prog,
-                                std::vector<Node<ProgramRegion> *> &merges);
+                                std::vector<ProgramRegionImpl *> &merges);
 
   // Gets or creates a local variable in the procedure.
   VAR *VariableFor(ProgramImpl *impl, QueryColumn col);
@@ -316,34 +318,34 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   // Returns `true` if `this` and `that` are structurally equivalent (after
   // variable renaming) after searching down `depth` levels or until leaf,
   // whichever is first, and where `depth` is 0, compare `this` to `that.
-  virtual bool Equals(EqualitySet &eq, Node<ProgramRegion> *that,
+  virtual bool Equals(EqualitySet &eq, ProgramRegionImpl *that,
                       uint32_t depth) const noexcept;
 
   // Return the farthest ancestor of this region, in terms of linkage. Often this
   // just returns a `PROC *` if this region is linked in to its procedure.
-  Node<ProgramRegion> *Ancestor(void) noexcept;
+  ProgramRegionImpl *Ancestor(void) noexcept;
 
   // Return the nearest enclosing region that is itself enclosed by an
   // induction.
-  Node<ProgramRegion> *NearestRegionEnclosedByInduction(void) noexcept;
+  ProgramRegionImpl *NearestRegionEnclosedByInduction(void) noexcept;
 
   // Find an ancestor node that's both shared by `this` and `that`.
-  Node<ProgramRegion> *FindCommonAncestor(Node<ProgramRegion> *that) noexcept;
+  ProgramRegionImpl *FindCommonAncestor(ProgramRegionImpl *that) noexcept;
 
   // Make sure that `this` will execute before `that`.
-  void ExecuteBefore(ProgramImpl *program, Node<ProgramRegion> *that) noexcept;
+  void ExecuteBefore(ProgramImpl *program, ProgramRegionImpl *that) noexcept;
 
   // Make sure that `this` will execute after `that`.
-  void ExecuteAfter(ProgramImpl *program, Node<ProgramRegion> *that) noexcept;
+  void ExecuteAfter(ProgramImpl *program, ProgramRegionImpl *that) noexcept;
 
   // Make sure that `this` will execute alongside `that`.
   void ExecuteAlongside(ProgramImpl *program,
-                        Node<ProgramRegion> *that) noexcept;
+                        ProgramRegionImpl *that) noexcept;
 
   // Every child REGION of a procedure will have easy access to create new
   // variables.
-  Node<ProgramProcedure> *containing_procedure;
-  Node<ProgramRegion> *parent{nullptr};
+  ProgramProcedureImpl *containing_procedure;
+  ProgramRegionImpl *parent{nullptr};
 
   // Maps `QueryColumn::Id()` values to variables. Used to provide lexical
   // scoping of variables.
@@ -358,7 +360,7 @@ class Node<ProgramRegion> : public Def<Node<ProgramRegion>>, public User {
   unsigned cached_depth{0};
 };
 
-using REGION = Node<ProgramRegion>;
+using REGION = ProgramRegionImpl;
 
 struct RegionRef : public UseRef<REGION> {
 #ifndef NDEBUG
@@ -496,35 +498,34 @@ enum class ProgramOperation {
 };
 
 // A generic operation.
-template <>
-class Node<ProgramOperationRegion> : public REGION {
+class ProgramOperationRegionImpl : public REGION {
  public:
-  virtual ~Node(void);
-  explicit Node(REGION *parent_, ProgramOperation op_);
+  virtual ~ProgramOperationRegionImpl(void);
+  explicit ProgramOperationRegionImpl(REGION *parent_, ProgramOperation op_);
 
-  virtual Node<ProgramCallRegion> *AsCall(void) noexcept;
-  virtual Node<ProgramReturnRegion> *AsReturn(void) noexcept;
-  virtual Node<ProgramTestAndSetRegion> *AsTestAndSet(void) noexcept;
-  virtual Node<ProgramGenerateRegion> *AsGenerate(void) noexcept;
-  virtual Node<ProgramModeSwitchRegion> *AsModeSwitch(void) noexcept;
-  virtual Node<ProgramLetBindingRegion> *AsLetBinding(void) noexcept;
-  virtual Node<ProgramPublishRegion> *AsPublish(void) noexcept;
-  virtual Node<ProgramChangeTupleRegion> *AsChangeTuple(void) noexcept;
-  virtual Node<ProgramChangeRecordRegion> *AsChangeRecord(void) noexcept;
-  virtual Node<ProgramCheckTupleRegion> *AsCheckTuple(void) noexcept;
-  virtual Node<ProgramCheckRecordRegion> *AsCheckRecord(void) noexcept;
-  virtual Node<ProgramTableJoinRegion> *AsTableJoin(void) noexcept;
-  virtual Node<ProgramTableProductRegion> *AsTableProduct(void) noexcept;
-  virtual Node<ProgramTableScanRegion> *AsTableScan(void) noexcept;
-  virtual Node<ProgramTupleCompareRegion> *AsTupleCompare(void) noexcept;
-  virtual Node<ProgramVectorLoopRegion> *AsVectorLoop(void) noexcept;
-  virtual Node<ProgramVectorAppendRegion> *AsVectorAppend(void) noexcept;
-  virtual Node<ProgramVectorClearRegion> *AsVectorClear(void) noexcept;
-  virtual Node<ProgramVectorSwapRegion> *AsVectorSwap(void) noexcept;
-  virtual Node<ProgramVectorUniqueRegion> *AsVectorUnique(void) noexcept;
-  virtual Node<ProgramWorkerIdRegion> *AsWorkerId(void) noexcept;
+  virtual ProgramCallRegionImpl *AsCall(void) noexcept;
+  virtual ProgramReturnRegionImpl *AsReturn(void) noexcept;
+  virtual ProgramTestAndSetRegionImpl *AsTestAndSet(void) noexcept;
+  virtual ProgramGenerateRegionImpl *AsGenerate(void) noexcept;
+  virtual ProgramModeSwitchRegionImpl *AsModeSwitch(void) noexcept;
+  virtual ProgramLetBindingRegionImpl *AsLetBinding(void) noexcept;
+  virtual ProgramPublishRegionImpl *AsPublish(void) noexcept;
+  virtual ProgramChangeTupleRegionImpl *AsChangeTuple(void) noexcept;
+  virtual ProgramChangeRecordRegionImpl *AsChangeRecord(void) noexcept;
+  virtual ProgramCheckTupleRegionImpl *AsCheckTuple(void) noexcept;
+  virtual ProgramCheckRecordRegionImpl *AsCheckRecord(void) noexcept;
+  virtual ProgramTableJoinRegionImpl *AsTableJoin(void) noexcept;
+  virtual ProgramTableProductRegionImpl *AsTableProduct(void) noexcept;
+  virtual ProgramTableScanRegionImpl *AsTableScan(void) noexcept;
+  virtual ProgramTupleCompareRegionImpl *AsTupleCompare(void) noexcept;
+  virtual ProgramVectorLoopRegionImpl *AsVectorLoop(void) noexcept;
+  virtual ProgramVectorAppendRegionImpl *AsVectorAppend(void) noexcept;
+  virtual ProgramVectorClearRegionImpl *AsVectorClear(void) noexcept;
+  virtual ProgramVectorSwapRegionImpl *AsVectorSwap(void) noexcept;
+  virtual ProgramVectorUniqueRegionImpl *AsVectorUnique(void) noexcept;
+  virtual ProgramWorkerIdRegionImpl *AsWorkerId(void) noexcept;
 
-  Node<ProgramOperationRegion> *AsOperation(void) noexcept override;
+  ProgramOperationRegionImpl *AsOperation(void) noexcept override;
 
   // Returns `true` if all paths through `this` ends with a `return` region.
   bool EndsWithReturn(void) const noexcept override;
@@ -536,14 +537,13 @@ class Node<ProgramOperationRegion> : public REGION {
   RegionRef body;
 };
 
-using OP = Node<ProgramOperationRegion>;
+using OP = ProgramOperationRegionImpl;
 
 // A region which semantically tells us we're swithing modes, e.g. to removing
 // data, or to adding data.
-template <>
-class Node<ProgramModeSwitchRegion> final : public OP {
+class ProgramModeSwitchRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
+  virtual ~ProgramModeSwitchRegionImpl(void);
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;
@@ -557,23 +557,22 @@ class Node<ProgramModeSwitchRegion> final : public OP {
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  inline Node(REGION *parent_, Mode new_mode_)
+  inline ProgramModeSwitchRegionImpl(REGION *parent_, Mode new_mode_)
       : OP(parent_, ProgramOperation::kModeSwitch),
         new_mode(new_mode_) {}
 
   const Mode new_mode;
 
-  Node<ProgramModeSwitchRegion> *AsModeSwitch(void) noexcept override;
+  ProgramModeSwitchRegionImpl *AsModeSwitch(void) noexcept override;
 };
 
-using MODESWITCH = Node<ProgramModeSwitchRegion>;
+using MODESWITCH = ProgramModeSwitchRegionImpl;
 
 // A let binding, i.e. an assignment of zero or more variables. Variables
 // are assigned pairwise from `used_vars` into `defined_vars`.
-template <>
-class Node<ProgramLetBindingRegion> final : public OP {
+class ProgramLetBindingRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
+  virtual ~ProgramLetBindingRegionImpl(void);
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;
@@ -587,12 +586,12 @@ class Node<ProgramLetBindingRegion> final : public OP {
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  inline Node(REGION *parent_)
+  inline ProgramLetBindingRegionImpl(REGION *parent_)
       : OP(parent_, ProgramOperation::kLetBinding),
         defined_vars(this),
         used_vars(this) {}
 
-  Node<ProgramLetBindingRegion> *AsLetBinding(void) noexcept override;
+  ProgramLetBindingRegionImpl *AsLetBinding(void) noexcept override;
 
   // Local variables that are defined/used in the body of this procedure.
   DefList<VAR> defined_vars;
@@ -601,13 +600,12 @@ class Node<ProgramLetBindingRegion> final : public OP {
   std::optional<QueryView> view;
 };
 
-using LET = Node<ProgramLetBindingRegion>;
+using LET = ProgramLetBindingRegionImpl;
 
 // Computes a worker ID by hashing one or more variables.
-template <>
-class Node<ProgramWorkerIdRegion> final : public OP {
+class ProgramWorkerIdRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
+  virtual ~ProgramWorkerIdRegionImpl(void);
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;
@@ -621,11 +619,11 @@ class Node<ProgramWorkerIdRegion> final : public OP {
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  inline Node(REGION *parent_)
+  inline ProgramWorkerIdRegionImpl(REGION *parent_)
       : OP(parent_, ProgramOperation::kWorkerId),
         hashed_vars(this) {}
 
-  Node<ProgramWorkerIdRegion> *AsWorkerId(void) noexcept override;
+  ProgramWorkerIdRegionImpl *AsWorkerId(void) noexcept override;
 
   // Local variables that are hashed together to compute `worker_id`.
   UseList<VAR> hashed_vars;
@@ -634,19 +632,18 @@ class Node<ProgramWorkerIdRegion> final : public OP {
   std::unique_ptr<VAR> worker_id;
 };
 
-using WORKERID = Node<ProgramWorkerIdRegion>;
+using WORKERID = ProgramWorkerIdRegionImpl;
 
 // Loop over the vector `vector` and bind the extracted tuple elements into
 // the variables specified in `defined_vars`.
-template <>
-class Node<ProgramVectorLoopRegion> final
-    : public OP {
+class ProgramVectorLoopRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
+  virtual ~ProgramVectorLoopRegionImpl(void);
 
   void Accept(ProgramVisitor &visitor) override;
 
-  inline Node(unsigned id_, REGION *parent_, ProgramOperation op_)
+  inline ProgramVectorLoopRegionImpl(
+      unsigned id_, REGION *parent_, ProgramOperation op_)
       : OP(parent_, op_),
         id(id_),
         defined_vars(this) {}
@@ -662,7 +659,7 @@ class Node<ProgramVectorLoopRegion> final
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  Node<ProgramVectorLoopRegion> *AsVectorLoop(void) noexcept override;
+  ProgramVectorLoopRegionImpl *AsVectorLoop(void) noexcept override;
 
   // ID of this region.
   const unsigned id;
@@ -680,19 +677,17 @@ class Node<ProgramVectorLoopRegion> final
   UseRef<TABLE> induction_table;
 };
 
-using VECTORLOOP = Node<ProgramVectorLoopRegion>;
+using VECTORLOOP = ProgramVectorLoopRegionImpl;
 
 // Append a tuple into a vector. The elements in the tuple must match the
 // element/column types of the vector.
-template <>
-class Node<ProgramVectorAppendRegion> final
-    : public OP {
+class ProgramVectorAppendRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
+  virtual ~ProgramVectorAppendRegionImpl(void);
 
   void Accept(ProgramVisitor &visitor) override;
 
-  inline Node(REGION *parent_, ProgramOperation op_)
+  inline ProgramVectorAppendRegionImpl(REGION *parent_, ProgramOperation op_)
       : OP(parent_, op_),
         tuple_vars(this) {}
 
@@ -706,7 +701,7 @@ class Node<ProgramVectorAppendRegion> final
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  Node<ProgramVectorAppendRegion> *AsVectorAppend(void) noexcept override;
+  ProgramVectorAppendRegionImpl *AsVectorAppend(void) noexcept override;
 
   UseList<VAR> tuple_vars;
   UseRef<VECTOR> vector;
@@ -715,15 +710,14 @@ class Node<ProgramVectorAppendRegion> final
   UseRef<VAR> worker_id;
 };
 
-using VECTORAPPEND = Node<ProgramVectorAppendRegion>;
+using VECTORAPPEND = ProgramVectorAppendRegionImpl;
 
 // Clear a vector.
-template <>
-class Node<ProgramVectorClearRegion> final
-    : public OP {
+class ProgramVectorClearRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
-  using OP::Node;
+  virtual ~ProgramVectorClearRegionImpl(void);
+
+  using OP::ProgramOperationRegionImpl;
 
   void Accept(ProgramVisitor &visitor) override;
 
@@ -737,7 +731,7 @@ class Node<ProgramVectorClearRegion> final
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  Node<ProgramVectorClearRegion> *AsVectorClear(void) noexcept override;
+  ProgramVectorClearRegionImpl *AsVectorClear(void) noexcept override;
 
   UseRef<VECTOR> vector;
 
@@ -745,15 +739,13 @@ class Node<ProgramVectorClearRegion> final
   UseRef<VAR> worker_id;
 };
 
-using VECTORCLEAR = Node<ProgramVectorClearRegion>;
+using VECTORCLEAR = ProgramVectorClearRegionImpl;
 
 // Swap the contents of two vectors.
-template <>
-class Node<ProgramVectorSwapRegion> final
-    : public OP {
+class ProgramVectorSwapRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
-  using OP::Node;
+  virtual ~ProgramVectorSwapRegionImpl(void);
+  using OP::ProgramOperationRegionImpl;
 
   void Accept(ProgramVisitor &visitor) override;
 
@@ -766,21 +758,19 @@ class Node<ProgramVectorSwapRegion> final
 
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
-  Node<ProgramVectorSwapRegion> *AsVectorSwap(void) noexcept override;
+  ProgramVectorSwapRegionImpl *AsVectorSwap(void) noexcept override;
 
   UseRef<VECTOR> lhs;
   UseRef<VECTOR> rhs;
 };
 
-using VECTORSWAP = Node<ProgramVectorSwapRegion>;
+using VECTORSWAP = ProgramVectorSwapRegionImpl;
 
 // Sort and unique a vector.
-template <>
-class Node<ProgramVectorUniqueRegion> final
-    : public OP {
+class ProgramVectorUniqueRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
-  using OP::Node;
+  virtual ~ProgramVectorUniqueRegionImpl(void);
+  using OP::ProgramOperationRegionImpl;
 
   void Accept(ProgramVisitor &visitor) override;
 
@@ -794,7 +784,7 @@ class Node<ProgramVectorUniqueRegion> final
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  Node<ProgramVectorUniqueRegion> *AsVectorUnique(void) noexcept override;
+  ProgramVectorUniqueRegionImpl *AsVectorUnique(void) noexcept override;
 
   UseRef<VECTOR> vector;
 
@@ -802,7 +792,7 @@ class Node<ProgramVectorUniqueRegion> final
   UseRef<VAR> worker_id;
 };
 
-using VECTORUNIQUE = Node<ProgramVectorUniqueRegion>;
+using VECTORUNIQUE = ProgramVectorUniqueRegionImpl;
 
 // Set the state of a tuple in a view. In the simplest case, this behaves like
 // a SQL `INSERT` statement: it says that some data exists in a relation. There
@@ -811,14 +801,12 @@ using VECTORUNIQUE = Node<ProgramVectorUniqueRegion>;
 // unknown tuple is one which has been speculatively marked as deleted, and
 // needs to be re-proven in order via alternate means in order for it to be
 // used.
-template <>
-class Node<ProgramChangeTupleRegion> final
-    : public OP {
+class ProgramChangeTupleRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
+  virtual ~ProgramChangeTupleRegionImpl(void);
 
-  inline Node(REGION *parent_, TupleState from_state_,
-              TupleState to_state_)
+  inline ProgramChangeTupleRegionImpl(REGION *parent_, TupleState from_state_,
+                                      TupleState to_state_)
       : OP(parent_, ProgramOperation::kInsertIntoTable),
         col_values(this),
         failed_body(this),
@@ -827,7 +815,7 @@ class Node<ProgramChangeTupleRegion> final
 
   void Accept(ProgramVisitor &visitor) override;
 
-  Node<ProgramChangeTupleRegion> *AsChangeTuple(void) noexcept override;
+  ProgramChangeTupleRegionImpl *AsChangeTuple(void) noexcept override;
 
   uint64_t Hash(uint32_t depth) const override;
   bool IsNoOp(void) const noexcept override;
@@ -856,19 +844,19 @@ class Node<ProgramChangeTupleRegion> final
   const TupleState to_state;
 };
 
-using CHANGETUPLE = Node<ProgramChangeTupleRegion>;
+using CHANGETUPLE = ProgramChangeTupleRegionImpl;
 
 // This is similar to a `ProgramChangeTupleRegion`; however, it also
 // creates new definitions for the variables which it is updating. The key
 // idea is that this gets us the "record" associated with some tuple data,
 // rather than us keeping with the tuple data itself.
-template <>
-class Node<ProgramChangeRecordRegion> final : public OP {
+class ProgramChangeRecordRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
+  virtual ~ProgramChangeRecordRegionImpl(void);
 
-  inline Node(unsigned id_, REGION *parent_, TupleState from_state_,
-              TupleState to_state_)
+  inline ProgramChangeRecordRegionImpl(unsigned id_, REGION *parent_,
+                                       TupleState from_state_,
+                                       TupleState to_state_)
       : OP(parent_, ProgramOperation::kEmplaceIntoTable),
         id(id_),
         col_values(this),
@@ -879,7 +867,7 @@ class Node<ProgramChangeRecordRegion> final : public OP {
 
   void Accept(ProgramVisitor &visitor) override;
 
-  Node<ProgramChangeRecordRegion> *AsChangeRecord(void) noexcept override;
+  ProgramChangeRecordRegionImpl *AsChangeRecord(void) noexcept override;
 
   uint64_t Hash(uint32_t depth) const override;
   bool IsNoOp(void) const noexcept override;
@@ -913,7 +901,7 @@ class Node<ProgramChangeRecordRegion> final : public OP {
   const TupleState to_state;
 };
 
-using CHANGERECORD = Node<ProgramChangeRecordRegion>;
+using CHANGERECORD = ProgramChangeRecordRegionImpl;
 
 // Check the state of a tuple. This is sort of like asking if something exists,
 // but has three conditionally executed children, based off of the state.
@@ -921,15 +909,12 @@ using CHANGERECORD = Node<ProgramChangeRecordRegion>;
 // that the tuple is present in the view. The final state is that we are
 // not sure if the tuple is present or absent, because it has been marked
 // as a candidate for deletion, and thus we need to re-prove it.
-template <>
-class Node<ProgramCheckTupleRegion> final
-    : public OP {
+class ProgramCheckTupleRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
+  virtual ~ProgramCheckTupleRegionImpl(void);
 
-  inline Node(REGION *parent_)
-      : OP(parent_,
-                                     ProgramOperation::kCheckTupleInTable),
+  inline ProgramCheckTupleRegionImpl(REGION *parent_)
+      : OP(parent_, ProgramOperation::kCheckTupleInTable),
         col_values(this),
         absent_body(this),
         unknown_body(this) {}
@@ -938,7 +923,7 @@ class Node<ProgramCheckTupleRegion> final
   uint64_t Hash(uint32_t depth) const override;
   bool IsNoOp(void) const noexcept override;
 
-  Node<ProgramCheckTupleRegion> *AsCheckTuple(void) noexcept override;
+  ProgramCheckTupleRegionImpl *AsCheckTuple(void) noexcept override;
 
   // Returns `true` if all paths through `this` ends with a `return` region.
   bool EndsWithReturn(void) const noexcept override;
@@ -965,16 +950,15 @@ class Node<ProgramCheckTupleRegion> final
   RegionRef unknown_body;
 };
 
-using CHECKTUPLE = Node<ProgramCheckTupleRegion>;
+using CHECKTUPLE = ProgramCheckTupleRegionImpl;
 
 // This is like `ProgramCheckTupleRegion`, except that it operates on records,
 // i.e. it defines new variables for what is being returned.
-template <>
-class Node<ProgramCheckRecordRegion> final : public OP {
+class ProgramCheckRecordRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
+  virtual ~ProgramCheckRecordRegionImpl(void);
 
-  inline Node(unsigned id_, REGION *parent_)
+  inline ProgramCheckRecordRegionImpl(unsigned id_, REGION *parent_)
       : OP(parent_, ProgramOperation::kCheckRecordFromTable),
         id(id_),
         col_values(this),
@@ -986,7 +970,7 @@ class Node<ProgramCheckRecordRegion> final : public OP {
   uint64_t Hash(uint32_t depth) const override;
   bool IsNoOp(void) const noexcept override;
 
-  Node<ProgramCheckRecordRegion> *AsCheckRecord(void) noexcept override;
+  ProgramCheckRecordRegionImpl *AsCheckRecord(void) noexcept override;
 
   // Returns `true` if all paths through `this` ends with a `return` region.
   bool EndsWithReturn(void) const noexcept override;
@@ -1018,19 +1002,18 @@ class Node<ProgramCheckRecordRegion> final : public OP {
   RegionRef unknown_body;
 };
 
-using CHECKRECORD = Node<ProgramCheckRecordRegion>;
+using CHECKRECORD = ProgramCheckRecordRegionImpl;
 
 // Calls another IR procedure. All IR procedures return `true` or `false`. This
 // return value can be tested, and if it is, a body can be conditionally
 // executed based off of the result of that test.
-template <>
-class Node<ProgramCallRegion> final : public OP {
+class ProgramCallRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
+  virtual ~ProgramCallRegionImpl(void);
 
-  Node(unsigned id_, REGION *parent_,
-       Node<ProgramProcedure> *called_proc_,
-       ProgramOperation op_ = ProgramOperation::kCallProcedure);
+  ProgramCallRegionImpl(
+      unsigned id_, REGION *parent_, ProgramProcedureImpl *called_proc_,
+      ProgramOperation op_ = ProgramOperation::kCallProcedure);
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;
@@ -1044,13 +1027,13 @@ class Node<ProgramCallRegion> final : public OP {
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  Node<ProgramCallRegion> *AsCall(void) noexcept override;
+  ProgramCallRegionImpl *AsCall(void) noexcept override;
 
   // Returns `true` if all paths through `this` ends with a `return` region.
   bool EndsWithReturn(void) const noexcept override;
 
   // Procedure being called.
-  UseRef<Node<ProgramProcedure>, REGION> called_proc;
+  UseRef<ProgramProcedureImpl, REGION> called_proc;
 
   // Variables passed as arguments.
   UseList<VAR> arg_vars;
@@ -1065,15 +1048,14 @@ class Node<ProgramCallRegion> final : public OP {
   const unsigned id;
 };
 
-using CALL = Node<ProgramCallRegion>;
+using CALL = ProgramCallRegionImpl;
 
 // Returns true/false from a procedure.
-template <>
-class Node<ProgramReturnRegion> final : public OP {
+class ProgramReturnRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
+  virtual ~ProgramReturnRegionImpl(void);
 
-  Node(REGION *parent_, ProgramOperation op_)
+  ProgramReturnRegionImpl(REGION *parent_, ProgramOperation op_)
       : OP(parent_, op_) {}
 
   void Accept(ProgramVisitor &visitor) override;
@@ -1085,22 +1067,22 @@ class Node<ProgramReturnRegion> final : public OP {
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  Node<ProgramReturnRegion> *AsReturn(void) noexcept override;
+  ProgramReturnRegionImpl *AsReturn(void) noexcept override;
 
   // Returns `true` if all paths through `this` ends with a `return` region.
   bool EndsWithReturn(void) const noexcept override;
 };
 
-using RETURN = Node<ProgramReturnRegion>;
+using RETURN = ProgramReturnRegionImpl;
 
 // Publishes a message to the pub/sub.
-template <>
-class Node<ProgramPublishRegion> final : public OP {
+class ProgramPublishRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
+  virtual ~ProgramPublishRegionImpl(void);
 
-  Node(REGION *parent_, ParsedMessage message_, unsigned id_,
-       ProgramOperation op_ = ProgramOperation::kPublishMessage)
+  ProgramPublishRegionImpl(
+      REGION *parent_, ParsedMessage message_, unsigned id_,
+      ProgramOperation op_ = ProgramOperation::kPublishMessage)
       : OP(parent_, op_),
         message(message_),
         id(id_),
@@ -1117,7 +1099,7 @@ class Node<ProgramPublishRegion> final : public OP {
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  Node<ProgramPublishRegion> *AsPublish(void) noexcept override;
+  ProgramPublishRegionImpl *AsPublish(void) noexcept override;
 
   // Message being published.
   const ParsedMessage message;
@@ -1129,16 +1111,14 @@ class Node<ProgramPublishRegion> final : public OP {
   UseList<VAR> arg_vars;
 };
 
-using PUBLISH = Node<ProgramPublishRegion>;
+using PUBLISH = ProgramPublishRegionImpl;
 
 // Represents a positive or negative existence check.
-template <>
-class Node<ProgramTestAndSetRegion> final
-    : public OP {
+class ProgramTestAndSetRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
+  virtual ~ProgramTestAndSetRegionImpl(void);
 
-  inline Node(REGION *parent_, ProgramOperation op_)
+  inline ProgramTestAndSetRegionImpl(REGION *parent_, ProgramOperation op_)
       : OP(parent_, op_) {}
 
   void Accept(ProgramVisitor &visitor) override;
@@ -1154,7 +1134,7 @@ class Node<ProgramTestAndSetRegion> final
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  Node<ProgramTestAndSetRegion> *AsTestAndSet(void) noexcept override;
+  ProgramTestAndSetRegionImpl *AsTestAndSet(void) noexcept override;
 
   // The variables are used as `(src_dest OP= update_val) == comapre_val`.
   UseRef<VAR> accumulator;
@@ -1162,14 +1142,14 @@ class Node<ProgramTestAndSetRegion> final
   UseRef<VAR> comparator;
 };
 
-using TESTANDSET = Node<ProgramTestAndSetRegion>;
+using TESTANDSET = ProgramTestAndSetRegionImpl;
 
 // An equi-join between two or more tables.
-template <>
-class Node<ProgramTableJoinRegion> final : public OP {
+class ProgramTableJoinRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
-  inline Node(REGION *parent_, QueryJoin query_join_, unsigned id_)
+  virtual ~ProgramTableJoinRegionImpl(void);
+  inline ProgramTableJoinRegionImpl(
+      REGION *parent_, QueryJoin query_join_, unsigned id_)
       : OP(parent_, ProgramOperation::kJoinTables),
         query_join(query_join_),
         id(id_),
@@ -1190,7 +1170,7 @@ class Node<ProgramTableJoinRegion> final : public OP {
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  Node<ProgramTableJoinRegion> *AsTableJoin(void) noexcept override;
+  ProgramTableJoinRegionImpl *AsTableJoin(void) noexcept override;
 
   const QueryJoin query_join;
   const unsigned id;
@@ -1220,15 +1200,14 @@ class Node<ProgramTableJoinRegion> final : public OP {
   std::vector<UseList<TABLECOLUMN>> output_cols;
 };
 
-using TABLEJOIN = Node<ProgramTableJoinRegion>;
+using TABLEJOIN = ProgramTableJoinRegionImpl;
 
 // A cross product between two or more tables.
-template <>
-class Node<ProgramTableProductRegion> final
-    : public OP {
+class ProgramTableProductRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
-  inline Node(REGION *parent_, QueryJoin query_join_, unsigned id_)
+  virtual ~ProgramTableProductRegionImpl(void);
+  inline ProgramTableProductRegionImpl(
+      REGION *parent_, QueryJoin query_join_, unsigned id_)
       : OP(parent_, ProgramOperation::kCrossProduct),
         query_join(query_join_),
         tables(this),
@@ -1247,7 +1226,7 @@ class Node<ProgramTableProductRegion> final
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  Node<ProgramTableProductRegion> *AsTableProduct(void) noexcept override;
+  ProgramTableProductRegionImpl *AsTableProduct(void) noexcept override;
 
   const QueryJoin query_join;
 
@@ -1257,17 +1236,16 @@ class Node<ProgramTableProductRegion> final
   const unsigned id;
 };
 
-using TABLEPRODUCT = Node<ProgramTableProductRegion>;
+using TABLEPRODUCT = ProgramTableProductRegionImpl;
 
 // Perform a scan over a table, possibly using an index. If an index is being
 // used the input variables are provided to perform equality matching against
 // column values. The results of the scan fill a vector.
-template <>
-class Node<ProgramTableScanRegion> final : public OP {
+class ProgramTableScanRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
+  virtual ~ProgramTableScanRegionImpl(void);
 
-  inline Node(unsigned id_, REGION *parent_)
+  inline ProgramTableScanRegionImpl(unsigned id_, REGION *parent_)
       : OP(parent_, ProgramOperation::kScanTable),
         id(id_),
         out_cols(this),
@@ -1287,7 +1265,7 @@ class Node<ProgramTableScanRegion> final : public OP {
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  Node<ProgramTableScanRegion> *AsTableScan(void) noexcept override;
+  ProgramTableScanRegionImpl *AsTableScan(void) noexcept override;
 
   const unsigned id;
 
@@ -1304,15 +1282,13 @@ class Node<ProgramTableScanRegion> final : public OP {
   DefList<VAR> out_vars;
 };
 
-using TABLESCAN = Node<ProgramTableScanRegion>;
+using TABLESCAN = ProgramTableScanRegionImpl;
 
 // Comparison between two tuples.
-template <>
-class Node<ProgramTupleCompareRegion> final
-    : public OP {
+class ProgramTupleCompareRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
-  inline Node(REGION *parent_, ComparisonOperator op_)
+  virtual ~ProgramTupleCompareRegionImpl(void);
+  inline ProgramTupleCompareRegionImpl(REGION *parent_, ComparisonOperator op_)
       : OP(parent_, ProgramOperation::kCompareTuples),
         cmp_op(op_),
         lhs_vars(this),
@@ -1333,7 +1309,7 @@ class Node<ProgramTupleCompareRegion> final
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  Node<ProgramTupleCompareRegion> *AsTupleCompare(void) noexcept override;
+  ProgramTupleCompareRegionImpl *AsTupleCompare(void) noexcept override;
 
   // Returns `true` if all paths through `this` ends with a `return` region.
   bool EndsWithReturn(void) const noexcept override;
@@ -1346,15 +1322,14 @@ class Node<ProgramTupleCompareRegion> final
   RegionRef false_body;
 };
 
-using TUPLECMP = Node<ProgramTupleCompareRegion>;
+using TUPLECMP = ProgramTupleCompareRegionImpl;
 
 // Calling a functor.
-template <>
-class Node<ProgramGenerateRegion> final : public OP {
+class ProgramGenerateRegionImpl final : public OP {
  public:
-  virtual ~Node(void);
-  inline Node(REGION *parent_, ParsedFunctor functor_,
-              unsigned id_)
+  virtual ~ProgramGenerateRegionImpl(void);
+  inline ProgramGenerateRegionImpl(REGION *parent_, ParsedFunctor functor_,
+                                   unsigned id_)
       : OP(
             parent_, functor_.IsFilter() ? ProgramOperation::kCallFilterFunctor
                                          : ProgramOperation::kCallFunctor),
@@ -1376,7 +1351,7 @@ class Node<ProgramGenerateRegion> final : public OP {
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  Node<ProgramGenerateRegion> *AsGenerate(void) noexcept override;
+  ProgramGenerateRegionImpl *AsGenerate(void) noexcept override;
 
   // Returns `true` if all paths through `this` ends with a `return` region.
   bool EndsWithReturn(void) const noexcept override;
@@ -1399,15 +1374,14 @@ class Node<ProgramGenerateRegion> final : public OP {
   RegionRef empty_body;
 };
 
-using GENERATOR = Node<ProgramGenerateRegion>;
+using GENERATOR = ProgramGenerateRegionImpl;
 
 // A procedure region. This represents some entrypoint of data into the program.
-template <>
-class Node<ProgramProcedure> : public REGION {
+class ProgramProcedureImpl : public REGION {
  public:
-  virtual ~Node(void);
+  virtual ~ProgramProcedureImpl(void);
 
-  Node(unsigned id_, ProcedureKind kind_);
+  ProgramProcedureImpl(unsigned id_, ProcedureKind kind_);
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;
@@ -1418,7 +1392,7 @@ class Node<ProgramProcedure> : public REGION {
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  Node<ProgramProcedure> *AsProcedure(void) noexcept override;
+  ProgramProcedureImpl *AsProcedure(void) noexcept override;
 
   // Returns `true` if all paths through `this` ends with a `return` region.
   bool EndsWithReturn(void) const noexcept override;
@@ -1457,16 +1431,15 @@ class Node<ProgramProcedure> : public REGION {
   bool has_raw_use{false};
 };
 
-using PROC = Node<ProgramProcedure>;
+using PROC = ProgramProcedureImpl;
 
 // A series region is where the `regions[N]` must finish before `regions[N+1]`
 // begins.
-template <>
-class Node<ProgramSeriesRegion> final : public REGION {
+class ProgramSeriesRegionImpl final : public REGION {
  public:
-  Node(REGION *parent_);
+  ProgramSeriesRegionImpl(REGION *parent_);
 
-  virtual ~Node(void);
+  virtual ~ProgramSeriesRegionImpl(void);
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;
@@ -1488,20 +1461,19 @@ class Node<ProgramSeriesRegion> final : public REGION {
     regions.AddUse(child);
   }
 
-  Node<ProgramSeriesRegion> *AsSeries(void) noexcept override;
+  ProgramSeriesRegionImpl *AsSeries(void) noexcept override;
 
   UseList<REGION> regions;
 };
 
-using SERIES = Node<ProgramSeriesRegion>;
+using SERIES = ProgramSeriesRegionImpl;
 
 // A region where multiple things can happen in parallel.
-template <>
-class Node<ProgramParallelRegion> final : public REGION {
+class ProgramParallelRegionImpl final : public REGION {
  public:
-  Node(REGION *parent_);
+  ProgramParallelRegionImpl(REGION *parent_);
 
-  virtual ~Node(void);
+  virtual ~ProgramParallelRegionImpl(void);
 
   void Accept(ProgramVisitor &visitor) override;
 
@@ -1524,25 +1496,24 @@ class Node<ProgramParallelRegion> final : public REGION {
     regions.AddUse(child);
   }
 
-  Node<ProgramParallelRegion> *AsParallel(void) noexcept override;
+  ProgramParallelRegionImpl *AsParallel(void) noexcept override;
 
   UseList<REGION> regions;
 };
 
-using PARALLEL = Node<ProgramParallelRegion>;
+using PARALLEL = ProgramParallelRegionImpl;
 
 // An induction is a loop centred on a `QueryMerge` node. Some of the views
 // incoming to that `QueryMerge` are treated as "inputs", as they bring initial
 // data into the `QueryMerge`. Other nodes are treated as "inductions" as they
 // cycle back to the `QueryMerge`.
-template <>
-class Node<ProgramInductionRegion> final : public REGION {
+class ProgramInductionRegionImpl final : public REGION {
  public:
-  virtual ~Node(void);
+  virtual ~ProgramInductionRegionImpl(void);
 
   void Accept(ProgramVisitor &visitor) override;
 
-  explicit Node(ProgramImpl *impl, REGION *parent_);
+  explicit ProgramInductionRegionImpl(ProgramImpl *impl, REGION *parent_);
   uint64_t Hash(uint32_t depth) const override;
 
   // Returns `true` if `this` and `that` are structurally equivalent (after
@@ -1553,7 +1524,7 @@ class Node<ProgramInductionRegion> final : public REGION {
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  Node<ProgramInductionRegion> *AsInduction(void) noexcept override;
+  ProgramInductionRegionImpl *AsInduction(void) noexcept override;
 
   // Returns `true` if all paths through `this` ends with a `return` region.
   bool EndsWithReturn(void) const noexcept override;
@@ -1620,7 +1591,7 @@ class Node<ProgramInductionRegion> final : public REGION {
   std::vector<QueryView> views;
 };
 
-using INDUCTION = Node<ProgramInductionRegion>;
+using INDUCTION = ProgramInductionRegionImpl;
 
 class ProgramImpl : public User {
  public:

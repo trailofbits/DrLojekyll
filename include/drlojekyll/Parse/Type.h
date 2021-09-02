@@ -110,7 +110,7 @@ class TypeLoc {
   }
 
  private:
-  template <typename>
+  template <typename, typename>
   friend class Node;
 
   inline TypeLoc(void) : kind(TypeKind::kInvalid) {}

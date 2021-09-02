@@ -11,12 +11,12 @@ namespace {
 // predicates that should be extracted into boolean conditions (zero-argument
 // clauses). It's simpler to demand that the writer of the code factor out these
 // conditions instead of having us do it automatically.
-static void FindUnrelatedConditions(Node<ParsedClause> *clause,
+static void FindUnrelatedConditions(ParsedClauseImpl *clause,
                                     const ErrorLog &log) {
 
   std::vector<std::unique_ptr<DisjointSet>> sets;
   std::unordered_map<uint64_t, DisjointSet *> var_to_set;
-  std::unordered_map<Node<ParsedPredicate> *, DisjointSet *> pred_to_set;
+  std::unordered_map<ParsedPredicateImpl *, DisjointSet *> pred_to_set;
 
   auto next_id = 0u;
   const auto clause_head_id = next_id;
@@ -26,7 +26,7 @@ static void FindUnrelatedConditions(Node<ParsedClause> *clause,
     var_to_set.emplace(var->Id(), clause_set);
   }
 
-  auto do_pred = [&](Node<ParsedPredicate> *pred, DisjointSet *set) {
+  auto do_pred = [&](ParsedPredicateImpl *pred, DisjointSet *set) {
     // This predicate has zero arguments, i.e. it is a condition already.
     // Associated it with the clause head set.
     if (pred->argument_uses.empty()) {
@@ -38,7 +38,7 @@ static void FindUnrelatedConditions(Node<ParsedClause> *clause,
     }
 
     for (auto &var_use : pred->argument_uses) {
-      Node<ParsedVariable> *var = var_use->used_var;
+      ParsedVariableImpl *var = var_use->used_var;
       auto &found_set = var_to_set[var->Id()];
       if (found_set) {
         if (set) {
@@ -60,11 +60,11 @@ static void FindUnrelatedConditions(Node<ParsedClause> *clause,
   };
 
   for (const auto &pred : clause->positive_predicates) {
-    do_pred(pred.get(), nullptr);
+    do_pred(pred, nullptr);
   }
 
   for (const auto &pred : clause->negated_predicates) {
-    do_pred(pred.get(), nullptr);
+    do_pred(pred, nullptr);
   }
 
   for (const auto &agg : clause->aggregates) {
@@ -75,7 +75,7 @@ static void FindUnrelatedConditions(Node<ParsedClause> *clause,
   }
 
   for (const auto &assign : clause->assignments) {
-    Node<ParsedVariable> *lhs_var = assign->lhs.used_var;
+    ParsedVariableImpl *lhs_var = assign->lhs.used_var;
     auto &set = var_to_set[lhs_var->Id()];
     if (!set) {
       set = new DisjointSet(next_id++);
@@ -84,8 +84,8 @@ static void FindUnrelatedConditions(Node<ParsedClause> *clause,
   }
 
   for (const auto &cmp : clause->comparisons) {
-    Node<ParsedVariable> *lhs_var = cmp->lhs.used_var;
-    Node<ParsedVariable> *rhs_var = cmp->rhs.used_var;
+    ParsedVariableImpl *lhs_var = cmp->lhs.used_var;
+    ParsedVariableImpl *rhs_var = cmp->rhs.used_var;
 
     auto &lhs_set = var_to_set[lhs_var->Id()];
     auto &rhs_set = var_to_set[rhs_var->Id()];
@@ -133,21 +133,21 @@ static void FindUnrelatedConditions(Node<ParsedClause> *clause,
         << "factored out into a zero-argument predicate";
 
     for (const auto &pred : clause->positive_predicates) {
-      if (pred_to_set[pred.get()]->Find() == cond_set) {
-        err.Note(clause_range, ParsedPredicate(pred.get()).SpellingRange())
+      if (pred_to_set[pred]->Find() == cond_set) {
+        err.Note(clause_range, ParsedPredicate(pred).SpellingRange())
             << "This predicate";
       }
     }
 
     for (const auto &pred : clause->negated_predicates) {
-      if (pred_to_set[pred.get()]->Find() == cond_set) {
-        err.Note(clause_range, ParsedPredicate(pred.get()).SpellingRange())
+      if (pred_to_set[pred]->Find() == cond_set) {
+        err.Note(clause_range, ParsedPredicate(pred).SpellingRange())
             << "This negated predicate";
       }
     }
 
     for (const auto &assign : clause->assignments) {
-      Node<ParsedVariable> *lhs_var = assign->lhs.used_var;
+      ParsedVariableImpl *lhs_var = assign->lhs.used_var;
       if (var_to_set[lhs_var->Id()] == cond_set) {
         err.Note(clause_range, ParsedAssignment(assign.get()).SpellingRange())
             << "This assignment";
@@ -155,7 +155,7 @@ static void FindUnrelatedConditions(Node<ParsedClause> *clause,
     }
 
     for (const auto &cmp : clause->comparisons) {
-      Node<ParsedVariable> *lhs_var = cmp->lhs.used_var;
+      ParsedVariableImpl *lhs_var = cmp->lhs.used_var;
       if (var_to_set[lhs_var->Id()] == cond_set) {
         err.Note(clause_range, ParsedComparison(cmp.get()).SpellingRange())
             << "This comparison";
@@ -167,10 +167,10 @@ static void FindUnrelatedConditions(Node<ParsedClause> *clause,
 }  // namespace
 
 // Try to parse `sub_range` as a clause.
-void ParserImpl::ParseClause(Node<ParsedModule> *module,
-                             Node<ParsedDeclaration> *decl) {
+void ParserImpl::ParseClause(ParsedModuleImpl *module,
+                             ParsedDeclarationImpl *decl) {
 
-  auto clause = std::make_unique<Node<ParsedClause>>(module);
+  ParsedClauseImpl *clause = module->clauses.Create();
   prev_named_var.clear();
 
   Token tok;
@@ -198,11 +198,12 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
   //
   DisplayPosition next_pos;
   Token negation_tok;
-  Node<ParsedVariable> *arg = nullptr;
-  Node<ParsedVariable> *lhs = nullptr;
-  Node<ParsedVariable> *rhs = nullptr;
+  ParsedVariableImpl *arg = nullptr;
+  ParsedVariableImpl *lhs = nullptr;
+  ParsedVariableImpl *rhs = nullptr;
   Token compare_op;
-  std::unique_ptr<Node<ParsedPredicate>> pred;
+
+  ParsedPredicateImpl *pred = nullptr;
 
   // Link `pred` into `clause`.
   auto link_pred = [&](void) {
@@ -210,22 +211,22 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
       if (negation_tok.Lexeme() == Lexeme::kPragmaPerfNever) {
         if (pred->declaration->context->kind == DeclarationKind::kFunctor) {
           context->error_log.Append(
-              scope_range, ParsedPredicate(pred.get()).SpellingRange())
+              scope_range, ParsedPredicate(pred).SpellingRange())
               << "Functor applications cannot be negated with '@never'";
 
         } else if (pred->argument_uses.empty()) {
           context->error_log.Append(
-              scope_range, ParsedPredicate(pred.get()).SpellingRange())
+              scope_range, ParsedPredicate(pred).SpellingRange())
               << "Zero-argument predicates cannot be negated with '@never'";
         }
       }
       if (!clause->negated_predicates.empty()) {
-        clause->negated_predicates.back()->next = pred.get();
+        clause->negated_predicates.back()->next = pred;
       }
       clause->negated_predicates.emplace_back(std::move(pred));
     } else {
       if (!clause->positive_predicates.empty()) {
-        clause->positive_predicates.back()->next = pred.get();
+        clause->positive_predicates.back()->next = pred;
       }
       clause->positive_predicates.emplace_back(std::move(pred));
     }
@@ -270,7 +271,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
             state = 5;
             continue;
 
-          } else if (!TryMatchClauseWithDecl(module, clause.get())) {
+          } else if (!TryMatchClauseWithDecl(module, clause)) {
             return;
 
           } else {
@@ -292,9 +293,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
       case 2:
         clause_toks.push_back(tok);  // add token even if we error
         if (Lexeme::kIdentifierVariable == lexeme) {
-          auto param_var = CreateVariable(clause.get(), tok, true, false);
+          auto param_var = CreateVariable(clause, tok, true, false);
           auto param_use = new Node<ParsedUse<ParsedClause>>(
-              UseKind::kParameter, param_var, clause.get());
+              UseKind::kParameter, param_var, clause);
 
           if (!clause->parameter_uses.empty()) {
             clause->parameter_uses.back()->next = param_use;
@@ -317,14 +318,14 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
                    Lexeme::kLiteralNumber == lexeme ||
                    Lexeme::kLiteralTrue == lexeme ||
                    Lexeme::kLiteralFalse == lexeme) {
-          (void) CreateLiteralVariable(clause.get(), tok, true, false);
+          (void) CreateLiteralVariable(clause, tok, true, false);
           state = 3;
           continue;
 
         // Kick-start type inference when using a named constant.
         } else if (Lexeme::kIdentifierConstant == lexeme) {
           auto unnamed_var =
-              CreateLiteralVariable(clause.get(), tok, true, false);
+              CreateLiteralVariable(clause, tok, true, false);
           const TypeLoc type_loc(tok.TypeKind());
           unnamed_var->type = type_loc;
           auto foreign_const_it =
@@ -364,7 +365,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
             continue;
 
           // We matched it against a clasue head.
-          } else if (TryMatchClauseWithDecl(module, clause.get())) {
+          } else if (TryMatchClauseWithDecl(module, clause)) {
             decl = clause->declaration;
             state = 4;
             continue;
@@ -447,7 +448,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
 
         // The `V` in `V = ...` or `V != ...`.
         if (Lexeme::kIdentifierVariable == lexeme) {
-          lhs = CreateVariable(clause.get(), tok, false, false);
+          lhs = CreateVariable(clause, tok, false, false);
           state = 6;
           continue;
 
@@ -463,7 +464,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
                 break;
               }
               default: {
-                lhs = CreateLiteralVariable(clause.get(), tok, false, false);
+                lhs = CreateLiteralVariable(clause, tok, false, false);
                 state = 6;
                 continue;
               }
@@ -487,7 +488,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
                 break;  // Ignore it.
               }
               default: {
-                lhs = CreateLiteralVariable(clause.get(), tok, false, false);
+                lhs = CreateLiteralVariable(clause, tok, false, false);
                 state = 6;
                 continue;
               }
@@ -504,7 +505,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
                    Lexeme::kIdentifierConstant == lexeme ||
                    Lexeme::kLiteralTrue == lexeme ||
                    Lexeme::kLiteralFalse == lexeme) {
-          lhs = CreateLiteralVariable(clause.get(), tok, false, false);
+          lhs = CreateLiteralVariable(clause, tok, false, false);
           state = 6;
           continue;
 
@@ -522,7 +523,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
 
         // The `pred` in `pred(...)`.
         } else if (Lexeme::kIdentifierAtom == lexeme) {
-          pred.reset(new Node<ParsedPredicate>(module, clause.get()));
+
+          pred.reset(new ParsedPredicateImpl(module, clause));
           pred->name = tok;
           state = 12;
           continue;
@@ -559,7 +561,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
                 << lhs->name.SpellingRange() << "' instead";
           }
 
-          const auto assign = new Node<ParsedAssignment>(lhs);
+          const auto assign = new ParsedAssignmentImpl(lhs);
           assign->rhs.literal =
               Token::Synthetic(Lexeme::kLiteralTrue, DisplayRange());
           assign->rhs.assigned_to = lhs;
@@ -624,7 +626,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
           // If we're doing `<var> = <literal>` then we don't want to explode
           // it into `<temp> = literal, <var> = <temp>`.
           if (Lexeme::kPuncEqual == compare_op.Lexeme()) {
-            auto assign = new Node<ParsedAssignment>(lhs);
+            auto assign = new ParsedAssignmentImpl(lhs);
             assign->rhs.literal = tok;
             assign->rhs.assigned_to = lhs;
             std::string_view data;
@@ -665,11 +667,11 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
             continue;
 
           } else {
-            rhs = CreateLiteralVariable(clause.get(), tok, false, false);
+            rhs = CreateLiteralVariable(clause, tok, false, false);
           }
 
         } else if (Lexeme::kIdentifierVariable == lexeme) {
-          rhs = CreateVariable(clause.get(), tok, false, false);
+          rhs = CreateVariable(clause, tok, false, false);
         }
 
         if (rhs) {
@@ -686,7 +688,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
             return;
           }
 
-          const auto compare = new Node<ParsedComparison>(lhs, rhs, compare_op);
+          const auto compare = new ParsedComparisonImpl(lhs, rhs, compare_op);
 
           // Add to the LHS variable's comparison use list.
           auto &lhs_comparison_uses = lhs->context->comparison_uses;
@@ -761,7 +763,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
 
         // We think we're parsing a negated predicate, i.e. `!pred(...)`.
         if (Lexeme::kIdentifierAtom == lexeme) {
-          pred.reset(new Node<ParsedPredicate>(module, clause.get()));
+          pred.reset(new ParsedPredicateImpl(module, clause));
           pred->name = tok;
           pred->negation = negation_tok;
           state = 12;
@@ -777,8 +779,8 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
         // We think we're parsing a negated Boolean variable, e.g. `!V`;
         // this gets treated as `V = false`.
         } else if (Lexeme::kIdentifierVariable == lexeme) {
-          lhs = CreateVariable(clause.get(), tok, false, false);
-          const auto assign = new Node<ParsedAssignment>(lhs);
+          lhs = CreateVariable(clause, tok, false, false);
+          const auto assign = new ParsedAssignmentImpl(lhs);
           assign->rhs.literal =
               Token::Synthetic(Lexeme::kLiteralFalse, DisplayRange());
           assign->rhs.assigned_to = lhs;
@@ -826,7 +828,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
 
         } else if (Lexeme::kPuncPeriod == lexeme) {
           clause->dot = tok;
-          if (!TryMatchPredicateWithDecl(module, pred.get())) {
+          if (!TryMatchPredicateWithDecl(module, pred)) {
             return;
           }
           state = 9;
@@ -835,7 +837,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
           continue;
 
         } else if (Lexeme::kPuncComma == lexeme) {
-          if (!TryMatchPredicateWithDecl(module, pred.get())) {
+          if (!TryMatchPredicateWithDecl(module, pred)) {
             return;
           }
           state = 5;
@@ -845,7 +847,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
         // It is a zero-argument predicate, go to the next clause.
         } else if (Lexeme::kPuncColon == lexeme) {
           clause->dot = tok;
-          if (!TryMatchPredicateWithDecl(module, pred.get())) {
+          if (!TryMatchPredicateWithDecl(module, pred)) {
             return;
           }
 
@@ -871,16 +873,16 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
         if (Lexeme::kLiteralString == lexeme ||
             Lexeme::kLiteralNumber == lexeme ||
             Lexeme::kIdentifierConstant == lexeme) {
-          arg = CreateLiteralVariable(clause.get(), tok, false, true);
+          arg = CreateLiteralVariable(clause, tok, false, true);
 
         } else if (Lexeme::kIdentifierVariable == lexeme ||
                    Lexeme::kIdentifierUnnamedVariable == lexeme) {
-          arg = CreateVariable(clause.get(), tok, false, true);
+          arg = CreateVariable(clause, tok, false, true);
         }
 
         if (arg) {
           auto use = new Node<ParsedUse<ParsedPredicate>>(UseKind::kArgument,
-                                                          arg, pred.get());
+                                                          arg, pred);
 
           // Add to this variable's use list.
           auto &argument_uses = arg->context->argument_uses;
@@ -910,11 +912,11 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
         if (Lexeme::kPuncCloseParen == lexeme) {
           pred->rparen = tok;
 
-          if (!TryMatchPredicateWithDecl(module, pred.get())) {
+          if (!TryMatchPredicateWithDecl(module, pred)) {
             return;
           }
 
-          const auto pred_range = ParsedPredicate(pred.get()).SpellingRange();
+          const auto pred_range = ParsedPredicate(pred).SpellingRange();
 
           // Not allowed to negate inline declarations, as they might not be
           // backed by actual relations.
@@ -933,7 +935,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
 
           // If it's an aggregating functor then we need to follow-up with
           // the `over` keyword.
-          auto pred_decl = ParsedDeclaration::Of(ParsedPredicate(pred.get()));
+          auto pred_decl = ParsedDeclaration::Of(ParsedPredicate(pred));
           if (pred_decl.IsFunctor() &&
               ParsedFunctor::From(pred_decl).IsAggregate()) {
 
@@ -999,7 +1001,7 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
 
       case 15:
         if (Lexeme::kKeywordOver == lexeme) {
-          if (!ParseAggregatedPredicate(module, clause.get(), std::move(pred),
+          if (!ParseAggregatedPredicate(module, clause, std::move(pred),
                                         tok, next_pos)) {
             return;
 
@@ -1055,9 +1057,9 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
     auto &pred_decl_context = used_pred->declaration->context;
     auto &positive_uses = pred_decl_context->positive_uses;
     if (!positive_uses.empty()) {
-      positive_uses.back()->next_use = used_pred.get();
+      positive_uses.back()->next_use = used_pred;
     }
-    positive_uses.push_back(used_pred.get());
+    positive_uses.push_back(used_pred);
   }
 
   // Link all negative predicate uses into their respective declarations.
@@ -1065,26 +1067,26 @@ void ParserImpl::ParseClause(Node<ParsedModule> *module,
     auto &pred_decl_context = used_pred->declaration->context;
     auto &negated_uses = pred_decl_context->negated_uses;
     if (!negated_uses.empty()) {
-      negated_uses.back()->next_use = used_pred.get();
+      negated_uses.back()->next_use = used_pred;
     }
-    negated_uses.push_back(used_pred.get());
+    negated_uses.push_back(used_pred);
   }
 
   auto &clause_decl_context = clause->declaration->context;
   auto module_clause_list = &(module->clauses);
   auto decl_clause_list = &(clause_decl_context->clauses);
 
-  FindUnrelatedConditions(clause.get(), context->error_log);
+  FindUnrelatedConditions(clause, context->error_log);
 
   // Link the clause in to the module.
   if (!module_clause_list->empty()) {
-    module_clause_list->back()->next_in_module = clause.get();
+    module_clause_list->back()->next_in_module = clause;
   }
-  module_clause_list->push_back(clause.get());
+  module_clause_list->push_back(clause);
 
   // Link the clause in to its respective declaration.
   if (!decl_clause_list->empty()) {
-    decl_clause_list->back()->next = clause.get();
+    decl_clause_list->back()->next = clause;
   }
 
   // Add this clause to its decl context.

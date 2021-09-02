@@ -16,37 +16,6 @@ class ErrorLog;
 class QueryImpl;
 class OutputStream;
 
-namespace query {
-
-template <typename T>
-class QueryNode {
- public:
-  inline QueryNode(Node<T> *impl_) : impl(impl_) {}
-
-  inline bool operator==(const QueryNode<T> &that) const noexcept {
-    return impl == that.impl;
-  }
-
-  inline bool operator!=(const QueryNode<T> &that) const noexcept {
-    return impl != that.impl;
-  }
-
-  inline bool operator<(const QueryNode<T> &that) const noexcept {
-    return impl < that.impl;
-  }
-
-  uintptr_t UniqueId(void) const noexcept {
-    return reinterpret_cast<uintptr_t>(impl);
-  }
-
- protected:
-  friend class ::hyde::QueryImpl;
-
-  Node<T> *impl;
-};
-
-}  // namespace query
-
 enum class ComparisonOperator : int;
 class ParsedDeclaration;
 class ParsedFunctor;
@@ -72,7 +41,8 @@ class QueryTag;
 class QueryView;
 
 // A column. Columns may be derived from selections or from joins.
-class QueryColumn : public query::QueryNode<QueryColumn> {
+class QueryColumnImpl;
+class QueryColumn : public Node<QueryColumn, QueryColumnImpl> {
  public:
   QueryColumn(const QueryColumn &) = default;
   QueryColumn(QueryColumn &&) noexcept = default;
@@ -111,7 +81,7 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
   std::optional<unsigned> Index(void) const noexcept;
 
  private:
-  using query::QueryNode<QueryColumn>::QueryNode;
+  using Node<QueryColumn, QueryColumnImpl>::Node;
 
   friend class QueryConstant;
   friend class QueryCompare;
@@ -131,7 +101,8 @@ class QueryColumn : public query::QueryNode<QueryColumn> {
 };
 
 // A condition related to a zero-argument predicate that must be tested.
-class QueryCondition : public query::QueryNode<QueryCondition> {
+class QueryConditionImpl;
+class QueryCondition : public Node<QueryCondition, QueryConditionImpl> {
  public:
   // The declaration associated with this condition.
   const std::optional<ParsedDeclaration> &Predicate(void) const noexcept;
@@ -151,11 +122,12 @@ class QueryCondition : public query::QueryNode<QueryCondition> {
  private:
   friend class QueryView;
 
-  using query::QueryNode<QueryCondition>::QueryNode;
+  using Node<QueryCondition, QueryConditionImpl>::Node;
 };
 
 // A table in a query. Corresponds with a declared predicate in a Datalog.
-class QueryRelation : public query::QueryNode<QueryRelation> {
+class QueryRelationImpl;
+class QueryRelation : public Node<QueryRelation, QueryRelationImpl> {
  public:
   static QueryRelation From(const QuerySelect &sel) noexcept;
 
@@ -171,13 +143,14 @@ class QueryRelation : public query::QueryNode<QueryRelation> {
   UsedNodeRange<QueryView> Negations(void) const;
 
  private:
-  using query::QueryNode<QueryRelation>::QueryNode;
+  using Node<QueryRelation, QueryRelationImpl>::Node;
 
   friend class QuerySelect;
 };
 
 // A stream of inputs into the system, or outputs from the system.
-class QueryStream : public query::QueryNode<QueryStream> {
+class QueryStreamImpl;
+class QueryStream : public Node<QueryStream, QueryStreamImpl> {
  public:
   static QueryStream From(const QuerySelect &sel) noexcept;
 
@@ -197,11 +170,12 @@ class QueryStream : public query::QueryNode<QueryStream> {
   friend class QueryConstant;
   friend class QueryIO;
 
-  using query::QueryNode<QueryStream>::QueryNode;
+  using Node<QueryStream, QueryStreamImpl>::Node;
 };
 
 // A literal in the Datalog code. A literal is a form of non-blocking stream.
-class QueryConstant : public query::QueryNode<QueryConstant> {
+class QueryConstantImpl;
+class QueryConstant : public Node<QueryConstant, QueryConstantImpl> {
  public:
   QueryConstant(const QueryTag &tag);
 
@@ -217,7 +191,7 @@ class QueryConstant : public query::QueryNode<QueryConstant> {
   bool IsTag(void) const;
 
  private:
-  using query::QueryNode<QueryConstant>::QueryNode;
+  using Node<QueryConstant, QueryConstantImpl>::Node;
 
   friend class QuerySelect;
   friend class QueryStream;
@@ -226,7 +200,8 @@ class QueryConstant : public query::QueryNode<QueryConstant> {
 };
 
 // An auto-generate "tag" constant value. These are created during optimization.
-class QueryTag : public query::QueryNode<QueryTag> {
+class QueryTagImpl;
+class QueryTag : public Node<QueryTag, QueryTagImpl> {
  public:
   static QueryTag From(const QueryConstant &const_val);
 
@@ -238,13 +213,14 @@ class QueryTag : public query::QueryNode<QueryTag> {
   uint16_t Value(void) const;
 
  private:
-  using query::QueryNode<QueryTag>::QueryNode;
+  using Node<QueryTag, QueryTagImpl>::Node;
 
   friend class QueryConstant;
 };
 
 // A set of concrete inputs to a query.
-class QueryIO : public query::QueryNode<QueryIO> {
+class QueryIOImpl;
+class QueryIO : public Node<QueryIO, QueryIOImpl> {
  public:
   const ParsedDeclaration &Declaration(void) const noexcept;
 
@@ -257,7 +233,7 @@ class QueryIO : public query::QueryNode<QueryIO> {
   UsedNodeRange<QueryView> Receives(void) const;
 
  private:
-  using query::QueryNode<QueryIO>::QueryNode;
+  using Node<QueryIO, QueryIOImpl>::Node;
 
   friend class QuerySelect;
   friend class QueryStream;
@@ -333,7 +309,8 @@ enum class InputColumnRole {
 
 // A view into a collection of rows. The rows may be derived from a selection
 // or a join.
-class QueryView : public query::QueryNode<QueryView> {
+class QueryViewImpl;
+class QueryView : public Node<QueryView, QueryViewImpl> {
  public:
   static QueryView Containing(QueryColumn col);
 
@@ -503,11 +480,12 @@ class QueryView : public query::QueryNode<QueryView> {
   bool IsOwnIndirectInductiveSuccessor(void) const;
 
  private:
-  using query::QueryNode<QueryView>::QueryNode;
+  using Node<QueryView, QueryViewImpl>::Node;
 };
 
 // A selection of all columns from a table.
-class QuerySelect : public query::QueryNode<QuerySelect> {
+class QuerySelectImpl;
+class QuerySelect : public Node<QuerySelect, QuerySelectImpl> {
  public:
   // The selected columns.
   DefinedNodeRange<QueryColumn> Columns(void) const;
@@ -535,11 +513,12 @@ class QuerySelect : public query::QueryNode<QuerySelect> {
   friend class QueryStream;
   friend class QueryView;
 
-  using query::QueryNode<QuerySelect>::QueryNode;
+  using Node<QuerySelect, QuerySelectImpl>::Node;
 };
 
 // A join of two or more tables on one or more columns.
-class QueryJoin : public query::QueryNode<QueryJoin> {
+class QueryJoinImpl;
+class QueryJoin : public Node<QueryJoin, QueryJoinImpl> {
  public:
   static QueryJoin From(QueryView view);
 
@@ -590,14 +569,15 @@ class QueryJoin : public query::QueryNode<QueryJoin> {
                       with_col) const;
 
  private:
-  using query::QueryNode<QueryJoin>::QueryNode;
+  using Node<QueryJoin, QueryJoinImpl>::Node;
 
   friend class QueryView;
 };
 
 // Map input to zero or more outputs. Maps correspond to non-aggregating
 // functors with at least
-class QueryMap : public query::QueryNode<QueryMap> {
+class QueryMapImpl;
+class QueryMap : public Node<QueryMap, QueryMapImpl> {
  public:
   static QueryMap From(QueryView view);
 
@@ -651,13 +631,14 @@ class QueryMap : public query::QueryNode<QueryMap> {
                       with_col) const;
 
  private:
-  using query::QueryNode<QueryMap>::QueryNode;
+  using Node<QueryMap, QueryMapImpl>::Node;
 
   friend class QueryView;
 };
 
 // An aggregate operation.
-class QueryAggregate : public query::QueryNode<QueryAggregate> {
+class QueryAggregateImpl;
+class QueryAggregate : public Node<QueryAggregate, QueryAggregateImpl> {
  public:
   static QueryAggregate From(QueryView view);
 
@@ -717,14 +698,15 @@ class QueryAggregate : public query::QueryNode<QueryAggregate> {
                       with_col) const;
 
  private:
-  using query::QueryNode<QueryAggregate>::QueryNode;
+  using Node<QueryAggregate, QueryAggregateImpl>::Node;
 
   friend class QueryView;
 };
 
 // A merge between two or more views of the same arity, where the columns have
 // the same types.
-class QueryMerge : public query::QueryNode<QueryMerge> {
+class QueryMergeImpl;
+class QueryMerge : public Node<QueryMerge, QueryMergeImpl> {
  public:
   static QueryMerge From(QueryView view);
 
@@ -757,7 +739,7 @@ class QueryMerge : public query::QueryNode<QueryMerge> {
   bool CanProduceDeletions(void) const;
 
  private:
-  using query::QueryNode<QueryMerge>::QueryNode;
+  using Node<QueryMerge, QueryMergeImpl>::Node;
 
   friend class QueryView;
 };
@@ -765,7 +747,8 @@ class QueryMerge : public query::QueryNode<QueryMerge> {
 // A constraint between two columns. The constraint results in either one
 // (in the case of equality) or two (inequality) output columns. The constraint
 // also passes through the other columns from the view.
-class QueryCompare : public query::QueryNode<QueryCompare> {
+class QueryCompareImpl;
+class QueryCompare : public Node<QueryCompare, QueryCompareImpl> {
  public:
   static QueryCompare From(QueryView view);
 
@@ -790,13 +773,14 @@ class QueryCompare : public query::QueryNode<QueryCompare> {
                       with_col) const;
 
  private:
-  using query::QueryNode<QueryCompare>::QueryNode;
+  using Node<QueryCompare, QueryCompareImpl>::Node;
 
   friend class QueryView;
 };
 
 // A test for the absence of a specific tuple in a relation.
-class QueryNegate : public query::QueryNode<QueryNegate> {
+class QueryNegateImpl;
+class QueryNegate : public Node<QueryNegate, QueryNegateImpl> {
  public:
   static QueryNegate From(QueryView view);
 
@@ -836,14 +820,15 @@ class QueryNegate : public query::QueryNode<QueryNegate> {
                       with_col) const;
 
  private:
-  using query::QueryNode<QueryNegate>::QueryNode;
+  using Node<QueryNegate, QueryNegateImpl>::Node;
 
   friend class QueryView;
   friend class QueryRelation;
 };
 
 // An insert of one or more columns into a relation.
-class QueryInsert : public query::QueryNode<QueryInsert> {
+class QueryInsertImpl;
+class QueryInsert : public Node<QueryInsert, QueryInsertImpl> {
  public:
   static QueryInsert From(QueryView view);
 
@@ -867,14 +852,15 @@ class QueryInsert : public query::QueryNode<QueryInsert> {
                       with_col) const;
 
  private:
-  using query::QueryNode<QueryInsert>::QueryNode;
+  using Node<QueryInsert, QueryInsertImpl>::Node;
 
   friend class QueryView;
 };
 
 // An tuple packages one or more columns into a temporary relation for
 // convenience.
-class QueryTuple : public query::QueryNode<QueryTuple> {
+class QueryTupleImpl;
+class QueryTuple : public Node<QueryTuple, QueryTupleImpl> {
  public:
   static QueryTuple From(QueryView view);
 
@@ -896,14 +882,15 @@ class QueryTuple : public query::QueryNode<QueryTuple> {
                       with_col) const;
 
  private:
-  using query::QueryNode<QueryTuple>::QueryNode;
+  using Node<QueryTuple, QueryTupleImpl>::Node;
 
   friend class QueryView;
 };
 
 // A key-value index is similar to a tuple, except that some of the columns
 // are mutable.
-class QueryKVIndex : public query::QueryNode<QueryKVIndex> {
+class QueryKVIndexImpl;
+class QueryKVIndex : public Node<QueryKVIndex, QueryKVIndexImpl> {
  public:
   static QueryKVIndex From(QueryView view);
 
@@ -937,7 +924,7 @@ class QueryKVIndex : public query::QueryNode<QueryKVIndex> {
                       with_col) const;
 
  private:
-  using query::QueryNode<QueryKVIndex>::QueryNode;
+  using Node<QueryKVIndex, QueryKVIndexImpl>::Node;
 
   friend class QueryView;
 };

@@ -5,7 +5,7 @@
 namespace hyde {
 
 #define MAKE_VISITOR(cls) \
-  void Node<cls>::Accept(ProgramVisitor &visitor) { \
+  void clsImpl::Accept(ProgramVisitor &visitor) { \
     cls val(this); \
     visitor.Visit(val); \
   } \

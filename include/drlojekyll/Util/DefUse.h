@@ -856,6 +856,15 @@ class DefList {
 
   DefList(User *owner_) : owner(owner_) {}
 
+  void Append(std::unique_ptr<T> def) {
+    defs.emplace_back(std::move(def));
+  }
+
+  template <typename D>
+  void AppendDerived(std::unique_ptr<D> def) {
+    defs.emplace_back(def.release());
+  }
+
   template <typename... Args>
   T *Create(Args &&...args) {
     auto new_def = new T(std::forward<Args>(args)...);
@@ -949,14 +958,21 @@ class DefList {
   std::vector<std::unique_ptr<T>> defs;
 };
 
-template <typename T>
+template <typename PublicT, typename PrivateT>
 class Node;
 
 template <typename T>
 class UsedNodeIterator {
  public:
+
+  using PublicType = typename T::PublicType;
+  using PrivateType = typename T::PrivateType;
+  using NodeType = Node<PublicType, PrivateType>;
+
+  static_assert(std::is_same_v<T, PublicType>);
+
   inline UsedNodeIterator(void) : it(nullptr) {}
-  inline UsedNodeIterator(UseListIterator<Node<T>> it_) : it(it_) {}
+  inline UsedNodeIterator(UseListIterator<T> it_) : it(it_) {}
 
   inline UsedNodeIterator<T> &operator++(void) noexcept {
     ++it;
@@ -988,13 +1004,13 @@ class UsedNodeIterator {
   }
 
  private:
-  UseListIterator<Node<T>> it;
+  UseListIterator<T> it;
 };
 
 template <typename T>
 class DefinedNodeIterator {
  public:
-  inline DefinedNodeIterator(DefListIterator<Node<T>> it_) : it(it_) {}
+  inline DefinedNodeIterator(DefListIterator<T> it_) : it(it_) {}
 
   inline DefinedNodeIterator<T> &operator++(void) noexcept {
     ++it;
@@ -1026,7 +1042,7 @@ class DefinedNodeIterator {
   }
 
  private:
-  DefListIterator<Node<T>> it;
+  DefListIterator<T> it;
 };
 
 template <typename T>

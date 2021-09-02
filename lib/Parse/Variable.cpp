@@ -5,11 +5,11 @@
 namespace hyde {
 
 // Create a variable.
-Node<ParsedVariable> *ParserImpl::CreateVariable(Node<ParsedClause> *clause,
+ParsedVariableImpl *ParserImpl::CreateVariable(ParsedClauseImpl *clause,
                                                  Token name, bool is_param,
                                                  bool is_arg) {
 
-  auto var = new Node<ParsedVariable>;
+  auto var = new ParsedVariableImpl;
   if (is_param) {
     if (!clause->head_variables.empty()) {
       clause->head_variables.back()->next = var;
@@ -51,15 +51,15 @@ Node<ParsedVariable> *ParserImpl::CreateVariable(Node<ParsedClause> *clause,
 }
 
 // Create a variable to name a literal.
-Node<ParsedVariable> *
-ParserImpl::CreateLiteralVariable(Node<ParsedClause> *clause, Token tok,
+ParsedVariableImpl *
+ParserImpl::CreateLiteralVariable(ParsedClauseImpl *clause, Token tok,
                                   bool is_param, bool is_arg) {
   const auto lhs = CreateVariable(
       clause,
       Token::Synthetic(Lexeme::kIdentifierUnnamedVariable, tok.SpellingRange()),
       false, false);
 
-  const auto assign = new Node<ParsedAssignment>(lhs);
+  const auto assign = new ParsedAssignmentImpl(lhs);
   assign->rhs.literal = tok;
 
   const auto tok_lexeme = tok.Lexeme();
@@ -108,7 +108,7 @@ ParserImpl::CreateLiteralVariable(Node<ParsedClause> *clause, Token tok,
   lhs->context->assignment_uses.push_back(&(assign->lhs));
 
   // Now create the version of the variable that gets used.
-  const auto var = new Node<ParsedVariable>;
+  const auto var = new ParsedVariableImpl;
   if (is_param) {
     if (!clause->head_variables.empty()) {
       clause->head_variables.back()->next = var;

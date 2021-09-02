@@ -7,8 +7,36 @@
 
 namespace hyde {
 
-template <typename T>
-class Node;
+template <typename PublicT, typename PrivateT>
+class Node {
+ public:
+  using PublicType = PublicT;
+  using PrivateType = PrivateT;
+
+  inline Node(PrivateT *impl_) : impl(impl_) {}
+
+  inline bool operator==(const PublicT &that) const noexcept {
+    return impl == that.impl;
+  }
+
+  inline bool operator!=(const PublicT &that) const noexcept {
+    return impl != that.impl;
+  }
+
+  inline bool operator<(const PublicT &that) const noexcept {
+    return impl < that.impl;
+  }
+
+  uintptr_t UniqueId(void) const noexcept {
+    return reinterpret_cast<uintptr_t>(impl);
+  }
+
+  inline uint64_t Hash(void) const {
+    return reinterpret_cast<uintptr_t>(impl);
+  }
+
+  PrivateT *impl;
+};
 
 template <typename T>
 class NodeIterator;
@@ -30,6 +58,13 @@ class NodeTraverser {
 template <typename T>
 class NodeIterator {
  public:
+
+  using PublicType = typename T::PublicType;
+  using PrivateType = typename T::PrivateType;
+  using NodeType = Node<PublicType, PrivateType>;
+
+  static_assert(std::is_same_v<T, PublicType>);
+
   NodeIterator(const NodeIterator<T> &) noexcept = default;
   NodeIterator(NodeIterator<T> &&) noexcept = default;
 
@@ -51,35 +86,41 @@ class NodeIterator {
   }
 
   inline NodeIterator<T> &operator++(void) {
-    impl = reinterpret_cast<Node<T> *>(NodeTraverser::Next(impl, offset));
+    impl = reinterpret_cast<NodeType *>(NodeTraverser::Next(impl, offset));
     return *this;
   }
 
   inline NodeIterator<T> operator++(int) const {
     auto ret = *this;
-    impl = reinterpret_cast<Node<T> *>(NodeTraverser::Next(impl, offset));
+    impl = reinterpret_cast<NodeType *>(NodeTraverser::Next(impl, offset));
     return ret;
   }
 
  private:
   friend class NodeRange<T>;
 
-  inline explicit NodeIterator(Node<T> *impl_, intptr_t offset_)
+  inline explicit NodeIterator(NodeType *impl_, intptr_t offset_)
       : impl(impl_),
         offset(offset_) {}
 
   NodeIterator(void) = default;
 
-  Node<T> *impl{nullptr};
+  NodeType *impl{nullptr};
   intptr_t offset{0};
 };
 
 template <typename T>
 class NodeRange {
  public:
+  using PublicType = typename T::PublicType;
+  using PrivateType = typename T::PrivateType;
+  using NodeType = Node<PublicType, PrivateType>;
+
+  static_assert(std::is_same_v<T, PublicType>);
+
   NodeRange(void) = default;
 
-  inline explicit NodeRange(Node<T> *impl_, intptr_t offset_)
+  inline explicit NodeRange(NodeType *impl_, intptr_t offset_)
       : impl(impl_),
         offset(offset_) {}
 
@@ -87,10 +128,11 @@ class NodeRange {
 #  pragma GCC diagnostic push
 #  pragma GCC diagnostic ignored "-Winvalid-offsetof"
 #endif
-  template <typename U>
-  inline explicit NodeRange(Node<U> *impl_)
+  template <typename UPub, typename UPriv>
+  inline explicit NodeRange(Node<UPub, UPriv> *impl_)
       : impl(impl_),
-        offset(static_cast<intptr_t>(__builtin_offsetof(Node<U>, next))) {}
+        offset(static_cast<intptr_t>(
+            __builtin_offsetof(Node<UPub, UPriv>, next))) {}
 
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC diagnostic pop
@@ -112,7 +154,7 @@ class NodeRange {
   template <typename U>
   friend class Node;
 
-  Node<T> *impl{nullptr};
+  NodeType *impl{nullptr};
   intptr_t offset{0};
 };
 

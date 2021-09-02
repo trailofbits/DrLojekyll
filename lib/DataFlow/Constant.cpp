@@ -4,23 +4,23 @@
 
 namespace hyde {
 
-Node<QueryConstant>::~Node(void) {}
+QueryConstantImpl::~QueryConstantImpl(void) {}
 
-Node<QueryConstant> *Node<QueryConstant>::AsConstant(void) noexcept {
+QueryConstantImpl *QueryConstantImpl::AsConstant(void) noexcept {
   return this;
 }
 
-const char *Node<QueryConstant>::KindName(void) const noexcept {
+const char *QueryConstantImpl::KindName(void) const noexcept {
   return "CONST";
 }
 
-Node<QueryTag>::~Node(void) {}
+QueryTagImpl::~QueryTagImpl(void) {}
 
-Node<QueryTag> *Node<QueryTag>::AsTag(void) noexcept {
+QueryTagImpl *QueryTagImpl::AsTag(void) noexcept {
   return this;
 }
 
-const char *Node<QueryTag>::KindName(void) const noexcept {
+const char *QueryTagImpl::KindName(void) const noexcept {
   return "TAG";
 }
 

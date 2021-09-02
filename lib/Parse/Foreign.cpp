@@ -6,7 +6,7 @@ namespace hyde {
 
 // Try to parse `sub_range` as a foreign type declaration, adding it to
 // module if successful.
-void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
+void ParserImpl::ParseForeignTypeDecl(ParsedModuleImpl *module) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
@@ -20,10 +20,10 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
   Token name;
   std::string_view code;
 
-  std::unique_ptr<Node<ParsedForeignType>> alloc_type;
-  Node<ParsedForeignType> *type = nullptr;
+  ParsedForeignTypeImpl *alloc_type = nullptr;
+  ParsedForeignTypeImpl *type = nullptr;
 
-  auto set_data = [&](Node<ParsedForeignType>::Info &info,
+  auto set_data = [&](ParsedForeignTypeImpl::Info &info,
                       bool can_override) -> bool {
     if (!info.can_override) {
       auto err = context->error_log.Append(scope_range, tok_range);
@@ -84,12 +84,18 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
           state = 1;
           auto &found_type = context->foreign_types[tok.IdentifierId()];
           if (!found_type) {
-            alloc_type.reset(new Node<ParsedForeignType>);
-            found_type = alloc_type.get();
+            module->id_to_foreign_type;
+
+            alloc_type = module->foreign_types.Create();
+            found_type = alloc_type;
             found_type->name = tok.AsForeignType();
 
-            module->root_module->foreign_types.emplace(tok.IdentifierId(),
-                                                       found_type);
+            module->root_module->id_to_foreign_type.emplace(
+                tok.IdentifierId(), found_type);
+
+          } else {
+            assert(module->root_module->id_to_foreign_type.count(
+                tok.IdentifierId()));
           }
 
           type = found_type;
@@ -341,18 +347,11 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
         << "Incomplete foreign type declaration; the foreign type "
         << "declaration must end with a period";
   }
-
-  if (alloc_type) {
-    if (!module->root_module->types.empty()) {
-      module->root_module->types.back().get()->next = type;
-    }
-    module->root_module->types.emplace_back(std::move(alloc_type));
-  }
 }
 
 // Try to parse `sub_range` as a foreign constant declaration, adding it to
 // module if successful.
-void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
+void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
@@ -365,8 +364,8 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
   DisplayRange tok_range;
   std::string_view code;
 
-  Node<ParsedForeignType> *type = nullptr;
-  Node<ParsedForeignConstant> const_val;
+  ParsedForeignTypeImpl *type = nullptr;
+  ParsedForeignConstantImpl const_val;
   const_val.range = scope_range;
 
   // Strip out leading and trailing whitespace.
@@ -415,7 +414,7 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
             state = 1;
             type = context->foreign_types[ident_id];
             if (!type) {
-              type = new Node<ParsedForeignType>;
+              type = new ParsedForeignTypeImpl;
               type->name = tok;
               type->is_built_in = true;
               context->foreign_types[ident_id] = type;
@@ -681,8 +680,8 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
     const auto lang = static_cast<Language>(i);
     if (lang == const_val.lang || const_val.lang == Language::kUnknown) {
       auto &info = type->info[i];
-      auto alloc_const = new Node<ParsedForeignConstant>(const_val);
-      module->root_module->foreign_constants.emplace(
+      auto alloc_const = new ParsedForeignConstantImpl(const_val);
+      module->root_module->id_to_foreign_constant.emplace(
           const_val.name.IdentifierId(), alloc_const);
 
       assert(alloc_const->type.IsValid());

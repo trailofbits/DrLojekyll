@@ -8,13 +8,13 @@
 
 namespace hyde {
 
-Node<QueryCompare>::~Node(void) {}
+QueryCompareImpl::~QueryCompareImpl(void) {}
 
-Node<QueryCompare> *Node<QueryCompare>::AsCompare(void) noexcept {
+QueryCompareImpl *QueryCompareImpl::AsCompare(void) noexcept {
   return this;
 }
 
-uint64_t Node<QueryCompare>::Hash(void) noexcept {
+uint64_t QueryCompareImpl::Hash(void) noexcept {
   if (hash) {
     return hash;
   }
@@ -41,7 +41,7 @@ uint64_t Node<QueryCompare>::Hash(void) noexcept {
 // replacements easier. If this constraint's operator is unordered, then we
 // sort the inputs to make comparisons trivial. We also need to put the
 // "trailing" outputs into the proper order.
-bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
+bool QueryCompareImpl::Canonicalize(QueryImpl *query,
                                       const OptimizationContext &opt,
                                       const ErrorLog &log) {
 
@@ -242,8 +242,8 @@ bool Node<QueryCompare>::Canonicalize(QueryImpl *query,
 //
 // NOTE(pag): The two inputs to the comparison being tested aren't always
 //            ordered; however, equality testing here assumes ordering.
-bool Node<QueryCompare>::Equals(EqualitySet &eq,
-                                Node<QueryView> *that_) noexcept {
+bool QueryCompareImpl::Equals(EqualitySet &eq,
+                                QueryViewImpl *that_) noexcept {
 
   if (eq.Contains(this, that_)) {
     return true;
@@ -272,7 +272,7 @@ bool Node<QueryCompare>::Equals(EqualitySet &eq,
 }
 
 // Try to sink this comparison through its predecessor.
-bool Node<QueryCompare>::TrySink(QueryImpl *query) {
+bool QueryCompareImpl::TrySink(QueryImpl *query) {
   if (!can_sink) {
     return false;
   }
@@ -292,7 +292,7 @@ bool Node<QueryCompare>::TrySink(QueryImpl *query) {
 }
 
 // Try to sink this comparison through a MERGE node.
-bool Node<QueryCompare>::TrySinkThroughMerge(QueryImpl *query, MERGE *merge) {
+bool QueryCompareImpl::TrySinkThroughMerge(QueryImpl *query, MERGE *merge) {
 
   const auto num_cols = columns.Size();
   (void) num_cols;
@@ -380,7 +380,7 @@ bool Node<QueryCompare>::TrySinkThroughMerge(QueryImpl *query, MERGE *merge) {
 }
 
 // Try to sink this comparison through a NEGATION node.
-bool Node<QueryCompare>::TrySinkThroughNegate(
+bool QueryCompareImpl::TrySinkThroughNegate(
     QueryImpl *query, NEGATION *negate) {
 
   // Maintains the output ordering of the columns of the CMP.

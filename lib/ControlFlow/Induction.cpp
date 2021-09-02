@@ -6,15 +6,15 @@
 
 namespace hyde {
 
-Node<ProgramInductionRegion>::~Node(void) {}
+ProgramInductionRegionImpl::~ProgramInductionRegionImpl(void) {}
 
-Node<ProgramInductionRegion> *
-Node<ProgramInductionRegion>::AsInduction(void) noexcept {
+ProgramInductionRegionImpl *
+ProgramInductionRegionImpl::AsInduction(void) noexcept {
   return this;
 }
 
 // Returns `true` if all paths through `this` ends with a `return` region.
-bool Node<ProgramInductionRegion>::EndsWithReturn(void) const noexcept {
+bool ProgramInductionRegionImpl::EndsWithReturn(void) const noexcept {
   if (auto output = output_region.get(); output) {
     return output->EndsWithReturn();
   } else {
@@ -22,8 +22,8 @@ bool Node<ProgramInductionRegion>::EndsWithReturn(void) const noexcept {
   }
 }
 
-Node<ProgramInductionRegion>::Node(ProgramImpl *impl, REGION *parent_)
-    : Node<ProgramRegion>(parent_->containing_procedure),
+ProgramInductionRegionImpl::ProgramInductionRegionImpl(ProgramImpl *impl, REGION *parent_)
+    : ProgramRegionImpl(parent_->containing_procedure),
       init_region(this),
       cyclic_region(this),
       output_region(this),
@@ -32,7 +32,7 @@ Node<ProgramInductionRegion>::Node(ProgramImpl *impl, REGION *parent_)
   assert(parent_->Ancestor()->AsProcedure());
 }
 
-uint64_t Node<ProgramInductionRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramInductionRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = 117u;
   if (depth == 0) {
     return hash;
@@ -54,8 +54,8 @@ uint64_t Node<ProgramInductionRegion>::Hash(uint32_t depth) const {
 // Returns `true` if `this` and `that` are structurally equivalent (after
 // variable renaming) after searching down `depth` levels or until leaf,
 // whichever is first, and where `depth` is 0, compare `this` to `that.
-bool Node<ProgramInductionRegion>::Equals(EqualitySet &eq,
-                                          Node<ProgramRegion> *that_,
+bool ProgramInductionRegionImpl::Equals(EqualitySet &eq,
+                                          ProgramRegionImpl *that_,
                                           uint32_t depth) const noexcept {
   const auto that = that_->AsInduction();
   const auto num_vectors = vectors.Size();
@@ -99,8 +99,8 @@ bool Node<ProgramInductionRegion>::Equals(EqualitySet &eq,
   return cyclic_region->Equals(eq, that->cyclic_region.get(), next_depth);
 }
 
-const bool Node<ProgramInductionRegion>::MergeEqual(
-    ProgramImpl *, std::vector<Node<ProgramRegion> *> &) {
+const bool ProgramInductionRegionImpl::MergeEqual(
+    ProgramImpl *, std::vector<ProgramRegionImpl *> &) {
   NOTE("TODO(ekilmer): Unimplemented merging of ProgramInductionRegion");
   assert(false);
   return false;

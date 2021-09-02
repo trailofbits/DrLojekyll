@@ -5,13 +5,14 @@
 namespace hyde {
 
 // Try to parse `sub_range` as a message, adding it to `module` if successful.
-void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
+void ParserImpl::ParseMessage(ParsedModuleImpl *module) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
   }
 
-  assert(tok.Lexeme() == Lexeme::kHashMessageDecl);
+  const Token directive = tok;
+  assert(directive.Lexeme() == Lexeme::kHashMessageDecl);
 
   // State transition diagram for parsing messages.
   //
@@ -23,9 +24,12 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
   //                                     6
 
   int state = 0;
-  std::unique_ptr<Node<ParsedMessage>> message;
-  std::unique_ptr<Node<ParsedParameter>> param;
-  std::vector<std::unique_ptr<Node<ParsedParameter>>> params;
+  ParsedMessageImpl *message = nullptr;
+  ParsedParameterImpl *param = nullptr;
+
+  Token param_type;
+  Token param_name;
+  std::vector<std::pair<Token, Token>> params;
 
   DisplayPosition next_pos;
   Token name;
@@ -57,7 +61,8 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected atom here (lower case identifier) for the name of "
-              << "the #message being declared, got '" << tok << "' instead";
+              << "the " << directive << " being declared, got '" << tok
+              << "' instead";
           return;
         }
 
@@ -70,37 +75,36 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected opening parenthesis here to begin parameter list of "
-              << "#message '" << name << "', but got '" << tok << "' instead";
+              << directive << " '" << name << "', but got '" << tok
+              << "' instead";
           return;
         }
 
       case 2:
         if (tok.IsType()) {
-          param.reset(new Node<ParsedParameter>);
-          param->opt_type = tok;
-          param->parsed_opt_type = true;
+          param_type = tok;
           state = 3;
           continue;
 
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected type name here for parameter in #message '" << name
-              << "', but got '" << tok << "' instead";
+              << "Expected type name here for parameter in " << directive
+              << " '" << name << "', but got '" << tok << "' instead";
           return;
         }
 
       case 3:
         if (Lexeme::kIdentifierVariable == lexeme) {
+          param_name = tok;
           clause_toks.push_back(tok);
-          param->name = tok;
           state = 4;
           continue;
 
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected named variable here (capitalized identifier) as a "
-              << "parameter name of #message '" << name << "', but got '" << tok
-              << "' instead";
+              << "parameter name of " << directive << " '" << name
+              << "', but got '" << tok << "' instead";
           return;
         }
 
@@ -108,19 +112,17 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
 
         // Add the parameter in.
         if (!params.empty()) {
-          params.back()->next = param.get();
+          params.emplace_back(param_type, param_name);
 
           if (params.size() == kMaxArity) {
-            const auto err_range = ParsedParameter(param.get()).SpellingRange();
-            context->error_log.Append(scope_range, err_range)
-                << "Too many parameters to #query '" << name
+            DisplayRange param_range(param_type.Position(),
+                                     param_name.NextPosition());
+            context->error_log.Append(scope_range, param_range)
+                << "Too many parameters to " << directive << " '" << name
                 << "'; the maximum number of parameters is " << kMaxArity;
             return;
           }
         }
-
-        param->index = static_cast<unsigned>(params.size());
-        params.push_back(std::move(param));
 
         if (Lexeme::kPuncComma == lexeme) {
           clause_toks.push_back(tok);
@@ -128,17 +130,27 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
+          message = AddDecl<ParsedMessageImpl>(
+              module, DeclarationKind::kMessage, name, params.size());
+
           clause_toks.push_back(tok);
-          message.reset(AddDecl<ParsedMessage>(
-              module, DeclarationKind::kMessage, name, params.size()));
+
           if (!message) {
             return;
 
           } else {
+            for (auto [p_type, p_name] : params) {
+              const auto index = message->parameters.Size();
+              param = message->parameters.Create();
+              param->opt_type = p_type;
+              param->parsed_opt_type = true;
+              param->name = p_name;
+              param->index = index;
+            }
+
             message->rparen = tok;
             message->name = name;
-            message->parameters.swap(params);
-            message->directive_pos = sub_tokens.front().Position();
+            message->directive_pos = directive.Position();
             state = 5;
             continue;
           }
@@ -231,12 +243,12 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
         << "Incomplete message declaration; the declaration '" << name
         << "' must end with a period";
 
-    RemoveDecl<ParsedMessage>(std::move(message));
+    RemoveDecl<ParsedMessageImpl>(message);
 
   } else {
     const auto decl_for_clause = message.get();
-    FinalizeDeclAndCheckConsistency<ParsedMessage>(module->messages,
-                                                   std::move(message));
+    FinalizeDeclAndCheckConsistency<ParsedMessageImpl>(
+        module->messages, message);
 
     // If we parsed a `:` after the head of the `#message` then
     // go parse the attached bodies recursively.

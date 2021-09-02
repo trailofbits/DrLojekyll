@@ -5,7 +5,7 @@
 namespace hyde {
 
 // Try to parse `sub_range` as a query, adding it to `module` if successful.
-void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
+void ParserImpl::ParseQuery(ParsedModuleImpl *module) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
@@ -23,9 +23,9 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
   //                                                  6
 
   int state = 0;
-  std::unique_ptr<Node<ParsedQuery>> query;
-  std::unique_ptr<Node<ParsedParameter>> param;
-  std::vector<std::unique_ptr<Node<ParsedParameter>>> params;
+  std::unique_ptr<ParsedQueryImpl> query;
+  std::unique_ptr<ParsedParameterImpl> param;
+  std::vector<std::unique_ptr<ParsedParameterImpl>> params;
 
   DisplayPosition next_pos;
   Token name;
@@ -73,13 +73,13 @@ void ParserImpl::ParseQuery(Node<ParsedModule> *module) {
 
       case 2:
         if (Lexeme::kKeywordBound == lexeme) {
-          param.reset(new Node<ParsedParameter>);
+          param.reset(new ParsedParameterImpl);
           param->opt_binding = tok;
           state = 3;
           continue;
 
         } else if (Lexeme::kKeywordFree == lexeme) {
-          param.reset(new Node<ParsedParameter>);
+          param.reset(new ParsedParameterImpl);
           param->opt_binding = tok;
           state = 3;
           continue;
