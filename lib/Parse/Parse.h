@@ -331,15 +331,6 @@ class ParsedDeclarationImpl : public Def<ParsedDeclarationImpl>, public User {
   // Compute a unique identifier for this declaration.
   uint64_t Id(void) const noexcept;
 
-  // Return a list of clauses associated with this declaration.
-  DefinedNodeRange<ParsedClause> Clauses(void) const;
-
-  // Return a list of positive uses of this definition.
-  UsedNodeRange<ParsedPredicate> PositiveUses(void) const;
-
-  // Return a list of negative uses of this definition.
-  NodeRange<ParsedPredicate> NegativeUses(void) const;
-
   // The module containing this declaration.
   ParsedModuleImpl *const module;
 
@@ -534,11 +525,11 @@ class ParsedModuleImpl
 
   // Type-specific lists of the declarations within `declarations`. These lists
   // let us focus on specific subsets of the declarations within the module.
-  UseList<ParsedExportImpl> exports;
-  UseList<ParsedLocalImpl> locals;
-  UseList<ParsedQueryImpl> queries;
-  UseList<ParsedFunctorImpl> functors;
-  UseList<ParsedMessageImpl> messages;
+  UseList<ParsedExportImpl, ParsedDeclarationImpl> exports;
+  UseList<ParsedLocalImpl, ParsedDeclarationImpl> locals;
+  UseList<ParsedQueryImpl, ParsedDeclarationImpl> queries;
+  UseList<ParsedFunctorImpl, ParsedDeclarationImpl> functors;
+  UseList<ParsedMessageImpl, ParsedDeclarationImpl> messages;
 
   // All clauses defined in this module, in the order in which they are defined.
   DefList<ParsedClauseImpl> clauses;

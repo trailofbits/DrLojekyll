@@ -57,6 +57,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   // Emit one method per received message that adds the message data into
   // the aggregate output message.
   for (auto message : messages) {
+    const ParsedDeclaration decl(message);
     if (message.IsPublished()) {
       continue;
     }
@@ -69,7 +70,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     }
 
     auto sep = "";
-    for (auto param : message.Parameters()) {
+    for (auto param : decl.Parameters()) {
       os << sep << TypeName(module, param.Type());
       sep = ", ";
     }
@@ -99,6 +100,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   os.PushIndent();
 
   for (auto message : messages) {
+    const ParsedDeclaration decl(message);
     if (message.IsPublished()) {
       continue;
     }
@@ -110,7 +112,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     }
 
     auto sep = "";
-    for (auto param : message.Parameters()) {
+    for (auto param : decl.Parameters()) {
       os << sep << TypeName(module, param.Type());
       sep = ", ";
     }
@@ -131,7 +133,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     }
 
     sep = "";
-    for (auto param : message.Parameters()) {
+    for (auto param : decl.Parameters()) {
       os << sep << TypeName(module, param.Type());
       sep = ", ";
     }
@@ -195,6 +197,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
      << os.Indent() << "self._num_msgs: int = 0\n\n";
   os.PopIndent();
   for (auto message : messages) {
+    const ParsedDeclaration decl(message);
     if (message.IsPublished()) {
       continue;
     }
@@ -202,7 +205,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     os << os.Indent() << "def produce_" << message.Name() << '_'
        << message.Arity() << "(self";
 
-    for (auto param : message.Parameters()) {
+    for (auto param : decl.Parameters()) {
       os << ", " << param.Name() << ": " << TypeName(module, param.Type());
     }
 
@@ -252,7 +255,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     }
 
     auto sep = "";
-    for (auto param : message.Parameters()) {
+    for (auto param : decl.Parameters()) {
       os << sep << param.Name();
       sep = ", ";
     }
@@ -297,6 +300,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
 
   // First, make the backing storage for the messages.
   for (auto message : messages) {
+    const ParsedDeclaration decl(message);
     if (!message.IsPublished()) {
       continue;
     }
@@ -311,7 +315,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     }
 
     auto sep = "";
-    for (auto param : message.Parameters()) {
+    for (auto param : decl.Parameters()) {
       os << sep << TypeName(module, param.Type());
       sep = ", ";
     }
@@ -334,7 +338,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     }
 
     sep = "";
-    for (auto param : message.Parameters()) {
+    for (auto param : decl.Parameters()) {
       os << sep << TypeName(module, param.Type());
       sep = ", ";
     }
@@ -350,6 +354,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
 
   // Then, expose them via properties / accessor functions.
   for (auto message : messages) {
+    const ParsedDeclaration decl(message);
     if (!message.IsPublished()) {
       continue;
     }
@@ -366,7 +371,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
       }
 
       auto sep = "";
-      for (auto param : message.Parameters()) {
+      for (auto param : decl.Parameters()) {
         os << sep << TypeName(module, param.Type());
         sep = ", ";
       }
@@ -420,7 +425,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
       }
 
       auto sep = "";
-      for (auto param : message.Parameters()) {
+      for (auto param : decl.Parameters()) {
         os << sep << TypeName(module, param.Type());
         sep = ", ";
       }
@@ -468,13 +473,15 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   // Emit one method per published message that adds the message data into
   // the aggregate output message.
   for (auto message : messages) {
+    const ParsedDeclaration decl(message);
     if (!message.IsPublished()) {
       continue;
     }
+
     os << os.Indent() << "def " << message.Name() << '_' << message.Arity()
        << "(self";
 
-    for (auto param : message.Parameters()) {
+    for (auto param : decl.Parameters()) {
       os << ", " << param.Name() << ": " << TypeName(module, param.Type());
     }
 
@@ -521,7 +528,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     }
 
     auto sep = "";
-    for (auto param : message.Parameters()) {
+    for (auto param : decl.Parameters()) {
       os << sep << param.Name();
       sep = ", ";
     }
@@ -627,6 +634,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   os.PopIndent();
 
   for (auto message : messages) {
+    const ParsedDeclaration decl(message);
     if (!message.IsPublished()) {
       continue;
     }
@@ -634,7 +642,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     os << os.Indent() << "def consume_" << message.Name() << '_'
        << message.Arity() << "(self";
 
-    for (auto param : message.Parameters()) {
+    for (auto param : decl.Parameters()) {
       os << ", " << param.Name() << ": " << TypeName(module, param.Type());
     }
 

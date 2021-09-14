@@ -37,6 +37,8 @@ static void DeclareMessageVector(OutputStream &os, ParsedModule module,
 static void DeclareAppendMessageMethod(OutputStream &os, ParsedModule module,
                                        DataVector vec, ParsedMessage message,
                                        bool added) {
+  ParsedDeclaration decl(message);
+
   os << os.Indent() << "void ";
   if (added) {
     os << "produce_";
@@ -46,7 +48,7 @@ static void DeclareAppendMessageMethod(OutputStream &os, ParsedModule module,
 
   os << message.Name() << '_' << message.Arity();
   auto sep = "(";
-  for (auto param : message.Parameters()) {
+  for (ParsedParameter param : decl.Parameters()) {
     if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
       os << sep << TypeName(module, param.Type()) << ' ';
     } else {
@@ -61,7 +63,7 @@ static void DeclareAppendMessageMethod(OutputStream &os, ParsedModule module,
   os << os.Indent() << "size += 1u;\n"
      << os.Indent() << "vec_" << vec.Id();
   sep = ".Add(";
-  for (auto param : message.Parameters()) {
+  for (auto param : decl.Parameters()) {
     os << sep << 'p' << param.Index();
     sep = ", ";
   }
@@ -228,6 +230,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   os << os.Indent() << "};\n\n";
 
   for (ParsedMessage message : messages) {
+    const ParsedDeclaration decl(message);
     const auto &name = message_to_name[message];
     const auto id = name_to_id[name];
 
@@ -260,7 +263,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     }
     os << os.Indent() << "using TupleType = std::tuple<";
     sep = "";
-    for (auto param : message.Parameters()) {
+    for (auto param : decl.Parameters()) {
       os << sep << TypeName(module, param.Type().Kind());
       sep = ", ";
     }
@@ -275,7 +278,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
       os.PushIndent();
       os << os.Indent() << "msg.produce_" << name;
       sep = "(";
-      for (auto param : message.Parameters()) {
+      for (auto param : decl.Parameters()) {
         os << sep;
         if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
           os << "std::get<" << param.Index() << ">(tuple)";
@@ -292,7 +295,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
       if (message.IsDifferential()) {
         os << os.Indent() << "msg.retract_" << name;
         sep = "(";
-        for (auto param : message.Parameters()) {
+        for (auto param : decl.Parameters()) {
           os << sep;
           if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
             os << "std::get<" << param.Index() << ">(tuple)";
@@ -357,11 +360,12 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
       continue;
     }
 
+    const ParsedDeclaration decl(message);
     os << os.Indent() << "void " << message.Name() << "_" << message.Arity()
        << "(";
 
     sep = "";
-    for (auto param : message.Parameters()) {
+    for (auto param : decl.Parameters()) {
       os << sep;
       if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
         os << TypeName(module, param.Type())
@@ -381,7 +385,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
        << "OutputMessage" << name_to_id[message_to_name[message]];
 
     sep = ">(";
-    for (auto param : message.Parameters()) {
+    for (auto param : decl.Parameters()) {
       os << sep << "p" << param.Index();
       sep = ", ";
     }
@@ -395,7 +399,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
          << "OutputMessage" << name_to_id[message_to_name[message]];
 
       sep = ">(";
-      for (auto param : message.Parameters()) {
+      for (auto param : decl.Parameters()) {
         os << sep << "p" << param.Index();
         sep = ", ";
       }
@@ -429,11 +433,13 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
       continue;
     }
 
+    const ParsedDeclaration decl(message);
+
     os << "\n"
        << os.Indent() << "void " << message.Name() << "_" << message.Arity();
 
     sep = "(";
-    for (ParsedParameter param : message.Parameters()) {
+    for (ParsedParameter param : decl.Parameters()) {
       os << sep;
       if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
         os << TypeName(module, param.Type()) << " p";
@@ -450,7 +456,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     os.PushIndent();
     os << os.Indent() << "logger->" << message.Name() << "_" << message.Arity();
     sep = "(";
-    for (ParsedParameter param : message.Parameters()) {
+    for (ParsedParameter param : decl.Parameters()) {
       os << sep << "p" << param.Index();
       sep = ", ";
     }
@@ -475,12 +481,14 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
       continue;
     }
 
+    ParsedDeclaration decl(message);
+
     os << "\n"
        << os.Indent() << "virtual void " << message.Name()
        << "_" << message.Arity();
 
     sep = "(";
-    for (ParsedParameter param : message.Parameters()) {
+    for (ParsedParameter param : decl.Parameters()) {
       os << sep;
       if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
         os << TypeName(module, param.Type()) << " p";
@@ -515,11 +523,13 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
       continue;
     }
 
+    ParsedDeclaration decl(message);
+
     os << "\n"
        << os.Indent() << "void " << message.Name() << "_" << message.Arity();
 
     sep = "(";
-    for (ParsedParameter param : message.Parameters()) {
+    for (ParsedParameter param : decl.Parameters()) {
       os << sep;
       if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
         os << TypeName(module, param.Type()) << " p";
@@ -536,7 +546,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     os.PushIndent();
     os << os.Indent() << "logger->" << message.Name() << "_" << message.Arity();
     sep = "(";
-    for (ParsedParameter param : message.Parameters()) {
+    for (ParsedParameter param : decl.Parameters()) {
       os << sep << "p" << param.Index();
       sep = ", ";
     }

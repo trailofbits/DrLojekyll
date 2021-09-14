@@ -1200,8 +1200,8 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 };
 
 static void DeclareFunctor(OutputStream &os, ParsedModule module,
-                           ParsedFunctor func) {
-  ParsedDeclaration decl(func);
+                           ParsedDeclaration decl) {
+  const auto func = ParsedFunctor::From(decl);
   os << os.Indent() << "def " << func.Name() << '_'
      << decl.BindingPattern() << "(self";
 
@@ -1283,11 +1283,10 @@ static void DeclareFunctors(OutputStream &os, Program program,
       }
 
       for (auto redecl : func_decl.Redeclarations()) {
-        const ParsedFunctor func = ParsedFunctor::From(redecl);
         std::stringstream ss;
-        ss << func.Id() << ':' << ParsedDeclaration(func).BindingPattern();
+        ss << redecl.Id() << ':' << redecl.BindingPattern();
         if (auto [it, inserted] = seen.emplace(ss.str()); inserted) {
-          DeclareFunctor(os, module, func);
+          DeclareFunctor(os, module, redecl);
           has_functors = true;
           (void) it;
         }
@@ -1306,7 +1305,8 @@ static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
   os << os.Indent() << "def " << message.Name() << "_" << message.Arity()
      << "(self";
 
-  for (auto param : message.Parameters()) {
+  const ParsedDeclaration decl(message);
+  for (auto param : decl.Parameters()) {
     os << ", " << param.Name() << ": " << TypeName(module, param.Type());
   }
 

@@ -963,7 +963,7 @@ static void BuildQueryEntryPoint(ProgramImpl *impl, Context &context,
                                  ParsedDeclaration decl, QueryInsert insert) {
   std::unordered_set<std::string> seen_variants;
 
-  for (auto redecl : decl.Redeclarations()) {
+  for (auto redecl : decl.UniqueRedeclarations()) {
 
     // We may have duplicate redeclarations, so don't repeat any.
     std::string binding(redecl.BindingPattern());

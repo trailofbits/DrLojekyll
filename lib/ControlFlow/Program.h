@@ -4,7 +4,9 @@
 
 #include <drlojekyll/ControlFlow/Program.h>
 #include <drlojekyll/DataFlow/Query.h>
+#include <drlojekyll/Lex/Token.h>
 #include <drlojekyll/Parse/Parse.h>
+#include <drlojekyll/Parse/Type.h>
 #include <drlojekyll/Util/DefUse.h>
 #include <drlojekyll/Util/DisjointSet.h>
 #include <drlojekyll/Util/EqualitySet.h>
@@ -37,12 +39,15 @@ namespace hyde {
 
 class ProgramInductionRegion;
 class ProgramOperationRegion;
+class ProgramVisitor;
 
 class DataColumnImpl;
 class DataIndexImpl;
 class DataTableImpl;
 class DataRecordImpl;
 class DataRecordCaseImpl;
+
+class ProgramImpl;
 
 // A column within a table.
 class DataColumnImpl final : public Def<DataColumnImpl>, public User {
@@ -99,7 +104,7 @@ class DataTableImpl final : public Def<DataTableImpl>, public User {
 
   // Get or create a table in the program.
   static DataTableImpl *GetOrCreate(ProgramImpl *impl, Context &context,
-                                      QueryView view);
+                                    QueryView view);
 
   // Get or create an index on the table.
   TABLEINDEX *GetOrCreateIndex(ProgramImpl *impl, std::vector<unsigned> cols);

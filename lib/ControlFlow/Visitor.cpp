@@ -5,7 +5,7 @@
 namespace hyde {
 
 #define MAKE_VISITOR(cls) \
-  void clsImpl::Accept(ProgramVisitor &visitor) { \
+  void cls ## Impl::Accept(ProgramVisitor &visitor) { \
     cls val(this); \
     visitor.Visit(val); \
   } \
@@ -13,11 +13,6 @@ namespace hyde {
 
 ProgramVisitor::~ProgramVisitor(void) {}
 
-MAKE_VISITOR(DataColumn)
-MAKE_VISITOR(DataIndex)
-MAKE_VISITOR(DataTable)
-MAKE_VISITOR(DataVariable)
-MAKE_VISITOR(DataVector)
 MAKE_VISITOR(ProgramCallRegion)
 MAKE_VISITOR(ProgramReturnRegion)
 MAKE_VISITOR(ProgramTestAndSetRegion)

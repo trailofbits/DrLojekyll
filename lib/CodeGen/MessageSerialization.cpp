@@ -36,7 +36,7 @@ namespace {
 }
 
 AvroMessageInfo GenerateMessageSchema(const DisplayManager &display_manager,
-                                      const ParsedMessage &message,
+                                      ParsedDeclaration message,
                                       const ErrorLog &err) {
   std::stringstream ss;
   hyde::OutputStream os(display_manager, ss);
@@ -49,7 +49,7 @@ AvroMessageInfo GenerateMessageSchema(const DisplayManager &display_manager,
   std::string name(message_name.data(), message_name.size());
 
   auto sep = "";
-  for (auto parameter : message.Parameters()) {
+  for (ParsedParameter parameter : message.Parameters()) {
     os << sep << "{\"name\":\"" << parameter.Name() << "\",\"type\":\""
        << ParseParameterType(parameter.Type(), err) << "\"}";
     sep = ",";
@@ -67,9 +67,12 @@ GenerateAvroMessageSchemas(const DisplayManager &display_manager,
                            const ParsedModule &module, const ErrorLog &err) {
   std::vector<AvroMessageInfo> avro_schemas{};
 
-  for (auto message : module.Messages()) {
-    avro_schemas.emplace_back(
-        GenerateMessageSchema(display_manager, message, err));
+  for (ParsedMessage message : module.Messages()) {
+    ParsedDeclaration decl(message);
+    if (decl.IsFirstDeclaration()) {
+      avro_schemas.emplace_back(
+          GenerateMessageSchema(display_manager, decl, err));
+    }
   }
 
   return avro_schemas;

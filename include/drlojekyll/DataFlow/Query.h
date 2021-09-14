@@ -96,7 +96,7 @@ class QueryColumn : public Node<QueryColumn, QueryColumnImpl> {
   template <typename>
   friend class NodeIterator;
 
-  template <typename>
+  template <typename, typename>
   friend class Node;
 };
 

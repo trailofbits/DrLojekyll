@@ -100,10 +100,10 @@ QueryStream QueryStream::From(const QuerySelect &sel) noexcept {
 }
 
 QueryStream::QueryStream(const QueryIO &io) noexcept
-    : query::QueryQueryStreamImpl(io.impl) {}
+    : QueryStream(io.impl) {}
 
 QueryStream::QueryStream(const QueryConstant &const_) noexcept
-    : query::QueryQueryStreamImpl(const_.impl) {}
+    : QueryStream(const_.impl) {}
 
 const char *QueryStream::KindName(void) const noexcept {
   return impl->KindName();

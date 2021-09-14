@@ -140,8 +140,8 @@ void ParserImpl::ParseQuery(ParsedModuleImpl *module) {
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
           clause_toks.push_back(tok);
-          query = AddDecl<ParsedQuery>(module, DeclarationKind::kQuery,
-                                       name, params.size());
+          query = AddDecl<ParsedQueryImpl>(module, DeclarationKind::kQuery,
+                                           name, params.size());
           if (!query) {
             return;
           }

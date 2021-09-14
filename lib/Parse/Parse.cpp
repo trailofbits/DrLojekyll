@@ -1147,15 +1147,17 @@ uint64_t ParsedModule::Id(void) const noexcept {
 #endif
 }
 
-DEFINED_RANGE(ParsedModule, Queries, ParsedQuery, queries)
+USED_RANGE(ParsedModule, Queries, ParsedQuery, queries)
+USED_RANGE(ParsedModule, Locals, ParsedLocal, locals)
+USED_RANGE(ParsedModule, Exports, ParsedExport, exports)
+USED_RANGE(ParsedModule, Messages, ParsedMessage, messages)
+USED_RANGE(ParsedModule, Functors, ParsedFunctor, functors)
+
 DEFINED_RANGE(ParsedModule, Imports, ParsedImport, imports)
 DEFINED_RANGE(ParsedModule, Inlines, ParsedInline, inlines)
-DEFINED_RANGE(ParsedModule, Locals, ParsedLocal, locals)
-DEFINED_RANGE(ParsedModule, Exports, ParsedExport, exports)
-DEFINED_RANGE(ParsedModule, Messages, ParsedMessage, messages)
-DEFINED_RANGE(ParsedModule, Functors, ParsedFunctor, functors)
 DEFINED_RANGE(ParsedModule, Clauses, ParsedClause, clauses)
 DEFINED_RANGE(ParsedModule, ForeignTypes, ParsedForeignType, root_module->foreign_types)
+DEFINED_RANGE(ParsedModule, ForeignConstants, ParsedForeignConstant, root_module->foreign_constants)
 
 // Try to return the foreign type associated with a particular type location
 // or type kind.

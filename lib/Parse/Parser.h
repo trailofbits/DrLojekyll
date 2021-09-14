@@ -147,7 +147,7 @@ class ParserImpl {
   template <typename NodeTypeImpl, DeclarationKind kDeclKind,
             Lexeme kIntroducerLexeme>
   void ParseLocalExport(ParsedModuleImpl *module,
-                        UseList<NodeTypeImpl> &out_vec);
+                        UseList<NodeTypeImpl, ParsedDeclarationImpl> &out_vec);
 
   // Try to parse `sub_range` as a foreign type declaration, adding it to
   // module if successful.

@@ -722,6 +722,7 @@ class ParsedMessage : public Node<ParsedMessage, ParsedMessageImpl> {
   using Node<ParsedMessage, ParsedMessageImpl>::Node;
 };
 
+class ParsedForeignConstant;
 class ParsedForeignType;
 class ParsedImport;
 class ParsedInline;
@@ -736,18 +737,23 @@ class ParsedModule {
   // Return the ID of this module. Returns `~0u` if not valid.
   uint64_t Id(void) const noexcept;
 
-  DefinedNodeRange<ParsedQuery> Queries(void) const;
+  UsedNodeRange<ParsedQuery> Queries(void) const;
+  UsedNodeRange<ParsedLocal> Locals(void) const;
+  UsedNodeRange<ParsedExport> Exports(void) const;
+  UsedNodeRange<ParsedMessage> Messages(void) const;
+  UsedNodeRange<ParsedFunctor> Functors(void) const;
+
   DefinedNodeRange<ParsedImport> Imports(void) const;
   DefinedNodeRange<ParsedInline> Inlines(void) const;
-  DefinedNodeRange<ParsedLocal> Locals(void) const;
-  DefinedNodeRange<ParsedExport> Exports(void) const;
-  DefinedNodeRange<ParsedMessage> Messages(void) const;
-  DefinedNodeRange<ParsedFunctor> Functors(void) const;
   DefinedNodeRange<ParsedClause> Clauses(void) const;
 
   // NOTE(pag): This returns the list of /all/ foreign types, as they are
   //            globally visible.
   DefinedNodeRange<ParsedForeignType> ForeignTypes(void) const;
+
+  // NOTE(pag): This returns the list of /all/ foreign constants, as they are
+  //            globally visible.
+  DefinedNodeRange<ParsedForeignConstant> ForeignConstants(void) const;
 
   // Try to return the foreign type associated with a particular type location
   // or type kind.

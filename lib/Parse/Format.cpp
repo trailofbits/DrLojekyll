@@ -334,15 +334,10 @@ OutputStream &operator<<(OutputStream &os, ParsedModule module) {
   // First, declare the foreign types. They may be used by the functors.
   for (ParsedForeignType type : module.ForeignTypes()) {
     os << type << "\n";
-    for (auto cv : type.Constants(Language::kUnknown)) {
-      os << cv << "\n";
-    }
-    for (auto cv : type.Constants(Language::kCxx)) {
-      os << cv << "\n";
-    }
-    for (auto cv : type.Constants(Language::kPython)) {
-      os << cv << "\n";
-    }
+  }
+
+  for (ParsedForeignConstant cv : module.ForeignConstants()) {
+    os << cv << '\n';
   }
 
   for (auto sub_module : ParsedModuleIterator(module)) {

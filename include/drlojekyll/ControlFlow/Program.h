@@ -560,7 +560,7 @@ class ProgramVectorAppendRegion
 
 #define VECTOR_OP(name) \
   class name ## Impl; \
-  class name : public Node<name ## Impl> { \
+  class name : public Node<name, name ## Impl> { \
    public: \
     static name From(ProgramRegion) noexcept; \
     VectorUsage Usage(void) const noexcept; \
@@ -568,7 +568,7 @@ class ProgramVectorAppendRegion
     std::optional<DataVariable> WorkerId(void) const; \
    private: \
     friend class ProgramRegion; \
-    using Node<name ## Impl>::Node; \
+    using Node<name, name ## Impl>::Node; \
   }
 
 // Clear a vector.
@@ -1185,11 +1185,7 @@ class Program {
 class ProgramVisitor {
  public:
   virtual ~ProgramVisitor(void);
-  virtual void Visit(DataColumn val);
-  virtual void Visit(DataIndex val);
-  virtual void Visit(DataTable val);
-  virtual void Visit(DataVariable val);
-  virtual void Visit(DataVector val);
+
   virtual void Visit(ProgramCallRegion val);
   virtual void Visit(ProgramReturnRegion val);
   virtual void Visit(ProgramTestAndSetRegion val);

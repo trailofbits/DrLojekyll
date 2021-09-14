@@ -189,13 +189,13 @@ const std::vector<ProgramQuery> &Program::Queries(void) const noexcept {
 }
 
 ProgramRegion::ProgramRegion(const ProgramInductionRegion &region)
-    : program::ProgramProgramRegionImpl(region.impl) {}
+    : ProgramRegion(region.impl) {}
 
 ProgramRegion::ProgramRegion(const ProgramParallelRegion &region)
-    : program::ProgramProgramRegionImpl(region.impl) {}
+    : ProgramRegion(region.impl) {}
 
 ProgramRegion::ProgramRegion(const ProgramSeriesRegion &region)
-    : program::ProgramProgramRegionImpl(region.impl) {}
+    : ProgramRegion(region.impl) {}
 
 std::optional<ProgramRegion>
 ProgramRegion::Containing(ProgramRegion &self) noexcept {
@@ -467,7 +467,7 @@ static VectorUsage VectorUsageOfOp(ProgramOperation op) {
     return VectorUsageOfOp(impl->OP::op); \
   } \
   DataVector name::Vector(void) const noexcept { \
-    return DataVector(impl->nameImpl::vector.get()); \
+    return DataVector(impl->vector.get()); \
   } \
   std::optional<DataVariable> name::WorkerId(void) const { \
     if (impl->worker_id) { \

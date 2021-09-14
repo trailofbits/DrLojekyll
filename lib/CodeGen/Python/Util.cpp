@@ -166,7 +166,9 @@ std::unordered_set<ParsedMessage> Messages(ParsedModule module) {
 
   for (auto module : ParsedModuleIterator(module)) {
     for (auto message : module.Messages()) {
-      seen.emplace(message);
+      if (ParsedDeclaration(message).IsFirstDeclaration()) {
+        seen.emplace(message);
+      }
     }
   }
 

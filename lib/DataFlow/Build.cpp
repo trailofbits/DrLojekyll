@@ -1324,8 +1324,8 @@ static void AddConditionsToInsert(QueryImpl *query, ParsedClause clause,
                                   VIEW *insert) {
   std::vector<COND *> conds;
 
-  auto add_conds = [&](NodeRange<ParsedPredicate> range, UseList<COND> &uses,
-                       bool is_positive, VIEW *user) {
+  auto add_conds = [&](DefinedNodeRange<ParsedPredicate> range,
+                       UseList<COND> &uses, bool is_positive, VIEW *user) {
     conds.clear();
 
     for (auto pred : range) {
@@ -2071,8 +2071,8 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
 
   auto num_errors = log.Size();
 
-  for (auto sub_module : ParsedModuleIterator(module)) {
-    for (auto clause : sub_module.Clauses()) {
+  for (class ParsedModule sub_module : ParsedModuleIterator(module)) {
+    for (ParsedClause clause : sub_module.Clauses()) {
       if (!clause.IsDisabled()) {
         context.Reset();
         if (!BuildClause(impl.get(), clause, context, log)) {
@@ -2081,8 +2081,13 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
       }
     }
 
-    for (auto message : sub_module.Messages()) {
-      if (message.Clauses().empty() && !message.NumUses()) {
+    for (ParsedMessage message : sub_module.Messages()) {
+      ParsedDeclaration decl(message);
+      if (!decl.IsFirstDeclaration()) {
+        continue;
+      }
+
+      if (decl.Clauses().empty() && !message.NumUses()) {
         log.Append(message.SpellingRange())
             << "Message '" << message.Name() << '/' << message.Arity()
             << "' is never published or received";
@@ -2092,7 +2097,7 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
 
 #ifndef NDEBUG
   auto check_conds = [=] (void) {
-    for (auto cond : impl->conditions) {
+    for (COND *cond : impl->conditions) {
       assert(cond->UsersAreConsistent());
       assert(cond->SettersAreConsistent());
     }

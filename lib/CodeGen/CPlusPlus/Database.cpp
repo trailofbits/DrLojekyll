@@ -35,21 +35,6 @@ static std::vector<ParsedInline> Inlines(ParsedModule module) {
   return inlines;
 }
 
-static std::vector<ParsedFunctor> Functors(ParsedModule module) {
-  std::vector<ParsedFunctor> functors;
-  for (ParsedModule sub_module : ParsedModuleIterator(module)) {
-    for (ParsedFunctor func : sub_module.Functors()) {
-      ParsedDeclaration decl(func);
-      if (decl.IsFirstDeclaration()) {
-        for (auto redecl : decl.UniqueRedeclarations()) {
-          functors.push_back(func);
-        }
-      }
-    }
-  }
-  return functors;
-}
-
 }  // namespace
 
 // Emits C++ code for the given program to `os`.
@@ -77,8 +62,6 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   }
 
   os << "#endif  // __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n\n";
-
-  (void) Functors;
 
   // Output epilogue code.
   for (ParsedInline code : inlines) {

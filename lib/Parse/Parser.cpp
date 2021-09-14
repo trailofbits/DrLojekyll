@@ -347,7 +347,7 @@ template <typename NodeTypeImpl, DeclarationKind kDeclKind,
           Lexeme kIntroducerLexeme>
 void ParserImpl::ParseLocalExport(
     ParsedModuleImpl *module,
-    UseList<NodeTypeImpl> &out_vec) {
+    UseList<NodeTypeImpl, ParsedDeclarationImpl> &out_vec) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
@@ -475,8 +475,8 @@ void ParserImpl::ParseLocalExport(
           return;
         }
 
-        params.emplace_back(param_type, param_binding, param_merge_functor,
-                            param_name);
+        params.emplace_back(param_type, param_binding, param_mutable_range,
+                            param_merge_functor, param_name);
         param_type = TypeLoc();
         param_binding = Token();
         param_merge_functor_name = Token();
@@ -835,12 +835,12 @@ void ParserImpl::ParseLocalExport(
         << " declaration for '" << local->name << "/"
         << local->parameters.Size()
         << "' must end with a period";
-    RemoveDecl<NodeTypeImpl>(local);
+    RemoveDecl(local);
 
   // Add the local to the module.
   } else {
     const auto decl_for_clause = local;
-    FinalizeDeclAndCheckConsistency<NodeTypeImpl>(out_vec, std::move(local));
+    FinalizeDeclAndCheckConsistency(local);
 
     // If we parsed a `:` after the head of the `#local` or `#export` then
     // go parse the attached bodies recursively.
@@ -1569,11 +1569,11 @@ bool ParserImpl::AssignTypes(ParsedModuleImpl *root_module) {
           decl_param->opt_type = var->type;
           changed = true;
 
-        } else if (!var_param_eq_p(var.get(), decl_param.get())) {
+        } else if (!var_param_eq_p(var, decl_param)) {
           return false;
         }
 
-        if (!check_apply_var_types(var.get())) {
+        if (!check_apply_var_types(var)) {
           return false;
         }
 
@@ -1587,8 +1587,8 @@ bool ParserImpl::AssignTypes(ParsedModuleImpl *root_module) {
       // Bottom-up propagation step: find the first typed use of the variable,
       // then assign that type to the parameter variable.
       } else {
-        for (auto next_var = var->next_use; next_var != nullptr;
-             next_var = next_var->next_use) {
+        for (auto next_var = var->next_appearance; next_var != nullptr;
+             next_var = next_var->next_appearance) {
           if (next_var->type.IsValid()) {
             var->type = next_var->type;
             changed = true;
@@ -1744,7 +1744,7 @@ bool ParserImpl::AssignTypes(ParsedModuleImpl *root_module) {
     }
   };
 
-  for (ParsedVariableImpl *module : root_module->all_modules) {
+  for (ParsedModuleImpl *module : root_module->all_modules) {
     type_redecls(module->locals);
     type_redecls(module->exports);
   }
@@ -1782,7 +1782,7 @@ static bool AllDeclarationsAreDefined(ParsedModuleImpl *root_module,
     for (ParsedLocalImpl *decl : module->locals) {
       do_decl(ParsedDeclaration(decl));
     }
-    for (ParsedLocalImpl *decl : module->exports) {
+    for (ParsedExportImpl *decl : module->exports) {
       do_decl(ParsedDeclaration(decl));
     }
   }
