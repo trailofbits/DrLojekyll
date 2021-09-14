@@ -469,7 +469,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
     os << ParsedDeclarationName(map.Functor()) << "</TD>";
 
-    for (auto param : map.Functor().Parameters()) {
+    ParsedDeclaration map_functor_decl(map.Functor());
+    for (ParsedParameter param : map_functor_decl.Parameters()) {
       auto col = map.MappedColumns()[param.Index()];
       os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
     }
@@ -483,7 +484,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
 
     auto i = 0u;
-    for (auto param : map.Functor().Parameters()) {
+    for (ParsedParameter param : map_functor_decl.Parameters()) {
       if (param.Binding() == ParameterBinding::kBound) {
         auto in_col = map.NthInputColumn(i);
         os << "<TD port=\"p" << i << "\">" << do_col(in_col) << "</TD>";

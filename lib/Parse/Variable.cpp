@@ -6,46 +6,40 @@ namespace hyde {
 
 // Create a variable.
 ParsedVariableImpl *ParserImpl::CreateVariable(ParsedClauseImpl *clause,
-                                                 Token name, bool is_param,
-                                                 bool is_arg) {
+                                               Token name, bool is_param,
+                                               bool is_arg) {
+  ParsedVariableImpl *var = nullptr;
 
-  auto var = new ParsedVariableImpl;
   if (is_param) {
-    if (!clause->head_variables.empty()) {
-      clause->head_variables.back()->next = var;
-    }
-    var->appearance = static_cast<unsigned>(clause->head_variables.size());
-    clause->head_variables.emplace_back(var);
+    var = clause->head_variables.Create(clause, name, true, false);
+    var->order_of_appearance = clause->head_variables.Size() - 1u;
 
   } else {
-    if (!clause->body_variables.empty()) {
-      clause->body_variables.back()->next = var;
-    }
-    var->appearance =
-        static_cast<unsigned>(clause->body_variables.size() + kMaxArity);
-    clause->body_variables.emplace_back(var);
+    var = clause->body_variables.Create(clause, name, false, is_arg);
+    var->order_of_appearance = clause->body_variables.Size() + kMaxArity;
   }
-
-  var->name = name;
-  var->is_parameter = is_param;
-  var->is_argument = is_arg;
 
   if (Lexeme::kIdentifierVariable == name.Lexeme()) {
     auto &prev = prev_named_var[name.IdentifierId()];
     if (prev) {
-      var->context = prev->context;
-      prev->next_use = var;
+      assert(!prev->next_appearance);
+      prev->next_appearance = var;
+      var->first_appearance = prev->first_appearance;
 
     } else {
-      var->context = std::make_shared<parse::VariableContext>(clause, var);
+      var->first_appearance = var;
     }
 
     prev = var;
 
   // Unnamed variable.
   } else {
-    var->context = std::make_shared<parse::VariableContext>(clause, var);
+    var->first_appearance = var;
   }
+
+  // NOTE(pag): This has a side-effect of filling in
+  //            `var->first_appearance->id`.
+  var->id.flat = var->Id();
 
   return var;
 }
@@ -59,7 +53,7 @@ ParserImpl::CreateLiteralVariable(ParsedClauseImpl *clause, Token tok,
       Token::Synthetic(Lexeme::kIdentifierUnnamedVariable, tok.SpellingRange()),
       false, false);
 
-  const auto assign = new ParsedAssignmentImpl(lhs);
+  const auto assign = clause->assignments.Create(lhs);
   assign->rhs.literal = tok;
 
   const auto tok_lexeme = tok.Lexeme();
@@ -77,60 +71,46 @@ ParserImpl::CreateLiteralVariable(ParsedClauseImpl *clause, Token tok,
     assign->rhs.foreign_constant = const_ptr;
 
   // Boolean constants bring along their types as well.
-  } else if (Lexeme::kLiteralTrue == tok_lexeme ||
-             Lexeme::kLiteralFalse == tok_lexeme) {
+  } else if (Lexeme::kLiteralTrue == tok_lexeme) {
     lhs->type = TypeLoc(TypeKind::kBoolean, tok.SpellingRange());
     assign->rhs.type = lhs->type;
+    assign->rhs.data = "true";
+
+  } else if (Lexeme::kLiteralFalse == tok_lexeme) {
+    lhs->type = TypeLoc(TypeKind::kBoolean, tok.SpellingRange());
+    assign->rhs.type = lhs->type;
+    assign->rhs.data = "false";
   }
 
-  std::string_view data;
-  if (context->display_manager.TryReadData(tok.SpellingRange(), &data)) {
-    assert(!data.empty());
-    assign->rhs.data = data;
-  } else {
-    switch (tok_lexeme) {
-      case Lexeme::kLiteralNumber: assign->rhs.data = "0"; break;
-      case Lexeme::kLiteralTrue: assign->rhs.data = "true"; break;
-      case Lexeme::kLiteralFalse: assign->rhs.data = "false"; break;
-      default: break;
+  if (assign->rhs.data.empty()) {
+    std::string_view data;
+    if (context->display_manager.TryReadData(tok.SpellingRange(), &data)) {
+      assert(!data.empty());
+      assign->rhs.data = data;
+
+    } else if (Lexeme::kLiteralNumber == tok_lexeme) {
+      assign->rhs.data = "0";
     }
   }
-  assign->rhs.assigned_to = lhs;
-
-  // Add to the clause's assignment list.
-  if (!clause->assignments.empty()) {
-    clause->assignments.back()->next = assign;
-  }
-  clause->assignments.emplace_back(assign);
-
-  // Add to the variable's assignment list. We support the list, but for
-  // these auto-created variables, there can be only one use.
-  lhs->context->assignment_uses.push_back(&(assign->lhs));
 
   // Now create the version of the variable that gets used.
-  const auto var = new ParsedVariableImpl;
+  ParsedVariableImpl *var = nullptr;
   if (is_param) {
-    if (!clause->head_variables.empty()) {
-      clause->head_variables.back()->next = var;
-    }
-    var->appearance = static_cast<unsigned>(clause->head_variables.size());
-    clause->head_variables.emplace_back(var);
+    var = clause->head_variables.Create(clause, lhs->name, true, false);
+    var->order_of_appearance = clause->head_variables.Size() - 1u;
 
   } else {
-    if (!clause->body_variables.empty()) {
-      clause->body_variables.back()->next = var;
-    }
-    var->appearance =
-        static_cast<unsigned>(clause->body_variables.size() + kMaxArity);
-    clause->body_variables.emplace_back(var);
+    var = clause->body_variables.Create(clause, lhs->name, false, is_arg);
+    var->order_of_appearance = clause->body_variables.Size() + kMaxArity;
   }
 
-  var->name = lhs->name;
-  var->context = lhs->context;
-  var->is_parameter = is_param;
-  var->is_argument = is_arg;
+  assert(lhs->first_appearance == lhs);
+  assert(!lhs->next_appearance);
+  lhs->next_appearance = var;
+
+  var->first_appearance = lhs->first_appearance;
+  var->id.flat = var->Id();
   var->type = lhs->type;
-  lhs->next_use = var;  // Link it in.
 
   return var;
 }

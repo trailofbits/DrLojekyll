@@ -323,37 +323,45 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignConstant constant) {
 OutputStream &operator<<(OutputStream &os, ParsedModule module) {
   module = module.RootModule();
 
-  for (auto type : module.ForeignTypes()) {
-    os << type << "\n";
-  }
-
-  std::unordered_set<ParsedDeclaration> seen;
-  auto do_decl = [&](ParsedDeclaration decl) {
-    if (!seen.count(decl)) {
-      seen.insert(decl);
-      os << decl << '\n';
+  auto do_decl = [&os](ParsedDeclaration decl) {
+    if (decl.IsFirstDeclaration()) {
+      for (auto redecl : decl.UniqueRedeclarations()) {
+        os << redecl << '\n';
+      }
     }
   };
 
+  // First, declare the foreign types. They may be used by the functors.
+  for (ParsedForeignType type : module.ForeignTypes()) {
+    os << type << "\n";
+    for (auto cv : type.Constants(Language::kUnknown)) {
+      os << cv << "\n";
+    }
+    for (auto cv : type.Constants(Language::kCxx)) {
+      os << cv << "\n";
+    }
+    for (auto cv : type.Constants(Language::kPython)) {
+      os << cv << "\n";
+    }
+  }
+
+  for (auto sub_module : ParsedModuleIterator(module)) {
+    for (ParsedFunctor decl : sub_module.Functors()) {
+      do_decl(decl);
+    }
+  }
+
   for (auto sub_module : ParsedModuleIterator(module)) {
     for (ParsedQuery decl : sub_module.Queries()) {
-      for (auto redecl : decl.Redeclarations()) {
-        do_decl(redecl);
-      }
+      do_decl(decl);
     }
 
     for (ParsedMessage decl : sub_module.Messages()) {
       do_decl(decl);
     }
 
-    for (ParsedFunctor decl : sub_module.Functors()) {
-      for (auto redecl : decl.Redeclarations()) {
-        do_decl(redecl);
-      }
-    }
-
     for (ParsedExport decl : sub_module.Exports()) {
-      if (decl.Arity()) {
+      if (decl.Arity()) {  // Ignore zero-argument predicates.
         do_decl(decl);
       }
     }

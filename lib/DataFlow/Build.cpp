@@ -776,18 +776,15 @@ static VIEW *TryApplyNegation(QueryImpl *query, ParsedClause clause,
       needed_params.push_back(true);
       needed_vars.push_back(var);
 
-    } else if (var.IsAssigned()) {
-      log.Append(pred.SpellingRange(), var.SpellingRange())
-          << "Internal error: Failed to discover constant used by variable '"
-          << var << "'";
-      return nullptr;
-
     // This should be an unnamed variable only, e.g. `_`.
     } else if (var.IsUnnamed()) {
       needed_params.push_back(false);
       all_needed = false;
 
     } else {
+      log.Append(pred.SpellingRange(), var.SpellingRange())
+          << "Internal error: Failed to discover constant used by variable '"
+          << var << "'";
       return nullptr;
     }
   }

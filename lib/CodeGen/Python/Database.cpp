@@ -1201,13 +1201,14 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 
 static void DeclareFunctor(OutputStream &os, ParsedModule module,
                            ParsedFunctor func) {
+  ParsedDeclaration decl(func);
   os << os.Indent() << "def " << func.Name() << '_'
-     << ParsedDeclaration(func).BindingPattern() << "(self";
+     << decl.BindingPattern() << "(self";
 
   std::stringstream return_tuple;
   auto sep_ret = "";
   auto num_ret_types = 0u;
-  for (auto param : func.Parameters()) {
+  for (auto param : decl.Parameters()) {
     if (param.Binding() == ParameterBinding::kBound) {
       os << ", " << param.Name() << ": "
          << TypeName(module, param.Type().Kind());
@@ -1253,9 +1254,9 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
 
   os.PushIndent();
   os << os.Indent() << "return " << func.Name() << '_'
-     << ParsedDeclaration(func).BindingPattern() << "(";
+     << decl.BindingPattern() << "(";
   sep_ret = "";
-  for (auto param : func.Parameters()) {
+  for (auto param : decl.Parameters()) {
     if (param.Binding() == ParameterBinding::kBound) {
       os << sep_ret << param.Name();
       sep_ret = ", ";
@@ -1276,7 +1277,13 @@ static void DeclareFunctors(OutputStream &os, Program program,
   auto has_functors = false;
   for (auto module : ParsedModuleIterator(root_module)) {
     for (auto first_func : module.Functors()) {
-      for (auto func : first_func.Redeclarations()) {
+      ParsedDeclaration func_decl(first_func);
+      if (!func_decl.IsFirstDeclaration()) {
+        continue;
+      }
+
+      for (auto redecl : func_decl.Redeclarations()) {
+        const ParsedFunctor func = ParsedFunctor::From(redecl);
         std::stringstream ss;
         ss << func.Id() << ':' << ParsedDeclaration(func).BindingPattern();
         if (auto [it, inserted] = seen.emplace(ss.str()); inserted) {

@@ -901,7 +901,8 @@ class QueryMapImpl final : public VIEW {
         functor(functor_),
         is_positive(is_positive_) {
     this->can_produce_deletions = !functor.IsPure();
-    for (auto param : functor.Parameters()) {
+    ParsedDeclaration decl(functor);
+    for (ParsedParameter param : decl.Parameters()) {
       if (ParameterBinding::kFree == param.Binding()) {
         ++num_free_params;
       }

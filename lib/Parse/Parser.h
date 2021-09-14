@@ -12,6 +12,7 @@
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/Parser.h>
+#include <drlojekyll/Util/DefUse.h>
 
 #include <cassert>
 #include <cstring>
@@ -126,7 +127,7 @@ class ParserImpl {
   // Try to parse an inline predicate.
   bool ParseAggregatedPredicate(ParsedModuleImpl *module,
                                 ParsedClauseImpl *clause,
-                                std::unique_ptr<ParsedPredicateImpl> functor,
+                                ParsedAggregateImpl *agg,
                                 Token &tok, DisplayPosition &next_pos);
 
   // Try to parse all of the tokens.
@@ -143,10 +144,10 @@ class ParserImpl {
 
   // Try to parse `sub_range` as a local or export rule, adding it to `module`
   // if successful.
-  template <typename NodeType, DeclarationKind kDeclKind,
+  template <typename NodeTypeImpl, DeclarationKind kDeclKind,
             Lexeme kIntroducerLexeme>
   void ParseLocalExport(ParsedModuleImpl *module,
-                        std::vector<std::unique_ptr<NodeTypeImpl>> &out_vec);
+                        UseList<NodeTypeImpl> &out_vec);
 
   // Try to parse `sub_range` as a foreign type declaration, adding it to
   // module if successful.
@@ -176,8 +177,10 @@ class ParserImpl {
                               ParsedClauseImpl *clause);
 
   // Try to match a predicate with a declaration.
-  bool TryMatchPredicateWithDecl(ParsedModuleImpl *module,
-                                 ParsedPredicateImpl *pred);
+  ParsedDeclarationImpl *TryMatchPredicateWithDecl(
+      ParsedModuleImpl *module, Token pred_name,
+      const std::vector<ParsedVariableImpl *> &pred_vars,
+      Token pred_end_tok);
 
   // Try to parse `sub_range` as a clause.
   void ParseClause(ParsedModuleImpl *module,
@@ -203,11 +206,6 @@ class ParserImpl {
                                            const DisplayConfiguration &config);
 };
 
-#if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wconversion"
-#endif
-
 // Add a declaration or redeclaration to the module. This makes sure that
 // all locals in a redecl list have the same kind.
 template <typename T>
@@ -222,9 +220,16 @@ T *ParserImpl::AddDecl(ParsedModuleImpl *module, DeclarationKind kind,
     return nullptr;
   }
 
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = name.IdentifierId();
   interpreter.info.arity = arity;
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
 
   const auto id = interpreter.flat;
   auto first_decl_it = context->declarations.find(id);
@@ -259,9 +264,5 @@ T *ParserImpl::AddDecl(ParsedModuleImpl *module, DeclarationKind kind,
     }
   }
 }
-
-#if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic pop
-#endif
 
 }  // namespace hyde

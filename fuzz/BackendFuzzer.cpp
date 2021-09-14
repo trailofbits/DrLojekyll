@@ -283,8 +283,6 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module,
     os << type << "\n";
   }
 
-  std::set<hyde::ParsedDeclaration> seen;
-
   // NOTE(brad): We do _not_ shuffle the submodules, since the order they are
   //             iterated in is designed to respect interdependencies between
   //             them.
@@ -300,22 +298,19 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module,
     // greater degree of shuffling than shuffling and emitting each
     // subcomponent type sequentially.
     std::vector<std::string> strings;
-    auto AddStringForDecl = [&cxt, &seen,
-                             &strings](hyde::ParsedDeclaration decl) {
-      if (seen.count(decl)) {
-        return;
+    auto AddStringForDecl = [&cxt, &strings](hyde::ParsedDeclaration decl) {
+      if (decl.IsFirstDeclaration()) {
+        for (auto redecl : decl.UniqueRedeclarations()) {
+          std::stringstream stream;
+          hyde::OutputStream out(cxt.display_manager, stream);
+          out << decl;
+          strings.push_back(stream.str());
+        }
       }
-      seen.insert(decl);
-      std::stringstream stream;
-      hyde::OutputStream out(cxt.display_manager, stream);
-      out << decl;
-      strings.push_back(stream.str());
     };
 
     for (auto decl : sub_module.Queries()) {
-      for (auto redecl : decl.Redeclarations()) {
-        AddStringForDecl(redecl);
-      }
+      AddStringForDecl(decl);
     }
 
     for (auto decl : sub_module.Messages()) {
@@ -323,9 +318,7 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module,
     }
 
     for (auto decl : sub_module.Functors()) {
-      for (auto redecl : decl.Redeclarations()) {
-        AddStringForDecl(redecl);
-      }
+      AddStringForDecl(decl);
     }
 
     for (auto decl : sub_module.Exports()) {

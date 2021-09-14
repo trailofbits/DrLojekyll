@@ -10,16 +10,195 @@
 #  pragma GCC diagnostic ignored "-Winvalid-offsetof"
 #endif
 
+#define DEFINED_RANGE(name, method, type, access) \
+  DefinedNodeRange<type> name::method(void) const { \
+    return {DefinedNodeIterator<type>(impl->access.begin()), \
+            DefinedNodeIterator<type>(impl->access.end())}; \
+  }
+
+#define USED_RANGE(name, method, type, access) \
+  UsedNodeRange<type> name::method(void) const { \
+    return {impl->access.begin(), impl->access.end()}; \
+  }
+
 namespace hyde {
 namespace parse {
 
-DeclarationContext::~DeclarationContext(void) {}
+DeclarationContext::~DeclarationContext(void) {
+  redeclarations.ClearWithoutErasure();
+  unique_redeclarations.ClearWithoutErasure();
+  clauses.ClearWithoutErasure();
+  positive_uses.ClearWithoutErasure();
+  negated_uses.ClearWithoutErasure();
+}
+
+DeclarationContext::DeclarationContext(const DeclarationKind kind_)
+    : User(this),
+      kind(kind_),
+      redeclarations(this),
+      unique_redeclarations(this),
+      clauses(this),
+      positive_uses(this),
+      negated_uses(this) {}
 
 }  // namespace parse
 
-ParsedComparisonImpl::~ParsedComparisonImpl(void) {}
-ParsedAssignmentImpl::~ParsedAssignmentImpl(void) {}
-ParsedPredicateImpl::~ParsedPredicateImpl(void) {}
+ParsedLiteralImpl::~ParsedLiteralImpl(void) {}
+
+ParsedLiteralImpl::ParsedLiteralImpl(ParsedAssignmentImpl *assignment_)
+    : Def<ParsedLiteralImpl>(this),
+      assignment(assignment_) {}
+
+ParsedVariableImpl::~ParsedVariableImpl(void) {}
+
+ParsedVariableImpl::ParsedVariableImpl(ParsedClauseImpl *clause_, Token name_,
+                                       bool is_parameter_, bool is_argument_)
+    : Def<ParsedVariableImpl>(this),
+      clause(clause_),
+      name(name_),
+      is_parameter(is_parameter_),
+      is_argument(is_argument_) {}
+
+ParsedModuleImpl::~ParsedModuleImpl(void) {
+
+  for (auto decl : declarations) {
+    if (auto context_ptr = decl->context.get()) {
+      context_ptr->redeclarations.ClearWithoutErasure();
+      context_ptr->clauses.ClearWithoutErasure();
+      context_ptr->positive_uses.ClearWithoutErasure();
+      context_ptr->negated_uses.ClearWithoutErasure();
+
+      decl->context.reset();
+    }
+  }
+
+  // Clear these out because they are uses
+  exports.ClearWithoutErasure();
+  locals.ClearWithoutErasure();
+  queries.ClearWithoutErasure();
+  functors.ClearWithoutErasure();
+  messages.ClearWithoutErasure();
+}
+
+ParsedModuleImpl::ParsedModuleImpl(const DisplayConfiguration &config_)
+    : User(this),
+      config(config_),
+      imports(this),
+      inlines(this),
+      foreign_types(this),
+      builtin_types(this),
+      foreign_constants(this),
+      declarations(this),
+      exports(this),
+      locals(this),
+      queries(this),
+      functors(this),
+      messages(this),
+      clauses(this) {}
+
+ParsedClauseImpl::~ParsedClauseImpl(void) {}
+
+ParsedClauseImpl::ParsedClauseImpl(ParsedModuleImpl *module_)
+    : Def<ParsedClauseImpl>(this),
+      User(this),
+      module(module_),
+      head_variables(this),
+      body_variables(this),
+      comparisons(this),
+      assignments(this),
+      aggregates(this),
+      positive_predicates(this),
+      negated_predicates(this) {}
+
+ParsedDeclarationImpl::~ParsedDeclarationImpl(void) {}
+
+ParsedDeclarationImpl::ParsedDeclarationImpl(ParsedModuleImpl *module_,
+                                             const DeclarationKind kind_)
+    : Def<ParsedDeclarationImpl>(this),
+      User(this),
+      module(module_),
+      context(std::make_shared<parse::DeclarationContext>(kind_)),
+      parameters(this) {
+  context->redeclarations.AddUse(this);
+}
+
+ParsedDeclarationImpl::ParsedDeclarationImpl(
+    ParsedModuleImpl *module_,
+    const std::shared_ptr<parse::DeclarationContext> &context_)
+    : Def<ParsedDeclarationImpl>(this),
+      User(this),
+      module(module_),
+      context(context_),
+      parameters(this) {
+  assert(!context->redeclarations.Empty());
+  context->redeclarations.AddUse(this);
+}
+
+ParsedForeignTypeImpl::~ParsedForeignTypeImpl(void) {
+  for (auto &entry : info) {
+    entry.constants->ClearWithoutErasure();
+    entry.constants.reset();
+  }
+}
+
+ParsedForeignTypeImpl::ParsedForeignTypeImpl(void)
+    : Def<ParsedForeignTypeImpl>(this),
+      User(this) {
+  for (auto &entry : info) {
+    entry.constants.reset(new UseList<ParsedForeignConstantImpl>(this));
+  }
+}
+
+ParsedAggregateImpl::~ParsedAggregateImpl(void) {
+  group_vars.ClearWithoutErasure();
+  config_vars.ClearWithoutErasure();
+  aggregate_vars.ClearWithoutErasure();
+}
+
+ParsedAggregateImpl::ParsedAggregateImpl(ParsedClauseImpl *clause_)
+    : User(this),
+      clause(clause_),
+      functor(clause->module, clause),
+      predicate(clause->module, clause),
+      group_vars(this),
+      config_vars(this),
+      aggregate_vars(this) {}
+
+ParsedComparisonImpl::~ParsedComparisonImpl(void) {
+  lhs.ClearWithoutErasure();
+  rhs.ClearWithoutErasure();
+}
+
+ParsedComparisonImpl::ParsedComparisonImpl(ParsedVariableImpl *lhs_,
+                                           ParsedVariableImpl *rhs_,
+                                           Token compare_op_)
+    : Def<ParsedComparisonImpl>(this),
+      User(this),
+      lhs(this, lhs_),
+      rhs(this, rhs_),
+      compare_op(compare_op_) {}
+
+ParsedAssignmentImpl::~ParsedAssignmentImpl(void) {
+  lhs.ClearWithoutErasure();
+}
+
+ParsedAssignmentImpl::ParsedAssignmentImpl(ParsedVariableImpl *lhs_)
+    : Def<ParsedAssignmentImpl>(this),
+      User(this),
+      lhs(this, lhs_),
+      rhs(this) {}
+
+ParsedPredicateImpl::~ParsedPredicateImpl(void) {
+  argument_uses.ClearWithoutErasure();
+}
+
+ParsedPredicateImpl::ParsedPredicateImpl(ParsedModuleImpl *module_,
+                                         ParsedClauseImpl *clause_)
+    : Def<ParsedPredicateImpl>(this),
+      User(this),
+      module(module_),
+      clause(clause_),
+      argument_uses(this) {}
 
 const char *ParsedDeclarationImpl::KindName(void) const {
   switch (context->kind) {
@@ -30,6 +209,26 @@ const char *ParsedDeclarationImpl::KindName(void) const {
     case DeclarationKind::kLocal: return "local";
   }
   return "";
+}
+
+#define EQUAL_DECL(type) \
+    bool type::operator==(const type &that) const noexcept { \
+      return impl->context == that.impl->context; \
+    } \
+    bool type::operator!=(const type &that) const noexcept { \
+      return impl->context != that.impl->context; \
+    }
+
+EQUAL_DECL(ParsedDeclaration)
+EQUAL_DECL(ParsedExport)
+EQUAL_DECL(ParsedQuery)
+EQUAL_DECL(ParsedMessage)
+EQUAL_DECL(ParsedFunctor)
+EQUAL_DECL(ParsedLocal)
+
+// TODO(pag): Eliminate comparison on pointers.
+bool ParsedExport::operator<(const ParsedExport &that) const noexcept {
+  return impl->context.get() < that.impl->context.get();
 }
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -45,22 +244,30 @@ uint64_t ParsedDeclarationImpl::Id(void) const noexcept {
     return id.flat;
   }
 
-  id.flat = ParsedModule(module->shared_from_this()).Id();
+  id.flat = ~id.flat;
 
-  // NOTE(pag): All anonymous declarations and by definition
+  // If we're dealing with a local, then embed the module ID, otherwise leave it
+  // out.
+  switch (context->kind) {
+    case DeclarationKind::kExport:
+    case DeclarationKind::kQuery:
+    case DeclarationKind::kMessage:
+    case DeclarationKind::kFunctor:
+      break;
+    case DeclarationKind::kLocal:
+      id.info.module_id = module->first.DisplayId();
+      break;
+  }
+
+  // NOTE(pag): All anonymous declarations and by definition.
   if (name.Lexeme() == Lexeme::kIdentifierUnnamedAtom) {
     id.info.atom_name_id = module->next_anon_decl_id++;
     id.info.atom_name_id = ~id.info.atom_name_id;
 
   } else {
     id.info.atom_name_id = name.IdentifierId();
-
-    // If it's not a local thing, then use `~0` for the ID.
-    if (context->kind != DeclarationKind::kLocal) {
-      id.info.module_id = ~0u;
-    }
   }
-  id.info.arity = parameters.size();
+  id.info.arity = std::min<unsigned>(parameters.Size(), kMaxArity);
   return id.flat;
 }
 
@@ -68,42 +275,11 @@ uint64_t ParsedDeclarationImpl::Id(void) const noexcept {
 #  pragma GCC diagnostic pop
 #endif
 
-// Return a list of clauses associated with this declaration.
-NodeRange<ParsedClause> ParsedDeclarationImpl::Clauses(void) const {
-  if (context->clauses.empty()) {
-    return NodeRange<ParsedClause>();
-  } else {
-    return NodeRange<ParsedClause>(context->clauses.front().get());
-  }
-}
-
-// Return a list of positive uses of this definition.
-NodeRange<ParsedPredicate> ParsedDeclarationImpl::PositiveUses(void) const {
-  if (context->positive_uses.empty()) {
-    return NodeRange<ParsedPredicate>();
-  } else {
-    return NodeRange<ParsedPredicate>(context->positive_uses.front(),
-                                      static_cast<intptr_t>(__builtin_offsetof(
-                                          ParsedPredicateImpl, next_use)));
-  }
-}
-
-// Return a list of negative uses of this definition.
-NodeRange<ParsedPredicate> ParsedDeclarationImpl::NegativeUses(void) const {
-  if (context->negated_uses.empty()) {
-    return NodeRange<ParsedPredicate>();
-  } else {
-    return NodeRange<ParsedPredicate>(context->negated_uses.front(),
-                                      static_cast<intptr_t>(__builtin_offsetof(
-                                          ParsedPredicateImpl, next_use)));
-  }
-}
-
 // Compute the unique identifier for this variable.
 uint64_t ParsedVariableImpl::Id(void) noexcept {
-  auto &id = context->id;
-  if (id.flat) {
-    return id.flat;
+  auto &id_ref = first_appearance->id;
+  if (id_ref.flat) {
+    return id_ref.flat;
   }
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -111,10 +287,9 @@ uint64_t ParsedVariableImpl::Id(void) noexcept {
 #  pragma GCC diagnostic ignored "-Wconversion"
 #endif
 
-  const auto clause = context->clause;
-  id.flat = clause->Id();
+  id_ref.flat = clause->Id();
   if (name.Lexeme() == Lexeme::kIdentifierUnnamedVariable) {
-    id.info.var_id = clause->next_var_id++;
+    id_ref.info.var_id = clause->next_var_id++;
 
   } else {
     assert(0 < name.IdentifierId());
@@ -122,22 +297,24 @@ uint64_t ParsedVariableImpl::Id(void) noexcept {
     if (!prev_id) {
       prev_id = clause->next_var_id++;
     }
-    id.info.var_id = prev_id;
+    id_ref.info.var_id = prev_id;
   }
 
-  assert(0 < id.info.var_id);
+  assert(0 < id_ref.info.var_id);
 
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC diagnostic pop
 #endif
 
-  return id.flat;
+  return id_ref.flat;
 }
 
 // Compute the unique identifier for this variable, local to its clause.
 uint64_t ParsedVariableImpl::IdInClause(void) noexcept {
-  (void) Id();
-  return context->id.info.var_id;
+  if (!id.flat) {
+    id.flat = Id();
+  }
+  return id.info.var_id;
 }
 
 // Compute the identifier for this clause.
@@ -167,29 +344,6 @@ TypeLoc ParsedVariable::Type(void) const noexcept {
   return impl->type;
 }
 
-// Returns `true` if this variable is an parameter to its clause.
-bool ParsedVariable::IsParameter(void) const noexcept {
-  return impl->context->first_use ? impl->context->first_use->is_parameter
-                                  : false;
-}
-
-// Returns `true` if this variable is an argument to a predicate.
-bool ParsedVariable::IsArgument(void) const noexcept {
-  return impl->is_argument;
-}
-
-// Returns `true` if this variable, or any other used of this variable,
-// is assigned to any literals.
-bool ParsedVariable::IsAssigned(void) const noexcept {
-  return !impl->context->assignment_uses.empty();
-}
-
-// Returns `true` if this variable, or any other use of this variable,
-// is compared with any other variables.
-bool ParsedVariable::IsCompared() const noexcept {
-  return !impl->context->comparison_uses.empty();
-}
-
 // Returns `true` if this variable is an unnamed variable.
 bool ParsedVariable::IsUnnamed(void) const noexcept {
   return impl->name.Lexeme() == Lexeme::kIdentifierUnnamedVariable;
@@ -207,76 +361,30 @@ uint64_t ParsedVariable::IdInClause(void) const noexcept {
 
 // A number corresponding to the order of appearance of this variable.
 unsigned ParsedVariable::Order(void) const noexcept {
-  if (impl->appearance >= kMaxArity) {
-    return (impl->appearance - kMaxArity) +
-           static_cast<unsigned>(impl->context->clause->head_variables.size());
+  if (impl->order_of_appearance >= kMaxArity) {
+    return (impl->order_of_appearance - kMaxArity) +
+           static_cast<unsigned>(impl->clause->head_variables.Size());
   } else {
-    return impl->appearance;
+    return impl->order_of_appearance;
   }
 }
 
-// Iterate over each use of this variable.
-NodeRange<ParsedVariable> ParsedVariable::Uses(void) const {
-  return NodeRange<ParsedVariable>(impl->context->first_use,
-                                   static_cast<intptr_t>(__builtin_offsetof(
-                                       ParsedVariableImpl, next_use)));
+bool ParsedVariable::operator==(const ParsedVariable &that) const noexcept {
+  return impl->first_appearance == that.impl->first_appearance;
+}
+
+bool ParsedVariable::operator!=(const ParsedVariable &that) const noexcept {
+  return impl->first_appearance != that.impl->first_appearance;
 }
 
 // Return the number of uses of this variable.
 unsigned ParsedVariable::NumUses(void) const {
-  auto context = impl->context.get();
-  return static_cast<unsigned>(
-      context->parameter_uses.size() + context->argument_uses.size() +
-      context->assignment_uses.size() + context->comparison_uses.size());
-}
-
-// Replace all uses of this variable with another variable.
-bool ParsedVariable::ReplaceAllUses(ParsedVariable that) const {
-
-  // TODO(pag): Test this code.
-
-  auto context = impl->context;  // Hold a ref.
-  auto that_context = that.impl->context.get();
-  if (context.get() == that_context) {
-    return true;
-  } else if (context->clause != that_context->clause) {
-    return false;
-  } else if (impl->type.Kind() != that.impl->type.Kind()) {
-    return false;
-  }
-
-  // Follow the next use chain of the other variable and find the last pointer
-  // in it, and then link that to the first use of this variable.
-  auto nupp = &(that_context->first_use);
-  for (; *nupp; nupp = &((*nupp)->next_use)) {
-
-    // Do nothing;
-  }
-  *nupp = context->first_use;
-
-  // Replace the variable names and contexts in the use list.
-  auto replace_uses = [=](auto &use_list, auto &that_use_list) {
-    if (!use_list.empty() && !that_use_list.empty()) {
-      that_use_list.back()->next = use_list.front();
-    }
-    for (auto &use : use_list) {
-      use->used_var->name = that.impl->name;
-      use->used_var->context = that.impl->context;
-      that_use_list.emplace_back(std::move(use));
-    }
-  };
-
-  replace_uses(context->parameter_uses, that_context->parameter_uses);
-  replace_uses(context->argument_uses, that_context->argument_uses);
-  replace_uses(context->comparison_uses, that_context->comparison_uses);
-  replace_uses(context->assignment_uses, that_context->assignment_uses);
-
-  return true;
+  return impl->NumUses();
 }
 
 // Return the variable to which `literal` assigned.
 ParsedVariable ParsedVariable::AssignedTo(ParsedLiteral literal) noexcept {
-  return ParsedVariable(literal.impl->assigned_to);
+  return ParsedVariable(literal.impl->assignment->lhs.get());
 }
 
 DisplayRange ParsedLiteral::SpellingRange(void) const noexcept {
@@ -288,7 +396,7 @@ ParsedLiteral::Spelling(Language lang) const noexcept {
   if (IsConstant()) {
     const auto &info = impl->foreign_type->info[static_cast<unsigned>(lang)];
     const auto id = impl->literal.IdentifierId();
-    for (const auto &const_ptr : info.constants) {
+    for (ParsedForeignConstantImpl * const const_ptr : *(info.constants)) {
       if (const_ptr->lang == lang && const_ptr->name.IdentifierId() == id) {
         return const_ptr->code;
       }
@@ -328,16 +436,16 @@ Token ParsedLiteral::Literal(void) const noexcept {
 }
 
 DisplayRange ParsedComparison::SpellingRange(void) const noexcept {
-  return DisplayRange(impl->lhs.UseBase::used_var->name.Position(),
-                      impl->rhs.UseBase::used_var->name.NextPosition());
+  return DisplayRange(impl->lhs->name.Position(),
+                      impl->rhs->name.NextPosition());
 }
 
 ParsedVariable ParsedComparison::LHS(void) const noexcept {
-  return ParsedVariable(impl->lhs.UseBase::used_var);
+  return ParsedVariable(impl->lhs.get());
 }
 
 ParsedVariable ParsedComparison::RHS(void) const noexcept {
-  return ParsedVariable(impl->rhs.UseBase::used_var);
+  return ParsedVariable(impl->rhs.get());
 }
 
 ComparisonOperator ParsedComparison::Operator(void) const noexcept {
@@ -351,12 +459,12 @@ ComparisonOperator ParsedComparison::Operator(void) const noexcept {
 }
 
 DisplayRange ParsedAssignment::SpellingRange(void) const noexcept {
-  return DisplayRange(impl->lhs.UseBase::used_var->name.Position(),
+  return DisplayRange(impl->lhs->name.Position(),
                       impl->rhs.literal.NextPosition());
 }
 
 ParsedVariable ParsedAssignment::LHS(void) const noexcept {
-  return ParsedVariable(impl->lhs.UseBase::used_var);
+  return ParsedVariable(impl->lhs.get());
 }
 
 ParsedLiteral ParsedAssignment::RHS(void) const noexcept {
@@ -394,74 +502,57 @@ Token ParsedPredicate::Negation(void) const noexcept {
 
 // Returns the arity of this predicate.
 unsigned ParsedPredicate::Arity(void) const noexcept {
-  return static_cast<unsigned>(impl->argument_uses.size());
+  return impl->argument_uses.Size();
 }
 
 // Return the `n`th argument of this predicate.
 ParsedVariable ParsedPredicate::NthArgument(unsigned n) const noexcept {
   assert(n < Arity());
-  return ParsedVariable(impl->argument_uses[n]->UseBase::used_var);
+  return ParsedVariable(impl->argument_uses[n]);
 }
 
 // All variables used as arguments to this predicate.
-NodeRange<ParsedVariable> ParsedPredicate::Arguments(void) const {
-  assert(0 < Arity());
-  return NodeRange<ParsedVariable>(
-      impl->argument_uses.front()->UseBase::used_var,
-      static_cast<intptr_t>(
-          __builtin_offsetof(ParsedVariableImpl, next_var_in_arg_list)));
-}
+USED_RANGE(ParsedPredicate, Arguments, ParsedVariable, argument_uses)
 
 DisplayRange ParsedAggregate::SpellingRange(void) const noexcept {
   return impl->spelling_range;
 }
 
 ParsedPredicate ParsedAggregate::Functor(void) const noexcept {
-  return ParsedPredicate(impl->functor.get());
+  return ParsedPredicate(&(impl->functor));
 }
 
 ParsedPredicate ParsedAggregate::Predicate(void) const noexcept {
-  return ParsedPredicate(impl->predicate.get());
+  return ParsedPredicate(&(impl->predicate));
 }
 
 // List of parameters to the predicate that are not paired with anything of
 // the arguments to the aggregating functor.
-NodeRange<ParsedVariable>
-ParsedAggregate::GroupVariablesFromPredicate(void) const {
-  if (impl->first_group_var) {
-    return NodeRange<ParsedVariable>(
-        impl->first_group_var, static_cast<intptr_t>(__builtin_offsetof(
-                                   ParsedVariableImpl, next_group_var)));
-  } else {
-    return NodeRange<ParsedVariable>();
-  }
-}
+USED_RANGE(ParsedAggregate, GroupVariablesFromPredicate, ParsedVariable, group_vars)
 
 // List of parameters from the predicate that are paired with a `aggregate`-
 // attributed variable in the functor.
-NodeRange<ParsedVariable>
-ParsedAggregate::AggregatedVariablesFromPredicate(void) const {
-  if (impl->first_aggregate_var) {
-    return NodeRange<ParsedVariable>(
-        impl->first_aggregate_var,
-        static_cast<intptr_t>(
-            __builtin_offsetof(ParsedVariableImpl, next_aggregate_var)));
-  } else {
-    return NodeRange<ParsedVariable>();
-  }
-}
+USED_RANGE(ParsedAggregate, AggregatedVariablesFromPredicate, ParsedVariable, aggregate_vars)
 
 // List of parameters from the predicate that are paired with a `bound`-
 // attributed variables in the functor.
-NodeRange<ParsedVariable>
-ParsedAggregate::ConfigurationVariablesFromPredicate(void) const {
-  if (impl->first_config_var) {
-    return NodeRange<ParsedVariable>(
-        impl->first_config_var, static_cast<intptr_t>(__builtin_offsetof(
-                                    ParsedVariableImpl, next_config_var)));
-  } else {
-    return NodeRange<ParsedVariable>();
-  }
+USED_RANGE(ParsedAggregate, ConfigurationVariablesFromPredicate, ParsedVariable, config_vars)
+
+// Return an integer that identifies this parameter.
+uint64_t ParsedParameter::Id(void) const noexcept {
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#  pragma GCC diagnostic ignored "-Woverflow"
+#endif
+  // Cached ID of this declaration.
+  parse::IdInterpreter id;
+  id.flat = impl->decl->Id();
+  id.info.var_id = impl->index;
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
+  return id.flat;
 }
 
 DisplayRange ParsedParameter::SpellingRange(void) const noexcept {
@@ -503,22 +594,22 @@ bool ParsedParameter::IsUnnamed(void) const noexcept {
 }
 
 ParsedDeclaration::ParsedDeclaration(const ParsedQuery &query)
-    : parse::ParsedParsedDeclarationImpl(query.impl) {}
+    : ParsedDeclaration(query.impl) {}
 
 ParsedDeclaration::ParsedDeclaration(const ParsedMessage &message)
-    : parse::ParsedParsedDeclarationImpl(message.impl) {}
+    : ParsedDeclaration(message.impl) {}
 
 ParsedDeclaration::ParsedDeclaration(const ParsedFunctor &functor)
-    : parse::ParsedParsedDeclarationImpl(functor.impl) {}
+    : ParsedDeclaration(functor.impl) {}
 
 ParsedDeclaration::ParsedDeclaration(const ParsedExport &exp)
-    : parse::ParsedParsedDeclarationImpl(exp.impl) {}
+    : ParsedDeclaration(exp.impl) {}
 
 ParsedDeclaration::ParsedDeclaration(const ParsedLocal &local)
-    : parse::ParsedParsedDeclarationImpl(local.impl) {}
+    : ParsedDeclaration(local.impl) {}
 
 ParsedDeclaration::ParsedDeclaration(const ParsedPredicate &pred)
-    : parse::ParsedParsedDeclarationImpl(ParsedDeclaration::Of(pred)) {}
+    : ParsedDeclaration(ParsedDeclaration::Of(pred)) {}
 
 DisplayRange ParsedDeclaration::SpellingRange(void) const noexcept {
   if (impl->parsed_tokens.empty()) {
@@ -584,6 +675,11 @@ Token ParsedExport::Name(void) const noexcept {
   return impl->name;
 }
 
+// Is this the first declaration?
+bool ParsedDeclaration::IsFirstDeclaration(void) const noexcept {
+  return impl == impl->context->redeclarations[0];
+}
+
 bool ParsedDeclaration::IsQuery(void) const noexcept {
   return Kind() == DeclarationKind::kQuery;
 }
@@ -618,7 +714,7 @@ bool ParsedDeclaration::HasDirectInputDependency(void) const noexcept {
   }
 
   context->checked_takes_input = true;
-  for (const auto &clause : context->clauses) {
+  for (ParsedClauseImpl * const clause : context->clauses) {
     if (clause->depends_on_messages) {
       context->takes_input = true;
       return true;
@@ -640,105 +736,82 @@ const char *ParsedDeclaration::KindName(void) const noexcept {
 
 // Returns the arity of this clause.
 unsigned ParsedDeclaration::Arity(void) const noexcept {
-  return static_cast<unsigned>(impl->parameters.size());
+  return impl->parameters.Size();
 }
 
 unsigned ParsedFunctor::Arity(void) const noexcept {
-  return static_cast<unsigned>(impl->parameters.size());
+  return impl->parameters.Size();
 }
 
 unsigned ParsedQuery::Arity(void) const noexcept {
-  return static_cast<unsigned>(impl->parameters.size());
+  return impl->parameters.Size();
 }
 
 unsigned ParsedMessage::Arity(void) const noexcept {
-  return static_cast<unsigned>(impl->parameters.size());
+  return impl->parameters.Size();
 }
 
 unsigned ParsedLocal::Arity(void) const noexcept {
-  return static_cast<unsigned>(impl->parameters.size());
+  return impl->parameters.Size();
 }
 
 unsigned ParsedExport::Arity(void) const noexcept {
-  return static_cast<unsigned>(impl->parameters.size());
+  return impl->parameters.Size();
 }
 
 // Return the `n`th parameter of this clause.
 ParsedParameter ParsedDeclaration::NthParameter(unsigned n) const noexcept {
   assert(n < Arity());
-  return ParsedParameter(impl->parameters[n].get());
+  return ParsedParameter(impl->parameters[n]);
 }
 
 // Return the `n`th parameter of this clause.
 ParsedParameter ParsedFunctor::NthParameter(unsigned n) const noexcept {
   assert(n < Arity());
-  return ParsedParameter(impl->parameters[n].get());
+  return ParsedParameter(impl->parameters[n]);
 }
 
 // Return the `n`th parameter of this clause.
 ParsedParameter ParsedMessage::NthParameter(unsigned n) const noexcept {
   assert(n < Arity());
-  return ParsedParameter(impl->parameters[n].get());
+  return ParsedParameter(impl->parameters[n]);
 }
 
 // Return the `n`th parameter of this clause.
 ParsedParameter ParsedQuery::NthParameter(unsigned n) const noexcept {
   assert(n < Arity());
-  return ParsedParameter(impl->parameters[n].get());
+  return ParsedParameter(impl->parameters[n]);
 }
 
 // Return the `n`th parameter of this clause.
 ParsedParameter ParsedLocal::NthParameter(unsigned n) const noexcept {
   assert(n < Arity());
-  return ParsedParameter(impl->parameters[n].get());
+  return ParsedParameter(impl->parameters[n]);
 }
-
 
 // Return the `n`th parameter of this clause.
 ParsedParameter ParsedExport::NthParameter(unsigned n) const noexcept {
   assert(n < Arity());
-  return ParsedParameter(impl->parameters[n].get());
+  return ParsedParameter(impl->parameters[n]);
 }
 
-NodeRange<ParsedParameter> ParsedDeclaration::Parameters(void) const {
-  if (impl->parameters.empty()) {
-    return NodeRange<ParsedParameter>();
-  } else {
-    return NodeRange<ParsedParameter>(impl->parameters.front().get());
-  }
-}
-
-NodeRange<ParsedDeclaration> ParsedDeclaration::Redeclarations(void) const {
-  assert(!impl->context->redeclarations.empty());
-  return NodeRange<ParsedDeclaration>(
-      reinterpret_cast<ParsedDeclarationImpl *>(
-          impl->context->redeclarations.front()),
-      static_cast<intptr_t>(
-          __builtin_offsetof(ParsedDeclarationImpl, next_redecl)));
-}
-
-NodeRange<ParsedClause> ParsedDeclaration::Clauses(void) const {
-  return impl->Clauses();
-}
-
-NodeRange<ParsedPredicate> ParsedDeclaration::PositiveUses(void) const {
-  return impl->PositiveUses();
-}
-
-NodeRange<ParsedPredicate> ParsedDeclaration::NegativeUses(void) const {
-  return impl->NegativeUses();
-}
+DEFINED_RANGE(ParsedDeclaration, Parameters, ParsedParameter, parameters)
+USED_RANGE(ParsedDeclaration, Redeclarations, ParsedDeclaration, context->redeclarations)
+USED_RANGE(ParsedDeclaration, UniqueRedeclarations, ParsedDeclaration, context->unique_redeclarations)
+USED_RANGE(ParsedDeclaration, Clauses, ParsedClause, context->clauses)
+USED_RANGE(ParsedDeclaration, PositiveUses, ParsedPredicate, context->positive_uses)
+USED_RANGE(ParsedDeclaration, NegativeUses, ParsedPredicate, context->negated_uses)
 
 unsigned ParsedDeclaration::NumPositiveUses(void) const noexcept {
-  return static_cast<unsigned>(impl->context->positive_uses.size());
+  return impl->context->positive_uses.Size();
 }
 
 unsigned ParsedDeclaration::NumNegatedUses(void) const noexcept {
-  return static_cast<unsigned>(impl->context->negated_uses.size());
+  return impl->context->negated_uses.Size();
 }
 
 unsigned ParsedDeclaration::NumClauses(void) const noexcept {
-  return static_cast<unsigned>(impl->context->clauses.size());
+  return impl->context->clauses.Size();
 }
 
 bool ParsedDeclaration::IsInline(void) const noexcept {
@@ -755,9 +828,9 @@ bool ParsedDeclaration::IsDivergent(void) const noexcept {
 
 std::string_view ParsedDeclaration::BindingPattern(void) const noexcept {
   if (impl->binding_pattern.empty()) {
-    impl->binding_pattern.reserve(impl->parameters.size());
-    for (const auto &param : impl->parameters) {
-      switch (ParsedParameter(param.get()).Binding()) {
+    impl->binding_pattern.reserve(impl->parameters.Size());
+    for (ParsedParameterImpl * const param : impl->parameters) {
+      switch (ParsedParameter(param).Binding()) {
         case ParameterBinding::kImplicit:
           impl->binding_pattern.push_back('i');
           break;
@@ -789,31 +862,24 @@ std::string_view ParsedDeclaration::BindingPattern(void) const noexcept {
 // Return the declaration associated with a clause. This is the first
 // parsed declaration, so it could be in a different module.
 ParsedDeclaration ParsedDeclaration::Of(ParsedClause clause) {
-  return ParsedDeclaration(clause.impl->declaration);
+  return ParsedDeclaration(
+      clause.impl->declaration->context->redeclarations[0]);
 }
 
 // Return the declaration associated with a predicate. This is the first
 // parsed declaration, so it could be in a different module.
 ParsedDeclaration ParsedDeclaration::Of(ParsedPredicate pred) {
-  return ParsedDeclaration(pred.impl->declaration);
+  return ParsedDeclaration(pred.impl->declaration->context->redeclarations[0]);
 }
 
-// Create a new variable in this context of this clause.
-ParsedVariable ParsedClause::CreateVariable(Token name, TypeLoc type) {
-  assert(type.UnderlyingKind() != TypeKind::kInvalid);
-  auto var = new ParsedVariableImpl;
-  var->type = type;
-  var->name = name.IsValid()
-                  ? name
-                  : Token::Synthetic(Lexeme::kIdentifierUnnamedVariable,
-                                     SpellingRange());
-  var->context = std::make_shared<parse::VariableContext>(impl, nullptr);
-  impl->body_variables.emplace_back(var);
-  return ParsedVariable(var);
+// Return the declaration associated with a parameter. This is the first
+// parsed declaration, so it could be in a different module.
+ParsedDeclaration ParsedDeclaration::Containing(ParsedParameter param) {
+  return ParsedDeclaration(param.impl->decl->context->redeclarations[0]);
 }
 
 ParsedClause ParsedClause::Containing(ParsedVariable var) noexcept {
-  return ParsedClause(var.impl->context->clause);
+  return ParsedClause(var.impl->clause);
 }
 
 ParsedClause ParsedClause::Containing(ParsedPredicate pred) noexcept {
@@ -821,11 +887,11 @@ ParsedClause ParsedClause::Containing(ParsedPredicate pred) noexcept {
 }
 
 ParsedClause ParsedClause::Containing(ParsedAssignment assignment) noexcept {
-  return ParsedClause(assignment.impl->lhs.UseBase::used_var->context->clause);
+  return ParsedClause(assignment.impl->lhs->clause);
 }
 
 ParsedClause ParsedClause::Containing(ParsedComparison compare) noexcept {
-  return ParsedClause(compare.impl->lhs.UseBase::used_var->context->clause);
+  return ParsedClause(compare.impl->lhs->clause);
 }
 
 ParsedClause ParsedClause::Containing(ParsedAggregate agg) noexcept {
@@ -835,13 +901,6 @@ ParsedClause ParsedClause::Containing(ParsedAggregate agg) noexcept {
 // Is this a deletion clause?
 bool ParsedClause::IsDeletion(void) const noexcept {
   return impl->negation.IsValid();
-}
-
-// Return the total number of uses of `var` in its clause body.
-unsigned ParsedClause::NumUsesInBody(ParsedVariable var) noexcept {
-  return static_cast<unsigned>(var.impl->context->assignment_uses.size() +
-                               var.impl->context->comparison_uses.size() +
-                               var.impl->context->argument_uses.size());
 }
 
 DisplayRange ParsedClause::SpellingRange(void) const noexcept {
@@ -877,84 +936,35 @@ bool ParsedClause::CrossProductsArePermitted(void) const noexcept {
 
 // Returns the arity of this clause.
 unsigned ParsedClause::Arity(void) const noexcept {
-  return static_cast<unsigned>(impl->head_variables.size());
+  return impl->head_variables.Size();
 }
 
 // Return the `n`th parameter of this clause.
 ParsedVariable ParsedClause::NthParameter(unsigned n) const noexcept {
   assert(n < Arity());
-  return ParsedVariable(impl->head_variables[n].get());
+  return ParsedVariable(impl->head_variables[n]);
 }
 
 // All variables used in the body of the clause.
-NodeRange<ParsedVariable> ParsedClause::Parameters(void) const {
-  if (impl->head_variables.empty()) {
-    return NodeRange<ParsedVariable>();
-  } else {
-    return NodeRange<ParsedVariable>(impl->head_variables.front().get());
-  }
-}
+DEFINED_RANGE(ParsedClause, Parameters, ParsedVariable, head_variables)
 
 // All body_variables used in the clause. Some variables might be repeated.
-NodeRange<ParsedVariable> ParsedClause::Variables(void) const {
-  if (impl->body_variables.empty()) {
-    return NodeRange<ParsedVariable>();
-  } else {
-    return NodeRange<ParsedVariable>(impl->body_variables.front().get());
-  }
-}
-
-// All instances of `var` in its clause.
-NodeRange<ParsedVariable> ParsedClause::Uses(ParsedVariable var) {
-  return NodeRange<ParsedVariable>(var.impl->context->first_use,
-                                   static_cast<intptr_t>(__builtin_offsetof(
-                                       ParsedVariableImpl, next_use)));
-}
+DEFINED_RANGE(ParsedClause, Variables, ParsedVariable, body_variables)
 
 // All positive predicates in the clause.
-NodeRange<ParsedPredicate> ParsedClause::PositivePredicates(void) const {
-  if (!impl->positive_predicates.empty()) {
-    return NodeRange<ParsedPredicate>(impl->positive_predicates.front().get());
-  } else {
-    return NodeRange<ParsedPredicate>();
-  }
-}
+DEFINED_RANGE(ParsedClause, PositivePredicates, ParsedPredicate, positive_predicates)
 
 // All negated predicates in the clause.
-NodeRange<ParsedPredicate> ParsedClause::NegatedPredicates(void) const {
-  if (!impl->negated_predicates.empty()) {
-    return NodeRange<ParsedPredicate>(impl->negated_predicates.front().get());
-  } else {
-    return NodeRange<ParsedPredicate>();
-  }
-}
+DEFINED_RANGE(ParsedClause, NegatedPredicates, ParsedPredicate, negated_predicates)
 
 // All assignments of variables to constant literals.
-NodeRange<ParsedAssignment> ParsedClause::Assignments(void) const {
-  if (!impl->assignments.empty()) {
-    return NodeRange<ParsedAssignment>(impl->assignments.front().get());
-  } else {
-    return NodeRange<ParsedAssignment>();
-  }
-}
+DEFINED_RANGE(ParsedClause, Assignments, ParsedAssignment, assignments)
 
 // All comparisons between two variables.
-NodeRange<ParsedComparison> ParsedClause::Comparisons(void) const {
-  if (!impl->comparisons.empty()) {
-    return NodeRange<ParsedComparison>(impl->comparisons.front().get());
-  } else {
-    return NodeRange<ParsedComparison>();
-  }
-}
+DEFINED_RANGE(ParsedClause, Comparisons, ParsedComparison, comparisons)
 
 // All aggregations.
-NodeRange<ParsedAggregate> ParsedClause::Aggregates(void) const {
-  if (!impl->aggregates.empty()) {
-    return NodeRange<ParsedAggregate>(impl->aggregates.front().get());
-  } else {
-    return NodeRange<ParsedAggregate>();
-  }
-}
+DEFINED_RANGE(ParsedClause, Aggregates, ParsedAggregate, aggregates)
 
 DisplayRange ParsedClauseHead::SpellingRange(void) const noexcept {
   return DisplayRange(clause.impl->name.Position(),
@@ -976,31 +986,12 @@ DisplayRange ParsedQuery::SpellingRange(void) const noexcept {
   return DisplayRange(impl->directive_pos, last_tok.NextPosition());
 }
 
-NodeRange<ParsedQuery> ParsedQuery::Redeclarations(void) const {
-  return NodeRange<ParsedQuery>(reinterpret_cast<ParsedQueryImpl *>(
-                                    impl->context->redeclarations.front()),
-                                static_cast<intptr_t>(__builtin_offsetof(
-                                    ParsedQueryImpl, next_redecl)));
-}
-
-NodeRange<ParsedClause> ParsedQuery::Clauses(void) const {
-  return impl->Clauses();
-}
-
-NodeRange<ParsedPredicate> ParsedQuery::PositiveUses(void) const {
-  return impl->PositiveUses();
-}
-
-NodeRange<ParsedPredicate> ParsedQuery::NegativeUses(void) const {
-  return impl->NegativeUses();
-}
-
 unsigned ParsedQuery::NumPositiveUses(void) const noexcept {
-  return static_cast<unsigned>(impl->context->positive_uses.size());
+  return impl->context->positive_uses.Size();
 }
 
 unsigned ParsedQuery::NumNegatedUses(void) const noexcept {
-  return static_cast<unsigned>(impl->context->negated_uses.size());
+  return impl->context->negated_uses.Size();
 }
 
 const ParsedExport &ParsedExport::From(const ParsedDeclaration &decl) {
@@ -1013,31 +1004,12 @@ DisplayRange ParsedExport::SpellingRange(void) const noexcept {
   return DisplayRange(impl->directive_pos, last_tok.NextPosition());
 }
 
-NodeRange<ParsedExport> ParsedExport::Redeclarations(void) const {
-  return NodeRange<ParsedExport>(reinterpret_cast<ParsedExportImpl *>(
-                                     impl->context->redeclarations.front()),
-                                 static_cast<intptr_t>(__builtin_offsetof(
-                                     ParsedExportImpl, next_redecl)));
-}
-
-NodeRange<ParsedClause> ParsedExport::Clauses(void) const {
-  return impl->Clauses();
-}
-
-NodeRange<ParsedPredicate> ParsedExport::PositiveUses(void) const {
-  return impl->PositiveUses();
-}
-
-NodeRange<ParsedPredicate> ParsedExport::NegativeUses(void) const {
-  return impl->NegativeUses();
-}
-
 unsigned ParsedExport::NumPositiveUses(void) const noexcept {
-  return static_cast<unsigned>(impl->context->positive_uses.size());
+  return impl->context->positive_uses.Size();
 }
 
 unsigned ParsedExport::NumNegatedUses(void) const noexcept {
-  return static_cast<unsigned>(impl->context->negated_uses.size());
+  return impl->context->negated_uses.Size();
 }
 
 const ParsedLocal &ParsedLocal::From(const ParsedDeclaration &decl) {
@@ -1050,35 +1022,16 @@ DisplayRange ParsedLocal::SpellingRange(void) const noexcept {
   return DisplayRange(impl->directive_pos, last_tok.NextPosition());
 }
 
-NodeRange<ParsedLocal> ParsedLocal::Redeclarations(void) const {
-  return NodeRange<ParsedLocal>(reinterpret_cast<ParsedLocalImpl *>(
-                                    impl->context->redeclarations.front()),
-                                static_cast<intptr_t>(__builtin_offsetof(
-                                    ParsedLocalImpl, next_redecl)));
-}
-
-NodeRange<ParsedPredicate> ParsedLocal::PositiveUses(void) const {
-  return impl->PositiveUses();
-}
-
-NodeRange<ParsedPredicate> ParsedLocal::NegativeUses(void) const {
-  return impl->NegativeUses();
-}
-
 unsigned ParsedLocal::NumPositiveUses(void) const noexcept {
-  return static_cast<unsigned>(impl->context->positive_uses.size());
+  return impl->context->positive_uses.Size();
 }
 
 unsigned ParsedLocal::NumNegatedUses(void) const noexcept {
-  return static_cast<unsigned>(impl->context->negated_uses.size());
+  return impl->context->negated_uses.Size();
 }
 
 bool ParsedLocal::IsInline(void) const noexcept {
   return impl->inline_attribute.Lexeme() == Lexeme::kPragmaPerfInline;
-}
-
-NodeRange<ParsedClause> ParsedLocal::Clauses(void) const {
-  return impl->Clauses();
 }
 
 bool ParsedFunctor::IsAggregate(void) const noexcept {
@@ -1098,8 +1051,8 @@ bool ParsedFunctor::IsPure(void) const noexcept {
 // `FunctorRange::kZeroOrOne`.
 bool ParsedFunctor::IsFilter(void) const noexcept {
   if (impl->is_pure && impl->range == FunctorRange::kZeroOrOne) {
-    for (const auto &param : impl->parameters) {
-      if (ParameterBinding::kFree == ParsedParameter(param.get()).Binding()) {
+    for (ParsedParameterImpl * const param : impl->parameters) {
+      if (ParameterBinding::kFree == ParsedParameter(param).Binding()) {
         return false;
       }
     }
@@ -1124,27 +1077,12 @@ DisplayRange ParsedFunctor::SpellingRange(void) const noexcept {
   return DisplayRange(impl->directive_pos, last_tok.NextPosition());
 }
 
-NodeRange<ParsedFunctor> ParsedFunctor::Redeclarations(void) const {
-  return NodeRange<ParsedFunctor>(reinterpret_cast<ParsedFunctorImpl *>(
-                                      impl->context->redeclarations.front()),
-                                  static_cast<intptr_t>(__builtin_offsetof(
-                                      ParsedFunctorImpl, next_redecl)));
-}
-
-NodeRange<ParsedParameter> ParsedFunctor::Parameters(void) const {
-  if (impl->parameters.empty()) {
-    return NodeRange<ParsedParameter>();
-  } else {
-    return NodeRange<ParsedParameter>(impl->parameters.front().get());
-  }
-}
-
-NodeRange<ParsedPredicate> ParsedFunctor::PositiveUses(void) const {
-  return impl->PositiveUses();
-}
-
 unsigned ParsedFunctor::NumPositiveUses(void) const noexcept {
-  return static_cast<unsigned>(impl->context->positive_uses.size());
+  return impl->context->positive_uses.Size();
+}
+
+unsigned ParsedFunctor::NumNegatedUses(void) const noexcept {
+  return impl->context->negated_uses.Size();
 }
 
 FunctorRange ParsedFunctor::Range(void) const noexcept {
@@ -1161,33 +1099,10 @@ DisplayRange ParsedMessage::SpellingRange(void) const noexcept {
   return DisplayRange(impl->directive_pos, last_tok.NextPosition());
 }
 
-NodeRange<ParsedParameter> ParsedMessage::Parameters(void) const {
-  if (impl->parameters.empty()) {
-    return NodeRange<ParsedParameter>();
-  } else {
-    return NodeRange<ParsedParameter>(impl->parameters.front().get());
-  }
-}
-
-NodeRange<ParsedMessage> ParsedMessage::Redeclarations(void) const {
-  return NodeRange<ParsedMessage>(reinterpret_cast<ParsedMessageImpl *>(
-                                      impl->context->redeclarations.front()),
-                                  static_cast<intptr_t>(__builtin_offsetof(
-                                      ParsedMessageImpl, next_redecl)));
-}
-
-NodeRange<ParsedClause> ParsedMessage::Clauses(void) const {
-  return impl->Clauses();
-}
-
-NodeRange<ParsedPredicate> ParsedMessage::PositiveUses(void) const {
-  return impl->PositiveUses();
-}
-
 // Returns `true` if this message is the head of any clause, i.e. if there
 // are rules that publish this message.
 bool ParsedMessage::IsPublished(void) const noexcept {
-  return !impl->context->clauses.empty();
+  return !impl->context->clauses.Empty();
 }
 
 // Can this message receive/publish removals?
@@ -1200,11 +1115,11 @@ Token ParsedMessage::Differential(void) const noexcept {
 }
 
 unsigned ParsedMessage::NumPositiveUses(void) const noexcept {
-  return static_cast<unsigned>(impl->context->positive_uses.size());
+  return impl->context->positive_uses.Size();
 }
 
 unsigned ParsedMessage::NumNegatedUses(void) const noexcept {
-  return static_cast<unsigned>(impl->context->negated_uses.size());
+  return impl->context->negated_uses.Size();
 }
 
 DisplayRange ParsedModule::SpellingRange(void) const noexcept {
@@ -1232,92 +1147,15 @@ uint64_t ParsedModule::Id(void) const noexcept {
 #endif
 }
 
-NodeRange<ParsedQuery> ParsedModule::Queries(void) const {
-  if (impl->queries.empty()) {
-    return NodeRange<ParsedQuery>();
-  } else {
-    return NodeRange<ParsedQuery>(impl->queries.front().get());
-  }
-}
-
-NodeRange<ParsedImport> ParsedModule::Imports(void) const {
-  if (impl->imports.empty()) {
-    return NodeRange<ParsedImport>();
-  } else {
-    return NodeRange<ParsedImport>(impl->imports.front().get());
-  }
-}
-
-NodeRange<ParsedInline> ParsedModule::Inlines(void) const {
-  if (impl->inlines.empty()) {
-    return NodeRange<ParsedInline>();
-  } else {
-    return NodeRange<ParsedInline>(impl->inlines.front().get());
-  }
-}
-
-NodeRange<ParsedLocal> ParsedModule::Locals(void) const {
-  if (impl->locals.empty()) {
-    return NodeRange<ParsedLocal>();
-  } else {
-    return NodeRange<ParsedLocal>(impl->locals.front().get());
-  }
-}
-
-NodeRange<ParsedExport> ParsedModule::Exports(void) const {
-  if (impl->exports.empty()) {
-    return NodeRange<ParsedExport>();
-  } else {
-    return NodeRange<ParsedExport>(impl->exports.front().get());
-  }
-}
-
-NodeRange<ParsedMessage> ParsedModule::Messages(void) const {
-  if (impl->messages.empty()) {
-    return NodeRange<ParsedMessage>();
-  } else {
-    return NodeRange<ParsedMessage>(impl->messages.front().get());
-  }
-}
-
-NodeRange<ParsedFunctor> ParsedModule::Functors(void) const {
-  if (impl->functors.empty()) {
-    return NodeRange<ParsedFunctor>();
-  } else {
-    return NodeRange<ParsedFunctor>(impl->functors.front().get());
-  }
-}
-
-NodeRange<ParsedClause> ParsedModule::Clauses(void) const {
-  if (impl->clauses.empty()) {
-    return NodeRange<ParsedClause>();
-  } else {
-    return NodeRange<ParsedClause>(
-        impl->clauses.front(),
-        __builtin_offsetof(ParsedClauseImpl, next_in_module));
-  }
-}
-
-NodeRange<ParsedClause> ParsedModule::DeletionClauses(void) const {
-  if (impl->deletion_clauses.empty()) {
-    return NodeRange<ParsedClause>();
-  } else {
-    return NodeRange<ParsedClause>(
-        impl->deletion_clauses.front(),
-        __builtin_offsetof(ParsedClauseImpl, next_in_module));
-  }
-}
-
-NodeRange<ParsedForeignType> ParsedModule::ForeignTypes(void) const {
-
-  if (impl->root_module->types.empty()) {
-    return NodeRange<ParsedForeignType>();
-  } else {
-    return NodeRange<ParsedForeignType>(
-        impl->root_module->types.front().get(),
-        __builtin_offsetof(ParsedForeignTypeImpl, next));
-  }
-}
+DEFINED_RANGE(ParsedModule, Queries, ParsedQuery, queries)
+DEFINED_RANGE(ParsedModule, Imports, ParsedImport, imports)
+DEFINED_RANGE(ParsedModule, Inlines, ParsedInline, inlines)
+DEFINED_RANGE(ParsedModule, Locals, ParsedLocal, locals)
+DEFINED_RANGE(ParsedModule, Exports, ParsedExport, exports)
+DEFINED_RANGE(ParsedModule, Messages, ParsedMessage, messages)
+DEFINED_RANGE(ParsedModule, Functors, ParsedFunctor, functors)
+DEFINED_RANGE(ParsedModule, Clauses, ParsedClause, clauses)
+DEFINED_RANGE(ParsedModule, ForeignTypes, ParsedForeignType, root_module->foreign_types)
 
 // Try to return the foreign type associated with a particular type location
 // or type kind.
@@ -1439,17 +1277,11 @@ ParsedForeignType::Constructor(Language lang_) const noexcept {
 }
 
 // List of constants defined on this type for a particular language.
-NodeRange<ParsedForeignConstant>
+UsedNodeRange<ParsedForeignConstant>
 ParsedForeignType::Constants(Language lang_) const noexcept {
   const auto lang = static_cast<unsigned>(lang_);
   const auto &info = impl->info[lang];
-  if (info.constants.empty()) {
-    return NodeRange<ParsedForeignConstant>();
-  } else {
-    return NodeRange<ParsedForeignConstant>(
-        info.constants.front().get(),
-        __builtin_offsetof(ParsedForeignConstantImpl, next));
-  }
+  return {info.constants->begin(), info.constants->end()};
 }
 
 ParsedForeignConstant ParsedForeignConstant::From(const ParsedLiteral &lit) {
@@ -1496,12 +1328,8 @@ std::string_view ParsedInline::CodeToInline(void) const noexcept {
   return impl->language;
 }
 
-bool ParsedInline::IsPrologue(void) const noexcept {
-  return impl->is_prologue;
-}
-
-bool ParsedInline::IsEpilogue(void) const noexcept {
-  return !impl->is_prologue;
+InlineLocation ParsedInline::Location(void) const noexcept {
+  return impl->location;
 }
 
 }  // namespace hyde

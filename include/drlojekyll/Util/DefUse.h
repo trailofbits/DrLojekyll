@@ -176,7 +176,7 @@ class UseList {
     return &(uses.data()[uses.size()]);
   }
 
-  void AddUse(Def<T> *def);
+  void AddUse(T *def);
 
   unsigned Size(void) const noexcept {
     return static_cast<unsigned>(uses.size());
@@ -678,13 +678,13 @@ void UseList<T>::Clear(void) {
 }
 
 template <typename T>
-void UseList<T>::AddUse(Def<T> *def) {
+void UseList<T>::AddUse(T *def) {
   if (def) {
     Use<T> *new_use = nullptr;
     if (is_weak) {
-      new_use = def->CreateWeakUse(owner);
+      new_use = reinterpret_cast<Use<T> *>(def->CreateWeakUse(owner));
     } else {
-      new_use = def->CreateUse(owner);
+      new_use = reinterpret_cast<Use<T> *>(def->CreateUse(owner));
     }
     new_use->index = static_cast<unsigned>(uses.size());
     uses.push_back(new_use);
@@ -972,7 +972,7 @@ class UsedNodeIterator {
   static_assert(std::is_same_v<T, PublicType>);
 
   inline UsedNodeIterator(void) : it(nullptr) {}
-  inline UsedNodeIterator(UseListIterator<T> it_) : it(it_) {}
+  inline UsedNodeIterator(UseListIterator<PrivateType> it_) : it(it_) {}
 
   inline UsedNodeIterator<T> &operator++(void) noexcept {
     ++it;
@@ -1004,13 +1004,18 @@ class UsedNodeIterator {
   }
 
  private:
-  UseListIterator<T> it;
+  UseListIterator<PrivateType> it;
 };
 
 template <typename T>
 class DefinedNodeIterator {
  public:
-  inline DefinedNodeIterator(DefListIterator<T> it_) : it(it_) {}
+
+  using PublicType = typename T::PublicType;
+  using PrivateType = typename T::PrivateType;
+  using NodeType = Node<PublicType, PrivateType>;
+
+  inline DefinedNodeIterator(DefListIterator<PrivateType> it_) : it(it_) {}
 
   inline DefinedNodeIterator<T> &operator++(void) noexcept {
     ++it;
@@ -1042,7 +1047,7 @@ class DefinedNodeIterator {
   }
 
  private:
-  DefListIterator<T> it;
+  DefListIterator<PrivateType> it;
 };
 
 template <typename T>

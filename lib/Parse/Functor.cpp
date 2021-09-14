@@ -147,22 +147,21 @@ void ParserImpl::ParseFunctor(ParsedModuleImpl *module) {
         }
 
       case 5:
-        params.emplace_back(param_binding, param_type, param_name);
         if (params.size() == kMaxArity) {
-          auto err = context->error_log.Append(
-              scope_range, DisplayRange(param_binding.Position(),
-                                        param_name.NextPosition()));
-          err << "Too many parameters to #functor '" << name
+          DisplayRange err_range(param_binding.Position(),
+                                 param_name.NextPosition());
+          context->error_log.Append(scope_range, err_range)
+              << "Too many parameters to functor '" << name
               << "'; the maximum number of parameters is " << kMaxArity;
           return;
         }
 
+        params.emplace_back(param_binding, param_type, param_name);
+        param_binding = Token();
+        param_type = Token();
+        param_name = Token();
+
         if (Lexeme::kPuncComma == lexeme) {
-
-          param_binding = Token();
-          param_type = Token();
-          param_name = Token();
-
           state = 2;
           continue;
 
@@ -174,6 +173,8 @@ void ParserImpl::ParseFunctor(ParsedModuleImpl *module) {
             return;
           }
 
+          module->functors.AddUse(functor);
+
           functor->is_aggregate =
               last_aggregate.IsValid() || last_summary.IsValid();
           functor->rparen = tok;
@@ -181,11 +182,13 @@ void ParserImpl::ParseFunctor(ParsedModuleImpl *module) {
           functor->name = name;
 
           for (auto [binding, type, name] : params) {
-            ParsedParameterImpl * const param = functor->parameters.Create();
+            ParsedParameterImpl * const param =
+                functor->parameters.Create(functor);
             param->opt_binding = binding;
             param->opt_type = type;
             param->name = name;
             param->parsed_opt_type = type.IsValid();
+            param->index = functor->parameters.Size() - 1u;
           }
 
           state = 6;
@@ -399,7 +402,7 @@ void ParserImpl::ParseFunctor(ParsedModuleImpl *module) {
   // If this is a redeclaration, check it for consistency against prior
   // declarations. Functors require special handling for things like aggregate/
   // summary parameters.
-  } else if (1 < functor->context->redeclarations.Size()) {
+  } else if (1u < functor->context->redeclarations.Size()) {
 
     const auto redecl = functor->context->redeclarations[0];
     DisplayRange redecl_range(redecl->parsed_tokens.front().Position(),
@@ -411,7 +414,7 @@ void ParserImpl::ParseFunctor(ParsedModuleImpl *module) {
     // Didn't match the purity.
     if (functor->is_pure && !redecl->is_pure) {
       auto err = context->error_log.Append(scope_range, tok.NextPosition());
-      err << "Missing 'impure' attribute here to match with prior declaration "
+      err << "Missing '@impure' attribute here to match with prior declaration "
           << "of functor '" << name << "/" << arity << "'";
 
       err.Note(redecl_range)
@@ -422,7 +425,7 @@ void ParserImpl::ParseFunctor(ParsedModuleImpl *module) {
     // Didn't match the purity.
     } else if (!functor->is_pure && redecl->is_pure) {
       auto err = context->error_log.Append(scope_range, impure.SpellingRange());
-      err << "Unexpected 'impure' attribute here doesn't match with prior "
+      err << "Unexpected '@impure' attribute here doesn't match with prior "
           << "declaration of functor '" << name << "/" << arity << "'";
 
       err.Note(redecl_range)
@@ -455,15 +458,10 @@ void ParserImpl::ParseFunctor(ParsedModuleImpl *module) {
         return;
       }
     }
-
-    // Do generic consistency checking.
-    FinalizeDeclAndCheckConsistency(functor);
-
-  // This is the first time we're adding the functor.
-  } else {
-    module->functors.AddUse(functor);
   }
-}
 
+  // Do generic consistency checking.
+  FinalizeDeclAndCheckConsistency(functor);
+}
 
 }  // namespace hyde

@@ -37,13 +37,11 @@ static std::vector<ParsedInline> Inlines(ParsedModule module) {
 
 static std::vector<ParsedFunctor> Functors(ParsedModule module) {
   std::vector<ParsedFunctor> functors;
-  std::unordered_set<std::string> seen;
   for (ParsedModule sub_module : ParsedModuleIterator(module)) {
-    for (ParsedFunctor first_func : sub_module.Functors()) {
-      for (ParsedFunctor func : first_func.Redeclarations()) {
-        std::stringstream ss;
-        ss << func.Id() << ':' << ParsedDeclaration(func).BindingPattern();
-        if (auto [it, inserted] = seen.emplace(ss.str()); inserted) {
+    for (ParsedFunctor func : sub_module.Functors()) {
+      ParsedDeclaration decl(func);
+      if (decl.IsFirstDeclaration()) {
+        for (auto redecl : decl.UniqueRedeclarations()) {
           functors.push_back(func);
         }
       }

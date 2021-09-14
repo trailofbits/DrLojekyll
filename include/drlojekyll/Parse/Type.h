@@ -42,6 +42,8 @@ enum class Language : unsigned;
 // Type and location of that type.
 class TypeLoc {
  public:
+  inline TypeLoc(void) : kind(TypeKind::kInvalid) {}
+
   TypeLoc(const Token &tok);
   TypeLoc(const ParsedForeignType &ft);
   TypeLoc(TypeKind kind_);
@@ -112,8 +114,6 @@ class TypeLoc {
  private:
   template <typename, typename>
   friend class Node;
-
-  inline TypeLoc(void) : kind(TypeKind::kInvalid) {}
 
   TypeKind kind;
   DisplayRange range;

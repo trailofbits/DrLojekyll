@@ -23,9 +23,12 @@ void ParserImpl::ParseQuery(ParsedModuleImpl *module) {
   //                                                  6
 
   int state = 0;
-  std::unique_ptr<ParsedQueryImpl> query;
-  std::unique_ptr<ParsedParameterImpl> param;
-  std::vector<std::unique_ptr<ParsedParameterImpl>> params;
+  ParsedQueryImpl *query = nullptr;
+
+  Token param_binding;
+  Token param_type;
+  Token param_name;
+  std::vector<std::tuple<Token, Token, Token>> params;
 
   DisplayPosition next_pos;
   Token name;
@@ -55,7 +58,7 @@ void ParserImpl::ParseQuery(ParsedModuleImpl *module) {
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected atom here (lower case identifier) for the name of "
-              << "the #query being declared, got '" << tok << "' instead";
+              << "the query being declared, got '" << tok << "' instead";
           return;
         }
       case 1:
@@ -67,77 +70,68 @@ void ParserImpl::ParseQuery(ParsedModuleImpl *module) {
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected opening parenthesis here to begin parameter list of "
-              << "#query '" << name << "', but got '" << tok << "' instead";
+              << "query '" << name << "', but got '" << tok << "' instead";
           return;
         }
 
       case 2:
-        if (Lexeme::kKeywordBound == lexeme) {
-          param.reset(new ParsedParameterImpl);
-          param->opt_binding = tok;
-          state = 3;
-          continue;
-
-        } else if (Lexeme::kKeywordFree == lexeme) {
-          param.reset(new ParsedParameterImpl);
-          param->opt_binding = tok;
+        if (Lexeme::kKeywordBound == lexeme ||
+            Lexeme::kKeywordFree == lexeme) {
+          param_binding = tok;
           state = 3;
           continue;
 
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected binding specifier ('bound' or 'free') in parameter "
-              << "declaration of #query '" << name << "', "
+              << "declaration of query '" << name << "', "
               << "but got '" << tok << "' instead";
           return;
         }
 
       case 3:
         if (tok.IsType()) {
-          param->opt_type = tok;
-          param->parsed_opt_type = true;
+          param_type = tok;
           state = 4;
           continue;
 
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected type name here for parameter in #query '" << name
+              << "Expected type name here for parameter in query '" << name
               << "', but got '" << tok << "' instead";
           return;
         }
 
       case 4:
         if (Lexeme::kIdentifierVariable == lexeme) {
-          param->name = tok;
+          param_name = tok;
           state = 5;
           continue;
 
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected named variable here (capitalized identifier) as a "
-              << "parameter name of #query '" << name << "', but got '" << tok
+              << "parameter name of query '" << name << "', but got '" << tok
               << "' instead";
           return;
         }
 
       case 5:
-        clause_toks.push_back(param->name);
+        clause_toks.push_back(param_name);
 
-        // Add the parameter in.
-        if (!params.empty()) {
-          params.back()->next = param.get();
-
-          if (params.size() == kMaxArity) {
-            const auto err_range = ParsedParameter(param.get()).SpellingRange();
-            context->error_log.Append(scope_range, err_range)
-                << "Too many parameters to #query '" << name
-                << "'; the maximum number of parameters is " << kMaxArity;
-            return;
-          }
+        if (params.size() == kMaxArity) {
+          DisplayRange err_range(param_binding.Position(),
+                                 param_name.NextPosition());
+          context->error_log.Append(scope_range, err_range)
+              << "Too many parameters to query '" << name
+              << "'; the maximum number of parameters is " << kMaxArity;
+          return;
         }
 
-        param->index = static_cast<unsigned>(params.size());
-        params.push_back(std::move(param));
+        params.emplace_back(param_binding, param_type, param_name);
+        param_binding = Token();
+        param_type = Token();
+        param_name = Token();
 
         if (Lexeme::kPuncComma == lexeme) {
           clause_toks.push_back(tok);
@@ -146,19 +140,31 @@ void ParserImpl::ParseQuery(ParsedModuleImpl *module) {
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
           clause_toks.push_back(tok);
-          query.reset(AddDecl<ParsedQuery>(module, DeclarationKind::kQuery,
-                                           name, params.size()));
+          query = AddDecl<ParsedQuery>(module, DeclarationKind::kQuery,
+                                       name, params.size());
           if (!query) {
             return;
-
-          } else {
-            query->rparen = tok;
-            query->name = name;
-            query->parameters.swap(params);
-            query->directive_pos = sub_tokens.front().Position();
-            state = 6;
-            continue;
           }
+
+          module->queries.AddUse(query);
+
+          // Add the parameters in.
+          for (auto [p_binding, p_type, p_name] : params) {
+            ParsedParameterImpl * const param = query->parameters.Create(query);
+            param->opt_binding = p_binding;
+            param->opt_type = p_type;
+            param->parsed_opt_type = param->opt_type.IsValid();
+            param->name = p_name;
+            param->index = query->parameters.Size() - 1u;
+          }
+
+          params.clear();
+
+          query->rparen = tok;
+          query->name = name;
+          query->directive_pos = sub_tokens.front().Position();
+          state = 6;
+          continue;
 
         } else {
           context->error_log.Append(scope_range, tok_range)
@@ -189,7 +195,8 @@ void ParserImpl::ParseQuery(ParsedModuleImpl *module) {
           } else {
             context->error_log.Append(scope_range,
                                       clause_toks.back().NextPosition())
-                << "Declaration of '" << query->name
+                << "Declaration of query '" << query->name
+                << "/" << query->parameters.Size()
                 << "' containing an embedded clause does not end with a period";
             state = 8;
             continue;
@@ -201,8 +208,8 @@ void ParserImpl::ParseQuery(ParsedModuleImpl *module) {
         DisplayRange err_range(tok.Position(),
                                sub_tokens.back().NextPosition());
         context->error_log.Append(scope_range, err_range)
-            << "Unexpected tokens following declaration of the '" << name
-            << "' #query ";
+            << "Unexpected tokens following declaration of query '" << name
+            << "/" << query->parameters.Size() << "'";
         state = 8;  // Ignore further errors, but add the query in.
         continue;
       }
@@ -216,11 +223,11 @@ void ParserImpl::ParseQuery(ParsedModuleImpl *module) {
         << "Incomplete query declaration; the declaration must end with a "
         << "period; last token was " << tok;
 
-    RemoveDecl<ParsedQuery>(std::move(query));
+    RemoveDecl(query);
+
   } else {
-    const auto decl_for_clause = query.get();
-    FinalizeDeclAndCheckConsistency<ParsedQuery>(module->queries,
-                                                 std::move(query));
+    const auto decl_for_clause = query;
+    FinalizeDeclAndCheckConsistency(query);
 
     // If we parsed a `:` after the head of the `#query` then
     // go parse the attached bodies recursively.

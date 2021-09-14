@@ -71,11 +71,11 @@ class NodeIterator {
   NodeIterator<T> &operator=(const NodeIterator<T> &) noexcept = default;
   NodeIterator<T> &operator=(NodeIterator<T> &&) noexcept = default;
 
-  T operator*(void) const {
-    return T(impl);
+  PublicType operator*(void) const {
+    return PublicType(impl);
   }
 
-  T operator->(void) const = delete;
+  PublicType operator->(void) const = delete;
 
   bool operator==(NodeIterator<T> that) const {
     return impl == that.impl;
@@ -86,26 +86,26 @@ class NodeIterator {
   }
 
   inline NodeIterator<T> &operator++(void) {
-    impl = reinterpret_cast<NodeType *>(NodeTraverser::Next(impl, offset));
+    impl = reinterpret_cast<PrivateType *>(NodeTraverser::Next(impl, offset));
     return *this;
   }
 
   inline NodeIterator<T> operator++(int) const {
     auto ret = *this;
-    impl = reinterpret_cast<NodeType *>(NodeTraverser::Next(impl, offset));
+    impl = reinterpret_cast<PrivateType *>(NodeTraverser::Next(impl, offset));
     return ret;
   }
 
  private:
   friend class NodeRange<T>;
 
-  inline explicit NodeIterator(NodeType *impl_, intptr_t offset_)
+  inline explicit NodeIterator(PrivateType *impl_, intptr_t offset_)
       : impl(impl_),
         offset(offset_) {}
 
   NodeIterator(void) = default;
 
-  NodeType *impl{nullptr};
+  PrivateType *impl{nullptr};
   intptr_t offset{0};
 };
 
@@ -151,7 +151,7 @@ class NodeRange {
   }
 
  private:
-  template <typename U>
+  template <typename UPub, typename UPriv>
   friend class Node;
 
   NodeType *impl{nullptr};

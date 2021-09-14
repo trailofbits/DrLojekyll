@@ -80,22 +80,19 @@ void ParserImpl::ParseForeignTypeDecl(ParsedModuleImpl *module) {
         if (Lexeme::kIdentifierAtom == lexeme ||
             Lexeme::kIdentifierVariable == lexeme ||
             Lexeme::kIdentifierType == lexeme) {
+          const auto id = tok.IdentifierId();
           name = tok;
           state = 1;
-          auto &found_type = context->foreign_types[tok.IdentifierId()];
+          auto &found_type = context->foreign_types[id];
           if (!found_type) {
-            module->id_to_foreign_type;
-
             alloc_type = module->foreign_types.Create();
             found_type = alloc_type;
             found_type->name = tok.AsForeignType();
 
-            module->root_module->id_to_foreign_type.emplace(
-                tok.IdentifierId(), found_type);
+            module->root_module->id_to_foreign_type.emplace(id, found_type);
 
           } else {
-            assert(module->root_module->id_to_foreign_type.count(
-                tok.IdentifierId()));
+            assert(module->root_module->id_to_foreign_type.count(id));
           }
 
           type = found_type;
@@ -410,22 +407,19 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
           case Lexeme::kTypeIn:
           case Lexeme::kTypeFn: {
             const_val.type = TypeLoc(tok);
-            const auto ident_id = ~static_cast<uint32_t>(const_val.type.Kind());
-            state = 1;
-            type = context->foreign_types[ident_id];
-            if (!type) {
-              type = new ParsedForeignTypeImpl;
+            const auto id = ~static_cast<uint32_t>(const_val.type.Kind());
+            auto &found_type = context->foreign_types[id];
+            if (!found_type) {
+              found_type = module->root_module->builtin_types.Create();
               type->name = tok;
               type->is_built_in = true;
-              context->foreign_types[ident_id] = type;
-
-              if (!module->root_module->types.empty()) {
-                module->root_module->types.back().get()->next = type;
-              }
-              module->root_module->types.emplace_back(type);
             }
+
+            type = found_type;
             assert(type != nullptr);
             const_val.parent = type;
+
+            state = 1;
             continue;
           }
 
@@ -646,7 +640,7 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
   std::vector<bool> has_definition(kNumLanguages);
   auto &const_ptr = context->foreign_constants[const_val.name.IdentifierId()];
   if (const_ptr) {
-    for (auto prev_const = const_ptr; prev_const;
+    for (ParsedForeignConstantImpl *prev_const = const_ptr; prev_const;
          prev_const = prev_const->next_with_same_name) {
 
       has_definition[static_cast<unsigned>(prev_const->lang)] = true;
@@ -659,7 +653,16 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
       } else if (prev_const->can_overide) {
         const_val.next = prev_const->next;
         const_val.next_with_same_name = prev_const->next_with_same_name;
-        *prev_const = const_val;
+
+        prev_const->next = const_val.next;
+        prev_const->next_with_same_name = const_val.next_with_same_name;
+        prev_const->lang = const_val.lang;
+        prev_const->range = const_val.range;
+        prev_const->code = const_val.code;
+        prev_const->name = const_val.name;
+        prev_const->unique = const_val.unique;
+        prev_const->type = const_val.type;
+        prev_const->can_overide = const_val.can_overide;
         return;
 
       } else {
@@ -677,12 +680,17 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
     if (has_definition[i]) {
       continue;
     }
+
     const auto lang = static_cast<Language>(i);
     if (lang == const_val.lang || const_val.lang == Language::kUnknown) {
       auto &info = type->info[i];
-      auto alloc_const = new ParsedForeignConstantImpl(const_val);
+      ParsedForeignConstantImpl *alloc_const =
+          module->root_module->foreign_constants.Create(const_val);
+
       module->root_module->id_to_foreign_constant.emplace(
           const_val.name.IdentifierId(), alloc_const);
+
+      info.constants->AddUse(alloc_const);
 
       assert(alloc_const->type.IsValid());
       assert(alloc_const->parent != nullptr);
@@ -691,10 +699,7 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
       if (lang == Language::kUnknown) {
         alloc_const->can_overide = false;
       }
-      if (!info.constants.empty()) {
-        info.constants.back()->next = alloc_const;
-      }
-      info.constants.emplace_back(alloc_const);
+
       alloc_const->next_with_same_name = const_ptr;
       const_ptr = alloc_const;
       added_def = true;

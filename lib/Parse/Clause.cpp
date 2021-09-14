@@ -22,14 +22,20 @@ static void FindUnrelatedConditions(ParsedClauseImpl *clause,
   const auto clause_head_id = next_id;
   const auto clause_set = new DisjointSet(next_id++);
   sets.emplace_back(clause_set);
-  for (auto &var : clause->head_variables) {
+  for (ParsedVariableImpl * const var : clause->head_variables) {
     var_to_set.emplace(var->Id(), clause_set);
   }
 
   auto do_pred = [&](ParsedPredicateImpl *pred, DisjointSet *set) {
+
+    // Happens to be a convenient place to check.
+    if (pred->declaration->context->kind == DeclarationKind::kMessage) {
+      clause->depends_on_messages = true;
+    }
+
     // This predicate has zero arguments, i.e. it is a condition already.
     // Associated it with the clause head set.
-    if (pred->argument_uses.empty()) {
+    if (pred->argument_uses.Empty()) {
       if (set) {
         set = DisjointSet::Union(set, clause_set);
       } else {
@@ -37,8 +43,7 @@ static void FindUnrelatedConditions(ParsedClauseImpl *clause,
       }
     }
 
-    for (auto &var_use : pred->argument_uses) {
-      ParsedVariableImpl *var = var_use->used_var;
+    for (ParsedVariableImpl *var : pred->argument_uses) {
       auto &found_set = var_to_set[var->Id()];
       if (found_set) {
         if (set) {
@@ -59,23 +64,23 @@ static void FindUnrelatedConditions(ParsedClauseImpl *clause,
     pred_to_set.emplace(pred, set);
   };
 
-  for (const auto &pred : clause->positive_predicates) {
+  for (ParsedPredicateImpl *pred : clause->positive_predicates) {
     do_pred(pred, nullptr);
   }
 
-  for (const auto &pred : clause->negated_predicates) {
+  for (ParsedPredicateImpl *pred : clause->negated_predicates) {
     do_pred(pred, nullptr);
   }
 
-  for (const auto &agg : clause->aggregates) {
+  for (ParsedAggregateImpl * const agg : clause->aggregates) {
     const auto set = new DisjointSet(next_id++);
     sets.emplace_back(set);
-    do_pred(agg->predicate.get(), set);
-    do_pred(agg->functor.get(), set);
+    do_pred(&(agg->predicate), set);
+    do_pred(&(agg->functor), set);
   }
 
-  for (const auto &assign : clause->assignments) {
-    ParsedVariableImpl *lhs_var = assign->lhs.used_var;
+  for (ParsedAssignmentImpl * const assign : clause->assignments) {
+    ParsedVariableImpl *lhs_var = assign->lhs.get();
     auto &set = var_to_set[lhs_var->Id()];
     if (!set) {
       set = new DisjointSet(next_id++);
@@ -83,9 +88,9 @@ static void FindUnrelatedConditions(ParsedClauseImpl *clause,
     }
   }
 
-  for (const auto &cmp : clause->comparisons) {
-    ParsedVariableImpl *lhs_var = cmp->lhs.used_var;
-    ParsedVariableImpl *rhs_var = cmp->rhs.used_var;
+  for (ParsedComparisonImpl * const cmp : clause->comparisons) {
+    ParsedVariableImpl *lhs_var = cmp->lhs.get();
+    ParsedVariableImpl *rhs_var = cmp->rhs.get();
 
     auto &lhs_set = var_to_set[lhs_var->Id()];
     auto &rhs_set = var_to_set[rhs_var->Id()];
@@ -122,7 +127,7 @@ static void FindUnrelatedConditions(ParsedClauseImpl *clause,
 
   // There are no head variables, and there is only one condition set, i.e.
   // we are definition a condition variable.
-  } else if (conditions.size() == 1 && clause->head_variables.empty()) {
+  } else if (conditions.size() == 1 && clause->head_variables.Empty()) {
     return;
   }
 
@@ -132,32 +137,32 @@ static void FindUnrelatedConditions(ParsedClauseImpl *clause,
     err << "The following elements in the body of this clause should be "
         << "factored out into a zero-argument predicate";
 
-    for (const auto &pred : clause->positive_predicates) {
+    for (ParsedPredicateImpl *pred : clause->positive_predicates) {
       if (pred_to_set[pred]->Find() == cond_set) {
         err.Note(clause_range, ParsedPredicate(pred).SpellingRange())
             << "This predicate";
       }
     }
 
-    for (const auto &pred : clause->negated_predicates) {
+    for (ParsedPredicateImpl *pred : clause->negated_predicates) {
       if (pred_to_set[pred]->Find() == cond_set) {
         err.Note(clause_range, ParsedPredicate(pred).SpellingRange())
             << "This negated predicate";
       }
     }
 
-    for (const auto &assign : clause->assignments) {
-      ParsedVariableImpl *lhs_var = assign->lhs.used_var;
+    for (ParsedAssignmentImpl *assign : clause->assignments) {
+      ParsedVariableImpl *lhs_var = assign->lhs.get();
       if (var_to_set[lhs_var->Id()] == cond_set) {
-        err.Note(clause_range, ParsedAssignment(assign.get()).SpellingRange())
+        err.Note(clause_range, ParsedAssignment(assign).SpellingRange())
             << "This assignment";
       }
     }
 
-    for (const auto &cmp : clause->comparisons) {
-      ParsedVariableImpl *lhs_var = cmp->lhs.used_var;
+    for (ParsedComparisonImpl *cmp : clause->comparisons) {
+      ParsedVariableImpl *lhs_var = cmp->lhs.get();
       if (var_to_set[lhs_var->Id()] == cond_set) {
-        err.Note(clause_range, ParsedComparison(cmp.get()).SpellingRange())
+        err.Note(clause_range, ParsedComparison(cmp).SpellingRange())
             << "This comparison";
       }
     }
@@ -170,7 +175,7 @@ static void FindUnrelatedConditions(ParsedClauseImpl *clause,
 void ParserImpl::ParseClause(ParsedModuleImpl *module,
                              ParsedDeclarationImpl *decl) {
 
-  ParsedClauseImpl *clause = module->clauses.Create();
+  ParsedClauseImpl *clause = module->clauses.Create(module);
   prev_named_var.clear();
 
   Token tok;
@@ -203,34 +208,57 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
   ParsedVariableImpl *rhs = nullptr;
   Token compare_op;
 
+  Token pred_name;
+
+  ParsedDeclarationImpl *pred_decl = nullptr;
+  std::vector<ParsedVariableImpl *> pred_vars;
   ParsedPredicateImpl *pred = nullptr;
+  ParsedAggregateImpl *agg = nullptr;
 
   // Link `pred` into `clause`.
   auto link_pred = [&](void) {
-    if (negation_tok.IsValid()) {
-      if (negation_tok.Lexeme() == Lexeme::kPragmaPerfNever) {
-        if (pred->declaration->context->kind == DeclarationKind::kFunctor) {
-          context->error_log.Append(
-              scope_range, ParsedPredicate(pred).SpellingRange())
-              << "Functor applications cannot be negated with '@never'";
+    assert(pred_decl != nullptr);
 
-        } else if (pred->argument_uses.empty()) {
-          context->error_log.Append(
-              scope_range, ParsedPredicate(pred).SpellingRange())
-              << "Zero-argument predicates cannot be negated with '@never'";
-        }
+    if (negation_tok.IsValid() &&
+        negation_tok.Lexeme() == Lexeme::kPragmaPerfNever) {
+      if (pred_decl->context->kind == DeclarationKind::kFunctor) {
+        context->error_log.Append(
+            scope_range, ParsedPredicate(pred).SpellingRange())
+            << "Functor applications cannot be negated with '@never'";
+
+      } else if (pred->argument_uses.Empty()) {
+        context->error_log.Append(
+            scope_range, ParsedPredicate(pred).SpellingRange())
+            << "Zero-argument predicates cannot be negated with '@never'";
       }
-      if (!clause->negated_predicates.empty()) {
-        clause->negated_predicates.back()->next = pred;
-      }
-      clause->negated_predicates.emplace_back(std::move(pred));
-    } else {
-      if (!clause->positive_predicates.empty()) {
-        clause->positive_predicates.back()->next = pred;
-      }
-      clause->positive_predicates.emplace_back(std::move(pred));
     }
+
+    if (!pred) {
+      assert(!agg);
+      if (negation_tok.IsValid()) {
+        pred = clause->negated_predicates.Create(module, clause);
+        pred->negation = negation_tok;
+        pred_decl->context->negated_uses.AddUse(pred);
+
+      } else {
+        pred = clause->positive_predicates.Create(module, clause);
+        pred_decl->context->positive_uses.AddUse(pred);
+      }
+    } else {
+      assert(agg != nullptr);
+    }
+
+    pred->name = pred_name;
+    pred->rparen = tok;
+    pred->declaration = pred_decl;
+    for (ParsedVariableImpl *pred_var : pred_vars) {
+      pred->argument_uses.AddUse(pred_var);
+    }
+
+    pred_name = Token();
     negation_tok = Token();
+    pred_decl = nullptr;
+    pred_vars.clear();
   };
 
   for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);
@@ -293,16 +321,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
       case 2:
         clause_toks.push_back(tok);  // add token even if we error
         if (Lexeme::kIdentifierVariable == lexeme) {
-          auto param_var = CreateVariable(clause, tok, true, false);
-          auto param_use = new Node<ParsedUse<ParsedClause>>(
-              UseKind::kParameter, param_var, clause);
-
-          if (!clause->parameter_uses.empty()) {
-            clause->parameter_uses.back()->next = param_use;
-          }
-          clause->parameter_uses.emplace_back(param_use);
-          param_var->context->parameter_uses.push_back(param_use);
-
+          (void) CreateVariable(clause, tok, true, false);
           state = 3;
           continue;
 
@@ -347,7 +366,9 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
       // We've read a variable/literal/constant, now we expect a comma and more
       // clause head parameters, or a closing paren to end the clause head.
       case 3:
-        clause_toks.push_back(tok);  // add token even if we error
+        clause_toks.push_back(tok);  // Add token even if we error.
+
+        // Advance to the next clause parameter.
         if (Lexeme::kPuncComma == lexeme) {
           state = 2;
           continue;
@@ -523,9 +544,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
 
         // The `pred` in `pred(...)`.
         } else if (Lexeme::kIdentifierAtom == lexeme) {
-
-          pred.reset(new ParsedPredicateImpl(module, clause));
-          pred->name = tok;
+          pred_name = tok;
           state = 12;
           continue;
 
@@ -561,25 +580,16 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
                 << lhs->name.SpellingRange() << "' instead";
           }
 
-          const auto assign = new ParsedAssignmentImpl(lhs);
+          const auto assign = clause->assignments.Create(lhs);
+
           assign->rhs.literal =
               Token::Synthetic(Lexeme::kLiteralTrue, DisplayRange());
-          assign->rhs.assigned_to = lhs;
           assign->rhs.data = "true";
           assign->rhs.type =
               TypeLoc(TypeKind::kBoolean, lhs->name.SpellingRange());
 
-          // Add to the clause's assignment list.
-          if (!clause->assignments.empty()) {
-            clause->assignments.back()->next = assign;
-          }
-          clause->assignments.emplace_back(assign);
+          pred = nullptr;
 
-          // Add to the variable's assignment list. We support the list, but for
-          // these auto-created variables, there can be only one use.
-          lhs->context->assignment_uses.push_back(&(assign->lhs));
-
-          pred.reset();
           if (Lexeme::kPuncComma == lexeme) {
             state = 5;
             continue;
@@ -626,14 +636,12 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
           // If we're doing `<var> = <literal>` then we don't want to explode
           // it into `<temp> = literal, <var> = <temp>`.
           if (Lexeme::kPuncEqual == compare_op.Lexeme()) {
-            auto assign = new ParsedAssignmentImpl(lhs);
+            auto assign = clause->assignments.Create(lhs);
             assign->rhs.literal = tok;
-            assign->rhs.assigned_to = lhs;
             std::string_view data;
             if (context->display_manager.TryReadData(tok_range, &data)) {
               assert(!data.empty());
               assign->rhs.data = data;
-
 
             // NOTE(pag): This will have been previously reported. It is likely
             //            a result of an invalid string literal (e.g. crossing
@@ -654,15 +662,6 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
               assign->rhs.foreign_constant = const_ptr;
             }
 
-            // Add to the clause's assignment list.
-            if (!clause->assignments.empty()) {
-              clause->assignments.back()->next = assign;
-            }
-            clause->assignments.emplace_back(assign);
-
-            // Add to the variable's assignment list. We support the list, but for
-            // these auto-created variables, there can be only one use.
-            lhs->context->assignment_uses.push_back(&(assign->lhs));
             state = 8;
             continue;
 
@@ -688,28 +687,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
             return;
           }
 
-          const auto compare = new ParsedComparisonImpl(lhs, rhs, compare_op);
-
-          // Add to the LHS variable's comparison use list.
-          auto &lhs_comparison_uses = lhs->context->comparison_uses;
-          if (!lhs_comparison_uses.empty()) {
-            lhs_comparison_uses.back()->next = &(compare->lhs);
-          }
-          lhs_comparison_uses.push_back(&(compare->lhs));
-
-          // Add to the RHS variable's comparison use list.
-          auto &rhs_comparison_uses = rhs->context->comparison_uses;
-          if (!rhs_comparison_uses.empty()) {
-            rhs_comparison_uses.back()->next = &(compare->rhs);
-          }
-          rhs_comparison_uses.push_back(&(compare->rhs));
-
-          // Add to the clause's comparison list.
-          if (!clause->comparisons.empty()) {
-            clause->comparisons.back()->next = compare;
-          }
-          clause->comparisons.emplace_back(compare);
-
+          (void) clause->comparisons.Create(lhs, rhs, compare_op);
           state = 8;
           continue;
 
@@ -721,7 +699,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
         }
 
       case 8:
-        pred.reset();
+        pred = nullptr;
         if (Lexeme::kPuncComma == lexeme) {
           state = 5;
           continue;
@@ -740,6 +718,25 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
           state = 16;
           multi_clause = true;
           continue;
+
+        } else if (Lexeme::kKeywordOver == lexeme) {
+
+          // We parsed the predicate for the aggregating functor.
+          if (agg) {
+            if (!ParseAggregatedPredicate(module, clause, agg,
+                                          tok, next_pos)) {
+              return;
+
+            } else {
+              agg = nullptr;
+              state = 8;
+              continue;
+            }
+          } else {
+            context->error_log.Append(scope_range, tok_range)
+                << "Expected comma or period, but got '" << tok << "' instead";
+            return;
+          }
 
         } else {
           context->error_log.Append(scope_range, tok_range)
@@ -763,9 +760,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
 
         // We think we're parsing a negated predicate, i.e. `!pred(...)`.
         if (Lexeme::kIdentifierAtom == lexeme) {
-          pred.reset(new ParsedPredicateImpl(module, clause));
-          pred->name = tok;
-          pred->negation = negation_tok;
+          pred_name = tok;
           state = 12;
           continue;
 
@@ -780,24 +775,13 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
         // this gets treated as `V = false`.
         } else if (Lexeme::kIdentifierVariable == lexeme) {
           lhs = CreateVariable(clause, tok, false, false);
-          const auto assign = new ParsedAssignmentImpl(lhs);
+          ParsedAssignmentImpl *const assign = clause->assignments.Create(lhs);
           assign->rhs.literal =
               Token::Synthetic(Lexeme::kLiteralFalse, DisplayRange());
-          assign->rhs.assigned_to = lhs;
           assign->rhs.data = "false";
           assign->rhs.type =
               TypeLoc(TypeKind::kBoolean,
                       DisplayRange(negation_tok.Position(), tok.NextPosition()));
-
-          // Add to the clause's assignment list.
-          if (!clause->assignments.empty()) {
-            clause->assignments.back()->next = assign;
-          }
-          clause->assignments.emplace_back(assign);
-
-          // Add to the variable's assignment list. We support the list, but for
-          // these auto-created variables, there can be only one use.
-          lhs->context->assignment_uses.push_back(&(assign->lhs));
           state = 8;
           continue;
 
@@ -809,7 +793,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
           continue;
 
         // `!false`, i.e. `true`, we ignore this, and we anticipate either a
-        // comma or a
+        // comma to continue the clause or a period to end the clause.
         } else if (Lexeme::kLiteralFalse == lexeme) {
           state = 8;
           continue;
@@ -822,36 +806,44 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
         }
 
       case 12:
+        assert(pred_name.IsValid());
+
+        // Invoking an N-ary predicate.
         if (Lexeme::kPuncOpenParen == lexeme) {
           state = 13;
           continue;
 
+        // Ending a clause with a zero-argument predicate.
         } else if (Lexeme::kPuncPeriod == lexeme) {
           clause->dot = tok;
-          if (!TryMatchPredicateWithDecl(module, pred)) {
-            return;
+          pred_decl = TryMatchPredicateWithDecl(
+              module, pred_name, pred_vars, pred_name);
+          if (pred_decl) {
+            link_pred();
           }
           state = 9;
-          link_pred();
 
           continue;
 
+        // Continue the clause after a zero-argument predicate.
         } else if (Lexeme::kPuncComma == lexeme) {
-          if (!TryMatchPredicateWithDecl(module, pred)) {
-            return;
+          pred_decl = TryMatchPredicateWithDecl(
+              module, pred_name, pred_vars, pred_name);
+          if (pred_decl) {
+            link_pred();
           }
           state = 5;
-          link_pred();
           continue;
 
-        // It is a zero-argument predicate, go to the next clause.
+        // It is a zero-argument predicate, ending this clause body, and
+        // followed by the beginning of a new clause body.
         } else if (Lexeme::kPuncColon == lexeme) {
           clause->dot = tok;
-          if (!TryMatchPredicateWithDecl(module, pred)) {
-            return;
+          pred_decl = TryMatchPredicateWithDecl(
+              module, pred_name, pred_vars, pred_name);
+          if (pred_decl) {
+            link_pred();
           }
-
-          link_pred();
 
           // there's another clause let's go accumulate the remaining tokens
           state = 16;
@@ -881,23 +873,8 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
         }
 
         if (arg) {
-          auto use = new Node<ParsedUse<ParsedPredicate>>(UseKind::kArgument,
-                                                          arg, pred);
-
-          // Add to this variable's use list.
-          auto &argument_uses = arg->context->argument_uses;
-          if (!argument_uses.empty()) {
-            argument_uses.back()->next = use;
-          }
-          argument_uses.push_back(use);
-
-          // Link the arguments together.
-          if (!pred->argument_uses.empty()) {
-            pred->argument_uses.back()->used_var->next_var_in_arg_list = arg;
-          }
-
-          pred->argument_uses.emplace_back(use);
-
+          assert(!pred_decl);
+          pred_vars.push_back(arg);
           state = 14;
           continue;
 
@@ -909,86 +886,109 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
         }
 
       case 14:
-        if (Lexeme::kPuncCloseParen == lexeme) {
-          pred->rparen = tok;
+        assert(!pred);
+        assert(!agg);
 
-          if (!TryMatchPredicateWithDecl(module, pred)) {
+        if (Lexeme::kPuncCloseParen == lexeme) {
+          DisplayRange pred_range(pred_name.Position(),
+                                  tok.NextPosition());
+
+          pred_decl = TryMatchPredicateWithDecl(
+                module, pred_name, pred_vars, tok);
+
+          if (!pred_decl) {
             return;
           }
 
-          const auto pred_range = ParsedPredicate(pred).SpellingRange();
+          // Check to see if we're doing an aggregation.
+          if (Token peek_tok; ReadNextSubToken(peek_tok)) {
+            UnreadSubToken();
+            if (peek_tok.Lexeme() == Lexeme::kKeywordOver) {
+              agg = clause->aggregates.Create(clause);
+              pred = &(agg->functor);
+              pred_decl->context->positive_uses.AddUse(pred);
 
-          // Not allowed to negate inline declarations, as they might not be
-          // backed by actual relations.
-          if (pred->negation.IsValid() &&
-              pred->declaration->inline_attribute.IsValid()) {
-            auto err = context->error_log.Append(scope_range, pred_range);
-            err << "Cannot negate " << pred->declaration->KindName() << " '"
-                << pred->name << "' because it has been marked as inline";
+              // We need to be using a functor for aggregations.
+              if (pred_decl->context->kind != DeclarationKind::kFunctor) {
+                auto err = context->error_log.Append(scope_range, pred_range);
+                err << "Cannot use non-functor predicate '" << pred_name
+                    << "/" << pred_vars.size() << "' as an aggregating functor";
 
-            auto note =
-                err.Note(ParsedDeclaration(pred->declaration).SpellingRange(),
-                         pred->declaration->inline_attribute.SpellingRange());
-            note << "Marked as inline here";
-            return;
+                err.Note(scope_range, peek_tok.SpellingRange())
+                    << "Used as an aggregating functor here";
+
+              // Functors used for aggregations must actually be aggregating
+              // functors.
+              } else if (!pred_decl->is_aggregate) {
+                auto err = context->error_log.Append(scope_range, pred_range);
+                err << "Cannot use " << pred_decl->KindName() << " '" << pred_name
+                    << "/" << pred_vars.size() << "' as an aggregating functor";
+
+                err.Note(ParsedDeclaration(pred_decl).SpellingRange())
+                    << "Functor declared here has no 'summarize' or 'aggregate'"
+                    << " parameters";
+
+                err.Note(scope_range, peek_tok.SpellingRange())
+                    << "Used as an aggregating functor here";
+
+              // We are not allowed to negate an aggregating functor, as that
+              // makes no sense.
+              } else if (negation_tok.IsValid()) {
+                DisplayRange neg_pred_range(negation_tok.Position(),
+                                            tok.NextPosition());
+                context->error_log.Append(scope_range, neg_pred_range)
+                    << "Cannot negate use of aggregating functor '"
+                    << pred_name << "/" << pred_vars.size() << "'";
+              }
+            }
           }
 
           // If it's an aggregating functor then we need to follow-up with
           // the `over` keyword.
-          auto pred_decl = ParsedDeclaration::Of(ParsedPredicate(pred));
-          if (pred_decl.IsFunctor() &&
-              ParsedFunctor::From(pred_decl).IsAggregate()) {
+          if (pred_decl->is_aggregate && !agg) {
+            context->error_log.Append(scope_range, pred_range,
+                                      tok.NextPosition())
+                << "Must follow use of aggregating functor  '" << pred_name
+                << "/" << pred_vars.size() << "' with an 'over' keyword";
+          }
 
-            if (pred->negation.IsValid()) {
-              context->error_log.Append(scope_range, pred_range)
-                  << "Cannot negate aggregating functor '" << pred->name << "'";
-              return;
-            }
+          // Not allowed to negate inline declarations, as they might not be
+          // backed by actual relations.
+          if (negation_tok.IsValid() &&
+              pred_decl->inline_attribute.IsValid()) {
+            auto err = context->error_log.Append(scope_range, pred_range);
+            err << "Cannot negate " << pred_decl->KindName() << " '"
+                << pred_name << "' because it has been marked as inline";
 
-            state = 15;  // Go look for an `over`.
-            continue;
+            err.Note(ParsedDeclaration(pred_decl).SpellingRange(),
+                     pred_decl->inline_attribute.SpellingRange())
+                << "Marked as inline here";
+          }
 
-          } else if (pred->negation.IsValid()) {
+          // A functor with a range of one-to-one or one-or-more is guaranteed
+          // to produce at least one output, and so negating it would yield
+          // and always-false situation.
+          if (pred_decl->context->kind == DeclarationKind::kFunctor &&
+              (pred_decl->range == FunctorRange::kOneToOne ||
+               pred_decl->range == FunctorRange::kOneOrMore)) {
+            auto err = context->error_log.Append(scope_range, pred_range);
+            err << "Cannot negate functor '" << pred_name
+                << "' declared with a one-to-one or one-or-more range";
 
-            const auto kind = pred->declaration->context->kind;
-
-            //            // We don't allow negations of messages because we think of them
-            //            // as ephemeral, i.e. not even part of the database. They come in
-            //            // to trigger some action, and leave.
-            //            //
-            //            // We *do* allow negation of queries because we proxy them
-            //            // externally via later source-to-source transforms.
-            //            if (kind == DeclarationKind::kMessage) {
-            //              context->error_log.Append(scope_range, pred_range)
-            //                  << "Cannot negate message '" << pred->name
-            //                  << "'; if you want to test that a message has never been "
-            //                  << "received then proxy it with a `#local` or `#export`";
-            //              return;
-
-            // A functor with a range of one-to-one or one-or-more is guaranteed
-            // to produce at least one output, and so negating it would yield
-            // and always-false situation.
-            if (kind == DeclarationKind::kFunctor &&
-                (pred->declaration->range == FunctorRange::kOneToOne ||
-                 pred->declaration->range == FunctorRange::kOneOrMore)) {
-              auto err = context->error_log.Append(scope_range, pred_range);
-              err << "Cannot negate functor '" << pred->name
-                  << "' declared with a one-to-one or one-or-more range";
-
-              err.Note(
-                  ParsedDeclaration(pred->declaration).SpellingRange(),
-                  DisplayRange(pred->declaration->range_begin_opt.Position(),
-                               pred->declaration->range_end_opt.NextPosition()))
-                  << "Range of functor '" << pred->name
-                  << "' is specified here";
-              return;
-            }
+            err.Note(
+                ParsedDeclaration(pred_decl).SpellingRange(),
+                DisplayRange(pred_decl->range_begin_opt.Position(),
+                             pred_decl->range_end_opt.NextPosition()))
+                << "Range of functor '" << pred_name
+                << "' is specified here";
           }
 
           link_pred();
+
           state = 8;
           continue;
 
+        // Go read another parameter.
         } else if (Lexeme::kPuncComma == lexeme) {
           state = 13;
           continue;
@@ -1000,22 +1000,6 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
         }
 
       case 15:
-        if (Lexeme::kKeywordOver == lexeme) {
-          if (!ParseAggregatedPredicate(module, clause, std::move(pred),
-                                        tok, next_pos)) {
-            return;
-
-          } else {
-            state = 8;
-            continue;
-          }
-
-        } else {
-          context->error_log.Append(scope_range, tok_range)
-              << "Expected 'over' after usage of aggregate functor '"
-              << pred->name << "', but got '" << tok << "' instead";
-          return;
-        }
       case 16:
 
         // Accumulate multi-clause tokens
@@ -1034,17 +1018,25 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
     return;
   }
 
-  const auto is_message_clause =
-      DeclarationKind::kMessage == clause->declaration->context->kind;
+  // Link the clause in to its respective declaration.
+  assert(clause->declaration == decl);
+  const auto clause_decl_context = decl->context.get();
+  clause_decl_context->clauses.AddUse(clause);
 
-  // Don't let us send out any messages if we have any uses of this message.
-  if (is_message_clause && !decl->context->positive_uses.empty()) {
+  const auto is_message_clause =
+      DeclarationKind::kMessage == clause_decl_context->kind;
+
+  // Don't let us publish out any messages if we have any receipts
+  // of this message.
+  if (is_message_clause &&
+      (!clause_decl_context->positive_uses.Empty() ||
+       !clause_decl_context->negated_uses.Empty())) {
     auto err = context->error_log.Append(scope_range);
     err << "Cannot send output in message " << decl->name << '/'
-        << decl->parameters.size()
+        << decl->parameters.Size()
         << "; the message is already used for receiving data";
 
-    for (auto pred_ : decl->context->positive_uses) {
+    for (ParsedPredicateImpl *pred_ : decl->context->positive_uses) {
       auto pred = ParsedPredicate(pred_);
       auto clause = ParsedClause::Containing(pred);
       err.Note(clause.SpellingRange(), pred.SpellingRange())
@@ -1052,45 +1044,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
     }
   }
 
-  // Link all positive predicate uses into their respective declarations.
-  for (auto &used_pred : clause->positive_predicates) {
-    auto &pred_decl_context = used_pred->declaration->context;
-    auto &positive_uses = pred_decl_context->positive_uses;
-    if (!positive_uses.empty()) {
-      positive_uses.back()->next_use = used_pred;
-    }
-    positive_uses.push_back(used_pred);
-  }
-
-  // Link all negative predicate uses into their respective declarations.
-  for (auto &used_pred : clause->negated_predicates) {
-    auto &pred_decl_context = used_pred->declaration->context;
-    auto &negated_uses = pred_decl_context->negated_uses;
-    if (!negated_uses.empty()) {
-      negated_uses.back()->next_use = used_pred;
-    }
-    negated_uses.push_back(used_pred);
-  }
-
-  auto &clause_decl_context = clause->declaration->context;
-  auto module_clause_list = &(module->clauses);
-  auto decl_clause_list = &(clause_decl_context->clauses);
-
   FindUnrelatedConditions(clause, context->error_log);
-
-  // Link the clause in to the module.
-  if (!module_clause_list->empty()) {
-    module_clause_list->back()->next_in_module = clause;
-  }
-  module_clause_list->push_back(clause);
-
-  // Link the clause in to its respective declaration.
-  if (!decl_clause_list->empty()) {
-    decl_clause_list->back()->next = clause;
-  }
-
-  // Add this clause to its decl context.
-  decl_clause_list->emplace_back(std::move(clause));
 
   // Call Parse Clause Recursively if there was more than one clause
   if (multi_clause) {

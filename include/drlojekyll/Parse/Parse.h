@@ -5,6 +5,7 @@
 #include <drlojekyll/Display/DisplayPosition.h>
 #include <drlojekyll/Lex/Token.h>
 #include <drlojekyll/Parse/Type.h>
+#include <drlojekyll/Util/DefUse.h>
 #include <drlojekyll/Util/Node.h>
 
 #include <filesystem>
@@ -33,6 +34,7 @@ class ParsedComparison;
 class ParsedPredicate;
 
 enum class Language : unsigned { kUnknown, kCxx, kPython };
+enum class InlineLocation : bool { kEpilogue = false, kPrologue = true };
 static constexpr auto kNumLanguages = 3u;
 
 // Represents a literal.
@@ -92,21 +94,6 @@ class ParsedVariable : public Node<ParsedVariable, ParsedVariableImpl> {
   // Returns the type of the variable.
   TypeLoc Type(void) const noexcept;
 
-  // Returns `true` if this variable is an parameter to its clause.
-  bool IsParameter(void) const noexcept;
-
-  // Returns `true` if this variable is being used as an argument to a
-  // predicate.
-  bool IsArgument(void) const noexcept;
-
-  // Returns `true` if this variable, or any other used of this variable,
-  // is assigned to any literals.
-  bool IsAssigned(void) const noexcept;
-
-  // Returns `true` if this variable, or any other use of this variable,
-  // is compared with any other variables.
-  bool IsCompared(void) const noexcept;
-
   // Returns `true` if this variable is an unnamed variable.
   bool IsUnnamed(void) const noexcept;
 
@@ -125,26 +112,11 @@ class ParsedVariable : public Node<ParsedVariable, ParsedVariableImpl> {
 
   // Override `operator==` so that different uses of the same variable appear
   // the same.
-  inline bool operator==(const ParsedVariable &that) const {
-    return Id() == that.Id();
-  }
-
-  // Override `operator==` so that different uses of the same variable appear
-  // the same.
-  inline bool operator!=(const ParsedVariable &that) const {
-    return Id() != that.Id();
-  }
-
-  // Iterate over each use of this variable.
-  NodeRange<ParsedVariable> Uses(void) const;
+  bool operator==(const ParsedVariable &that) const noexcept;
+  bool operator!=(const ParsedVariable &that) const noexcept;
 
   // Return the number of uses of this variable.
   unsigned NumUses(void) const;
-
-  // Replace all uses of this variable with another variable. Returns `false`
-  // if the replacement didn't happen (e.g. mismatching types, or if the two
-  // variables are from different clauses).
-  bool ReplaceAllUses(ParsedVariable that) const;
 
  protected:
   friend class ParsedAssignment;
@@ -218,7 +190,7 @@ class ParsedPredicate : public Node<ParsedPredicate, ParsedPredicateImpl> {
   ParsedVariable NthArgument(unsigned n) const noexcept;
 
   // All variables used as arguments to this predicate.
-  NodeRange<ParsedVariable> Arguments(void) const;
+  UsedNodeRange<ParsedVariable> Arguments(void) const;
 
  protected:
   friend class ParsedClause;
@@ -253,11 +225,11 @@ class ParsedAggregate : public Node<ParsedAggregate, ParsedAggregateImpl> {
   //
   // To the rest of the clause body, these are treated as free variables which
   // are bound by the aggregate.
-  NodeRange<ParsedVariable> GroupVariablesFromPredicate(void) const;
+  UsedNodeRange<ParsedVariable> GroupVariablesFromPredicate(void) const;
 
   // List of parameters from the predicate that are paired with a `aggregate`-
   // attributed variable in the functor.
-  NodeRange<ParsedVariable> AggregatedVariablesFromPredicate(void) const;
+  UsedNodeRange<ParsedVariable> AggregatedVariablesFromPredicate(void) const;
 
   // List of parameters from the predicate that are paired with a `bound`-
   // attributed variables in the functor. These behave in a similar way to group
@@ -265,7 +237,7 @@ class ParsedAggregate : public Node<ParsedAggregate, ParsedAggregateImpl> {
   // difference is that these are passed into the aggregating functor when its
   // aggregation state is initialized, and thus they act as configuration or
   // initialization values for the functor's state.
-  NodeRange<ParsedVariable> ConfigurationVariablesFromPredicate(void) const;
+  UsedNodeRange<ParsedVariable> ConfigurationVariablesFromPredicate(void) const;
 
  protected:
   friend class ParsedClause;
@@ -291,6 +263,10 @@ class ParsedAggregate : public Node<ParsedAggregate, ParsedAggregateImpl> {
 class ParsedParameterImpl;
 class ParsedParameter : public Node<ParsedParameter, ParsedParameterImpl> {
  public:
+
+  // Return an integer that identifies this parameter.
+  uint64_t Id(void) const noexcept;
+
   DisplayRange SpellingRange(void) const noexcept;
   Token Name(void) const noexcept;
   TypeLoc Type(void) const noexcept;
@@ -299,10 +275,6 @@ class ParsedParameter : public Node<ParsedParameter, ParsedParameterImpl> {
 
   // Returns `true` if this variable is an unnamed variable.
   bool IsUnnamed(void) const noexcept;
-
-  // Other declarations of this parameter. This goes and gets the list of
-  // parameters that
-  NodeRange<ParsedParameter> Redeclarations(void) const;
 
  protected:
   friend class ParsedFunctor;
@@ -318,8 +290,6 @@ class ParsedClauseBody;
 class ParsedClauseImpl;
 class ParsedClause : public Node<ParsedClause, ParsedClauseImpl> {
  public:
-  // Create a new variable in this context of this clause.
-  ParsedVariable CreateVariable(Token name, TypeLoc type);
 
   // Traverse upward in the AST.
   static ParsedClause Containing(ParsedVariable var) noexcept;
@@ -327,9 +297,6 @@ class ParsedClause : public Node<ParsedClause, ParsedClauseImpl> {
   static ParsedClause Containing(ParsedAssignment var) noexcept;
   static ParsedClause Containing(ParsedComparison cmp) noexcept;
   static ParsedClause Containing(ParsedAggregate agg) noexcept;
-
-  // Return the total number of uses of `var` in its clause body.
-  static unsigned NumUsesInBody(ParsedVariable var) noexcept;
 
   DisplayRange SpellingRange(void) const noexcept;
 
@@ -351,28 +318,25 @@ class ParsedClause : public Node<ParsedClause, ParsedClauseImpl> {
   ParsedVariable NthParameter(unsigned n) const noexcept;
 
   // All variables used as parameters to this clause.
-  NodeRange<ParsedVariable> Parameters(void) const;
+  DefinedNodeRange<ParsedVariable> Parameters(void) const;
 
   // All variables used in the body of the clause.
-  NodeRange<ParsedVariable> Variables(void) const;
-
-  // All instances of `var` in its clause.
-  static NodeRange<ParsedVariable> Uses(ParsedVariable var);
+  DefinedNodeRange<ParsedVariable> Variables(void) const;
 
   // All positive predicates in the clause.
-  NodeRange<ParsedPredicate> PositivePredicates(void) const;
+  DefinedNodeRange<ParsedPredicate> PositivePredicates(void) const;
 
   // All negated predicates in the clause.
-  NodeRange<ParsedPredicate> NegatedPredicates(void) const;
+  DefinedNodeRange<ParsedPredicate> NegatedPredicates(void) const;
 
   // All assignments of variables to constant literals.
-  NodeRange<ParsedAssignment> Assignments(void) const;
+  DefinedNodeRange<ParsedAssignment> Assignments(void) const;
 
   // All comparisons between two variables.
-  NodeRange<ParsedComparison> Comparisons(void) const;
+  DefinedNodeRange<ParsedComparison> Comparisons(void) const;
 
   // All aggregations.
-  NodeRange<ParsedAggregate> Aggregates(void) const;
+  DefinedNodeRange<ParsedAggregate> Aggregates(void) const;
 
   // Is this a deletion clause?
   bool IsDeletion(void) const noexcept;
@@ -425,11 +389,17 @@ class ParsedDeclaration : public Node<ParsedDeclaration, ParsedDeclarationImpl> 
 
   DisplayRange SpellingRange(void) const noexcept;
 
+  bool operator==(const ParsedDeclaration &that) const noexcept;
+  bool operator!=(const ParsedDeclaration &that) const noexcept;
+
   // Return the ID of this declaration.
   uint64_t Id(void) const;
 
   // Return the name of this declaration as a token.
   Token Name(void) const noexcept;
+
+  // Is this the first declaration?
+  bool IsFirstDeclaration(void) const noexcept;
 
   bool IsQuery(void) const noexcept;
   bool IsMessage(void) const noexcept;
@@ -456,12 +426,12 @@ class ParsedDeclaration : public Node<ParsedDeclaration, ParsedDeclarationImpl> 
   // Return the `n`th parameter of this declaration.
   ParsedParameter NthParameter(unsigned n) const noexcept;
 
-  NodeRange<ParsedDeclaration> Redeclarations(void) const;
-  NodeRange<ParsedParameter> Parameters(void) const;
-  NodeRange<ParsedClause> Clauses(void) const;
-
-  NodeRange<ParsedPredicate> PositiveUses(void) const;
-  NodeRange<ParsedPredicate> NegativeUses(void) const;
+  UsedNodeRange<ParsedDeclaration> Redeclarations(void) const;
+  UsedNodeRange<ParsedDeclaration> UniqueRedeclarations(void) const;
+  DefinedNodeRange<ParsedParameter> Parameters(void) const;
+  UsedNodeRange<ParsedClause> Clauses(void) const;
+  UsedNodeRange<ParsedPredicate> PositiveUses(void) const;
+  UsedNodeRange<ParsedPredicate> NegativeUses(void) const;
 
   unsigned NumPositiveUses(void) const noexcept;
   unsigned NumNegatedUses(void) const noexcept;
@@ -484,6 +454,10 @@ class ParsedDeclaration : public Node<ParsedDeclaration, ParsedDeclarationImpl> 
   // Return the declaration associated with a predicate. This is the first
   // parsed declaration, so it could be in a different module.
   static ParsedDeclaration Of(ParsedPredicate pred);
+
+  // Return the declaration associated with a parameter. This is the first
+  // parsed declaration, so it could be in a different module.
+  static ParsedDeclaration Containing(ParsedParameter pred);
 
   // A string representing a binding pattern of the parameters. A bound
   // parameter is `b`, a free one is `f`, mutable is `m`, aggregate is `a`,
@@ -523,16 +497,14 @@ class ParsedQuery : public Node<ParsedQuery, ParsedQueryImpl> {
  public:
   static const ParsedQuery &From(const ParsedDeclaration &decl);
 
+  bool operator==(const ParsedQuery &that) const noexcept;
+  bool operator!=(const ParsedQuery &that) const noexcept;
+
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
   Token Name(void) const noexcept;
   unsigned Arity(void) const noexcept;
   ParsedParameter NthParameter(unsigned n) const noexcept;
-
-  NodeRange<ParsedQuery> Redeclarations(void) const;
-  NodeRange<ParsedClause> Clauses(void) const;
-  NodeRange<ParsedPredicate> PositiveUses(void) const;
-  NodeRange<ParsedPredicate> NegativeUses(void) const;
 
   unsigned NumPositiveUses(void) const noexcept;
   unsigned NumNegatedUses(void) const noexcept;
@@ -561,30 +533,23 @@ class ParsedExport : public Node<ParsedExport, ParsedExportImpl> {
  public:
   static const ParsedExport &From(const ParsedDeclaration &decl);
 
+  bool operator==(const ParsedExport &that) const noexcept;
+  bool operator!=(const ParsedExport &that) const noexcept;
+
+  // TODO(pag): Eliminate comparison on pointers.
+  bool operator<(const ParsedExport &that) const noexcept;
+
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
   Token Name(void) const noexcept;
   unsigned Arity(void) const noexcept;
   ParsedParameter NthParameter(unsigned n) const noexcept;
 
-  NodeRange<ParsedExport> Redeclarations(void) const;
-  NodeRange<ParsedClause> Clauses(void) const;
-  NodeRange<ParsedPredicate> PositiveUses(void) const;
-  NodeRange<ParsedPredicate> NegativeUses(void) const;
-
   unsigned NumPositiveUses(void) const noexcept;
   unsigned NumNegatedUses(void) const noexcept;
 
   inline unsigned NumUses(void) const noexcept {
     return NumPositiveUses() + NumNegatedUses();
-  }
-
-  inline bool operator<(ParsedExport that) const noexcept {
-    return impl < that.impl;
-  }
-
-  inline bool operator==(ParsedExport that) const noexcept {
-    return impl == that.impl;
   }
 
  protected:
@@ -606,16 +571,14 @@ class ParsedLocal : public Node<ParsedLocal, ParsedLocalImpl> {
  public:
   static const ParsedLocal &From(const ParsedDeclaration &decl);
 
+  bool operator==(const ParsedLocal &that) const noexcept;
+  bool operator!=(const ParsedLocal &that) const noexcept;
+
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
   Token Name(void) const noexcept;
   unsigned Arity(void) const noexcept;
   ParsedParameter NthParameter(unsigned n) const noexcept;
-
-  NodeRange<ParsedLocal> Redeclarations(void) const;
-  NodeRange<ParsedClause> Clauses(void) const;
-  NodeRange<ParsedPredicate> PositiveUses(void) const;
-  NodeRange<ParsedPredicate> NegativeUses(void) const;
 
   unsigned NumPositiveUses(void) const noexcept;
   unsigned NumNegatedUses(void) const noexcept;
@@ -629,7 +592,6 @@ class ParsedLocal : public Node<ParsedLocal, ParsedLocalImpl> {
  protected:
   friend class ParsedDeclaration;
   using Node<ParsedLocal, ParsedLocalImpl>::Node;
-  ParsedDeclaration Declaration(void) const;
 };
 
 enum class FunctorRange {
@@ -674,12 +636,14 @@ class ParsedFunctor : public Node<ParsedFunctor, ParsedFunctorImpl> {
   static const ParsedFunctor &From(const ParsedDeclaration &decl);
   static const ParsedFunctor MergeOperatorOf(ParsedParameter param);
 
+  bool operator==(const ParsedFunctor &that) const noexcept;
+  bool operator!=(const ParsedFunctor &that) const noexcept;
+
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
   Token Name(void) const noexcept;
   unsigned Arity(void) const noexcept;
   ParsedParameter NthParameter(unsigned n) const noexcept;
-  NodeRange<ParsedParameter> Parameters(void) const;
 
   // Is this an aggregating functor?
   bool IsAggregate(void) const noexcept;
@@ -697,19 +661,13 @@ class ParsedFunctor : public Node<ParsedFunctor, ParsedFunctorImpl> {
   // `FunctorRange::kZeroOrOne`.
   bool IsFilter(void) const noexcept;
 
-  NodeRange<ParsedFunctor> Redeclarations(void) const;
-  NodeRange<ParsedPredicate> PositiveUses(void) const;
-
   unsigned NumPositiveUses(void) const noexcept;
+  unsigned NumNegatedUses(void) const noexcept;
 
   FunctorRange Range(void) const noexcept;
 
-  inline unsigned NumNegatedUses(void) const noexcept {
-    return 0;
-  }
-
   inline unsigned NumUses(void) const noexcept {
-    return NumPositiveUses();
+    return NumPositiveUses() + NumNegatedUses();
   }
 
  protected:
@@ -734,16 +692,14 @@ class ParsedMessage : public Node<ParsedMessage, ParsedMessageImpl> {
  public:
   static const ParsedMessage &From(const ParsedDeclaration &decl);
 
+  bool operator==(const ParsedMessage &that) const noexcept;
+  bool operator!=(const ParsedMessage &that) const noexcept;
+
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
   Token Name(void) const noexcept;
   unsigned Arity(void) const noexcept;
   ParsedParameter NthParameter(unsigned n) const noexcept;
-
-  NodeRange<ParsedParameter> Parameters(void) const;
-  NodeRange<ParsedMessage> Redeclarations(void) const;
-  NodeRange<ParsedClause> Clauses(void) const;
-  NodeRange<ParsedPredicate> PositiveUses(void) const;
 
   // Returns `true` if this message is the head of any clause, i.e. if there
   // are rules that publish this message.
@@ -780,18 +736,18 @@ class ParsedModule {
   // Return the ID of this module. Returns `~0u` if not valid.
   uint64_t Id(void) const noexcept;
 
-  NodeRange<ParsedQuery> Queries(void) const;
-  NodeRange<ParsedImport> Imports(void) const;
-  NodeRange<ParsedInline> Inlines(void) const;
-  NodeRange<ParsedLocal> Locals(void) const;
-  NodeRange<ParsedExport> Exports(void) const;
-  NodeRange<ParsedMessage> Messages(void) const;
-  NodeRange<ParsedFunctor> Functors(void) const;
-  NodeRange<ParsedClause> Clauses(void) const;
+  DefinedNodeRange<ParsedQuery> Queries(void) const;
+  DefinedNodeRange<ParsedImport> Imports(void) const;
+  DefinedNodeRange<ParsedInline> Inlines(void) const;
+  DefinedNodeRange<ParsedLocal> Locals(void) const;
+  DefinedNodeRange<ParsedExport> Exports(void) const;
+  DefinedNodeRange<ParsedMessage> Messages(void) const;
+  DefinedNodeRange<ParsedFunctor> Functors(void) const;
+  DefinedNodeRange<ParsedClause> Clauses(void) const;
 
   // NOTE(pag): This returns the list of /all/ foreign types, as they are
   //            globally visible.
-  NodeRange<ParsedForeignType> ForeignTypes(void) const;
+  DefinedNodeRange<ParsedForeignType> ForeignTypes(void) const;
 
   // Try to return the foreign type associated with a particular type location
   // or type kind.
@@ -942,7 +898,7 @@ class ParsedForeignType : public Node<ParsedForeignType, ParsedForeignTypeImpl> 
   Constructor(Language lang) const noexcept;
 
   // List of constants defined on this type for a particular language.
-  NodeRange<ParsedForeignConstant> Constants(Language lang) const noexcept;
+  UsedNodeRange<ParsedForeignConstant> Constants(Language lang) const noexcept;
 
  protected:
   friend class ParsedModule;
@@ -963,8 +919,15 @@ class ParsedInline : public Node<ParsedInline, ParsedInlineImpl> {
 
   // Tells us whether or not this code should be emitted at the beginning of
   // codegen (returns `true`) or at the end of codegen (returns `false`).
-  bool IsPrologue(void) const noexcept;
-  bool IsEpilogue(void) const noexcept;
+  InlineLocation Location(void) const noexcept;
+
+  inline bool IsPrologue(void) const noexcept {
+    return InlineLocation::kPrologue == Location();
+  }
+
+  inline bool IsEpilogue(void) const noexcept {
+    return InlineLocation::kEpilogue == Location();
+  }
 
  protected:
   using Node<ParsedInline, ParsedInlineImpl>::Node;
@@ -988,7 +951,7 @@ struct hash<::hyde::ParsedParameter> {
   using argument_type = ::hyde::ParsedParameter;
   using result_type = uint64_t;
   inline uint64_t operator()(::hyde::ParsedParameter param) const noexcept {
-    return param.UniqueId();
+    return param.Id();
   }
 };
 

@@ -110,19 +110,19 @@ void ParserImpl::ParseMessage(ParsedModuleImpl *module) {
 
       case 4:
 
-        // Add the parameter in.
-        if (!params.empty()) {
-          params.emplace_back(param_type, param_name);
-
-          if (params.size() == kMaxArity) {
-            DisplayRange param_range(param_type.Position(),
-                                     param_name.NextPosition());
-            context->error_log.Append(scope_range, param_range)
-                << "Too many parameters to " << directive << " '" << name
-                << "'; the maximum number of parameters is " << kMaxArity;
-            return;
-          }
+        if (params.size() == kMaxArity) {
+          DisplayRange err_range(param_type.Position(),
+                                   param_name.NextPosition());
+          context->error_log.Append(scope_range, err_range)
+              << "Too many parameters to message '" << name
+              << "'; the maximum number of parameters is " << kMaxArity;
+          return;
         }
+
+        // Add the parameter in.
+        params.emplace_back(param_type, param_name);
+        param_type = Token();
+        param_name = Token();
 
         if (Lexeme::kPuncComma == lexeme) {
           clause_toks.push_back(tok);
@@ -133,27 +133,27 @@ void ParserImpl::ParseMessage(ParsedModuleImpl *module) {
           message = AddDecl<ParsedMessageImpl>(
               module, DeclarationKind::kMessage, name, params.size());
 
-          clause_toks.push_back(tok);
-
           if (!message) {
             return;
-
-          } else {
-            for (auto [p_type, p_name] : params) {
-              const auto index = message->parameters.Size();
-              param = message->parameters.Create();
-              param->opt_type = p_type;
-              param->parsed_opt_type = true;
-              param->name = p_name;
-              param->index = index;
-            }
-
-            message->rparen = tok;
-            message->name = name;
-            message->directive_pos = directive.Position();
-            state = 5;
-            continue;
           }
+
+          clause_toks.push_back(tok);
+
+          module->messages.AddUse(message);
+
+          for (auto [p_type, p_name] : params) {
+            param = message->parameters.Create(message);
+            param->opt_type = p_type;
+            param->parsed_opt_type = param->opt_type.IsValid();
+            param->name = p_name;
+            param->index = message->parameters.Size() - 1u;
+          }
+
+          message->rparen = tok;
+          message->name = name;
+          message->directive_pos = directive.Position();
+          state = 5;
+          continue;
 
         } else {
           context->error_log.Append(scope_range, tok_range)
@@ -171,7 +171,7 @@ void ParserImpl::ParseMessage(ParsedModuleImpl *module) {
         } else if (Lexeme::kPragmaDifferential == lexeme) {
           if (message->differential_attribute.IsValid()) {
             auto err = context->error_log.Append(scope_range, tok_range);
-            err << "Unexpected repeat of the '@differential' pragma here";
+            err << "Unexpected repeat of the '" << tok << "' pragma here";
 
             err.Note(scope_range,
                      message->differential_attribute.SpellingRange())
@@ -217,7 +217,8 @@ void ParserImpl::ParseMessage(ParsedModuleImpl *module) {
           } else {
             context->error_log.Append(scope_range,
                                       clause_toks.back().NextPosition())
-                << "Declaration of '" << message->name
+                << "Declaration of message '" << message->name
+                << "/" << message->parameters.Size()
                 << "' containing an embedded clause does not end with a period";
             state = 7;
             continue;
@@ -229,8 +230,8 @@ void ParserImpl::ParseMessage(ParsedModuleImpl *module) {
         DisplayRange err_range(tok.Position(),
                                sub_tokens.back().NextPosition());
         context->error_log.Append(scope_range, err_range)
-            << "Unexpected tokens following declaration of the '"
-            << message->name << "' message";
+            << "Unexpected tokens following declaration of message '"
+            << message->name << "/" << message->parameters.Size() << "'";
         state = 7;  // Ignore further errors, but add the message in.
         continue;
       }
@@ -241,14 +242,13 @@ void ParserImpl::ParseMessage(ParsedModuleImpl *module) {
   if (state != 6) {
     context->error_log.Append(scope_range, next_pos)
         << "Incomplete message declaration; the declaration '" << name
-        << "' must end with a period";
+        << "/" << message->parameters.Size() << "' must end with a period";
 
-    RemoveDecl<ParsedMessageImpl>(message);
+    RemoveDecl(message);
 
   } else {
-    const auto decl_for_clause = message.get();
-    FinalizeDeclAndCheckConsistency<ParsedMessageImpl>(
-        module->messages, message);
+    const auto decl_for_clause = message;
+    FinalizeDeclAndCheckConsistency(message);
 
     // If we parsed a `:` after the head of the `#message` then
     // go parse the attached bodies recursively.
@@ -262,7 +262,8 @@ void ParserImpl::ParseMessage(ParsedModuleImpl *module) {
 
     } else if (product.IsValid()) {
       context->error_log.Append(scope_range, product.SpellingRange())
-          << "Superfluous '@product' specified without any accompanying clause";
+          << "Superfluous '" << product
+          << "' specified without any accompanying clause";
     }
   }
 }

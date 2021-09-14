@@ -34,49 +34,12 @@ union IdInterpreter {
 
 static_assert(sizeof(IdInterpreter) == 8);
 
-// Contextual information relevant to all uses of a logical variable within
-// a clause.
-class VariableContext {
- public:
-  inline explicit VariableContext(ParsedClauseImpl *clause_,
-                                  ParsedVariableImpl *first_use_)
-      : clause(clause_),
-        first_use(first_use_) {}
-
-  // Clause containing this variable.
-  ParsedClauseImpl *const clause;
-
-  // First use of this variable in `clause`.
-  ParsedVariableImpl *first_use;
-
-  // List of assignments to this variable.
-  UseList<ParsedAssignment> assignment_uses;
-
-  // List of comparisons against this variable.
-  UseList<ParsedComparison> comparison_uses;
-
-  // List of uses of this variable as an argument.
-  UseList<ParsedPredicate> argument_uses;
-
-  // List of uses of this variable as a parameter.
-  UseList<ParsedClause> parameter_uses;
-
-  // Cached unique identifier.
-  parse::IdInterpreter id;
-};
-
 // Contextual information relevant to all redeclarations.
 class DeclarationContext : public User {
  public:
   virtual ~DeclarationContext(void);
 
-  inline DeclarationContext(const DeclarationKind kind_)
-      : User(this),
-        kind(kind_),
-        redeclarations(this),
-        clauses(this),
-        positive_uses(this),
-        negated_uses(this) {}
+  DeclarationContext(const DeclarationKind kind_);
 
   // Cached ID of this declaration.
   parse::IdInterpreter id;
@@ -87,6 +50,9 @@ class DeclarationContext : public User {
   // The list of all re-declarations. They may be spread across multiple
   // modules. Some of the redeclarations may have different parameter bindings.
   WeakUseList<ParsedDeclarationImpl> redeclarations;
+
+  // The list of unique redeclarations (in terms of binding parameters).
+  WeakUseList<ParsedDeclarationImpl> unique_redeclarations;
 
   // All clauses associated with a given `DeclarationBase` and each of its
   // redeclarations.
@@ -109,13 +75,16 @@ class DeclarationContext : public User {
 
 }  // namespace parse
 
+// A literal constant that appears somewhere in the code. Literal constants
+// are always synthesized as being part of assignments, even if they appear
+// outside of assignments.
 class ParsedLiteralImpl : public Def<ParsedLiteralImpl> {
  public:
-  inline ParsedLiteralImpl(void)
-      : Def<ParsedLiteralImpl>(this) {}
+  virtual ~ParsedLiteralImpl(void);
+  explicit ParsedLiteralImpl(ParsedAssignmentImpl *assignment_);
 
-  ParsedLiteralImpl *next{nullptr};
-  ParsedVariableImpl *assigned_to{nullptr};
+  ParsedAssignmentImpl * const assignment;
+
   Token literal;
   TypeLoc type;
   std::string data;
@@ -123,10 +92,15 @@ class ParsedLiteralImpl : public Def<ParsedLiteralImpl> {
   ParsedForeignConstantImpl *foreign_constant{nullptr};
 };
 
+// A variable. Mostly these are variables that appear in the code, but these
+// also correspond to synthesized variables, i.e. ones that have been invented
+// for assignments to
 class ParsedVariableImpl : public Def<ParsedVariableImpl> {
  public:
-  inline ParsedVariableImpl(void)
-      : Def<ParsedVariableImpl>(this) {}
+  virtual ~ParsedVariableImpl(void);
+
+  ParsedVariableImpl(ParsedClauseImpl *clause_, Token name_,
+                       bool is_parameter_, bool is_argument_);
 
   // Compute the unique identifier for this variable.
   uint64_t Id(void) noexcept;
@@ -134,8 +108,28 @@ class ParsedVariableImpl : public Def<ParsedVariableImpl> {
   // Compute the unique identifier for this variable, local to its clause.
   uint64_t IdInClause(void) noexcept;
 
-  Token name;
+  // The clause to which this variable belongs.
+  ParsedClauseImpl *const clause;
+
+  // Name of this variable.
+  const Token name;
+
+  // Whether or not this variable is an parameter to its clause.
+  const bool is_parameter;
+
+  // Whether or not this variable is an argument to a predicate.
+  const bool is_argument;
+
   TypeLoc type;
+
+  // Unique ID of this variable.
+  parse::IdInterpreter id;
+
+  // First appearance of this variable in the clause.
+  ParsedVariableImpl *first_appearance{nullptr};
+
+  // Next appearance of this variable in the clause.
+  ParsedVariableImpl *next_appearance{nullptr};
 
   // What was the order of appearance of this variable? The head variables,
   // even invented ones, have appearance values in the range `[0, N)` if there
@@ -144,63 +138,32 @@ class ParsedVariableImpl : public Def<ParsedVariableImpl> {
   //
   // The function `ParsedVariable::Order` normalizes this value such that if
   // `N < kMaxArity`, then the order numbers range from `[0, N+M)`.
-  unsigned appearance{0};
-
-  // Next variable used in `clause`, which may be a logically different
-  // variable. Variables that are in a clause head are not linked to
-  // variables in a clause body.
-  ParsedVariableImpl *next{nullptr};
-
-  // Next use of the same logical variable in `clause`.
-  ParsedVariableImpl *next_use{nullptr};
-
-  // Next variable (not necessarily the same) to be used in an argument list,
-  // if this variable is used in an argument list.
-  ParsedVariableImpl *next_var_in_arg_list{nullptr};
-
-  // Next group variable in an aggregate.
-  ParsedVariableImpl *next_group_var{nullptr};
-  ParsedVariableImpl *next_config_var{nullptr};
-  ParsedVariableImpl *next_aggregate_var{nullptr};
-
-  std::shared_ptr<parse::VariableContext> context;
-
-  // Whether or not this variable is an parameter to its clause.
-  bool is_parameter{false};
-
-  // Whether or not this variable is an argument to a predicate.
-  bool is_argument{false};
+  unsigned order_of_appearance{0};
 };
 
+// Represents a comparison between two variables. If we have a a comparison
+// like `A < 1` then that is turned into an assignment of `1` to a temporary
+// variable, followed by a comparison between `A` and that temporary.
 class ParsedComparisonImpl : public Def<ParsedComparisonImpl>, public User {
  public:
   virtual ~ParsedComparisonImpl(void);
 
-  inline ParsedComparisonImpl(ParsedVariableImpl *lhs_,
-                              ParsedVariableImpl *rhs_,
-                              Token compare_op_)
-      : Def<ParsedComparisonImpl>(this),
-        User(this),
-        lhs(this, lhs_),
-        rhs(this, rhs_),
-        compare_op(compare_op_) {}
-
-  // Next in the clause body.
-  ParsedComparisonImpl *next{nullptr};
+  ParsedComparisonImpl(ParsedVariableImpl *lhs_,
+                       ParsedVariableImpl *rhs_,
+                       Token compare_op_);
 
   UseRef<ParsedVariableImpl> lhs;
   UseRef<ParsedVariableImpl> rhs;
   const Token compare_op;
 };
 
+// Represents an assignment of a literal to a variable. This comes up explicitly
+// as a result of things like `A = 1`, but also implicitly due to constant uses
+// like `foo(1)`, which are converted into `foo(A), A = 1`.
 class ParsedAssignmentImpl : public Def<ParsedAssignmentImpl>, public User {
  public:
   virtual ~ParsedAssignmentImpl(void);
-
-  inline ParsedAssignmentImpl(ParsedVariableImpl *lhs_)
-      : Def<ParsedAssignmentImpl>(this),
-        User(this),
-        lhs(this, lhs_) {}
+  ParsedAssignmentImpl(ParsedVariableImpl *lhs_);
 
   // Next in the clause body.
   ParsedAssignmentImpl *next{nullptr};
@@ -209,17 +172,15 @@ class ParsedAssignmentImpl : public Def<ParsedAssignmentImpl>, public User {
   ParsedLiteralImpl rhs;
 };
 
+// Represents the application of a predicate, which is any form of declaration
+// (message, export, local, or functor). All arguments to predicates are
+// variables, even if they don't appear as such in the original source code.
 class ParsedPredicateImpl : public Def<ParsedPredicateImpl>, public User {
  public:
   virtual ~ParsedPredicateImpl(void);
 
-  inline ParsedPredicateImpl(ParsedModuleImpl *module_,
-                             ParsedClauseImpl *clause_)
-      : Def<ParsedPredicateImpl>(this),
-        User(this),
-        module(module_),
-        clause(clause_),
-        argument_uses(this) {}
+  ParsedPredicateImpl(ParsedModuleImpl *module_,
+                      ParsedClauseImpl *clause_);
 
   // Compute the identifier for this predicate.
   uint64_t Id(void) const noexcept;
@@ -233,13 +194,6 @@ class ParsedPredicateImpl : public Def<ParsedPredicateImpl>, public User {
   // The declaration associated with this predicate.
   ParsedDeclarationImpl *declaration{nullptr};
 
-  // Next parsed predicate in the clause body. Positive predicates never link
-  // to negative predicates, and vice versa.
-  ParsedPredicateImpl *next{nullptr};
-
-  // The next use this predicate. This use may be in a different clause body.
-  ParsedPredicateImpl *next_use{nullptr};
-
   // Location information.
   Token negation;
   Token name;
@@ -249,30 +203,31 @@ class ParsedPredicateImpl : public Def<ParsedPredicateImpl>, public User {
   UseList<ParsedVariableImpl> argument_uses;
 };
 
-class ParsedAggregateImpl {
+class ParsedAggregateImpl : public User {
  public:
-  // Next in the clause.
-  ParsedAggregateImpl *next{nullptr};
+  virtual ~ParsedAggregateImpl(void);
+  explicit ParsedAggregateImpl(ParsedClauseImpl *clause_);
+
+  ParsedClauseImpl * const clause;
 
   DisplayRange spelling_range;
-  std::unique_ptr<ParsedPredicateImpl> functor;
-  std::unique_ptr<ParsedPredicateImpl> predicate;
 
-  ParsedVariableImpl *first_group_var{nullptr};
-  ParsedVariableImpl *first_config_var{nullptr};
-  ParsedVariableImpl *first_aggregate_var{nullptr};
+  ParsedPredicateImpl functor;
+  ParsedPredicateImpl predicate;
+
+  UseList<ParsedVariableImpl> group_vars;
+  UseList<ParsedVariableImpl> config_vars;
+  UseList<ParsedVariableImpl> aggregate_vars;
 };
 
 class ParsedParameterImpl : public Def<ParsedParameterImpl> {
  public:
-  inline ParsedParameterImpl(void)
-      : Def<ParsedParameterImpl>(this) {}
+  inline explicit ParsedParameterImpl(ParsedDeclarationImpl *decl_)
+      : Def<ParsedParameterImpl>(this),
+        decl(decl_) {}
 
-  // Next in the declaration head.
-  ParsedParameterImpl *next{nullptr};
-
-  // Next in the unordered chain.
-  ParsedParameterImpl *next_unordered{nullptr};
+  // The declaration containing this parameter.
+  ParsedDeclarationImpl * const decl;
 
   // If this parameter is `mutable(func)`, then this points to the functor
   // associated with `func`.
@@ -290,6 +245,7 @@ class ParsedParameterImpl : public Def<ParsedParameterImpl> {
   // Optional type.
   TypeLoc opt_type;
 
+  // The index of this parameter within its declaration.
   unsigned index{~0u};
 
   // `true` if `opt_type` was produced from parsing, as opposed to type
@@ -299,28 +255,13 @@ class ParsedParameterImpl : public Def<ParsedParameterImpl> {
 
 class ParsedClauseImpl : public Def<ParsedClauseImpl>, public User {
  public:
-  inline ParsedClauseImpl(ParsedModuleImpl *module_)
-      : Def<ParsedClauseImpl>(this),
-        User(this),
-        module(module_),
-        head_variables(this),
-        body_variables(this),
-        comparisons(this),
-        assignments(this),
-        aggregates(this),
-        positive_predicates(this),
-        negated_predicates(this) {}
+  virtual ~ParsedClauseImpl(void);
+  ParsedClauseImpl(ParsedModuleImpl *module_);
 
   mutable parse::IdInterpreter id;
 
   // The module containing this clause.
   ParsedModuleImpl *const module;
-
-  // The next clause associated with this `declaration`.
-  ParsedClauseImpl *next{nullptr};
-
-  // The next clause defined in `module`.
-  ParsedClauseImpl *next_in_module{nullptr};
 
   // The declaration associated with this clause (definition).
   ParsedDeclarationImpl *declaration{nullptr};
@@ -345,6 +286,10 @@ class ParsedClauseImpl : public Def<ParsedClauseImpl>, public User {
   // this clause as being disabled by this token.
   DisplayRange disabled_by;
 
+  // Maps identifiers of the form `parse::IdInterpreter` to uses of those
+  // identifiers in this clause.
+  std::unordered_map<uint64_t, UseList<ParsedVariableImpl>> variables;
+
   // Variables used in this clause.
   DefList<ParsedVariableImpl> head_variables;
   DefList<ParsedVariableImpl> body_variables;
@@ -367,27 +312,14 @@ class ParsedClauseImpl : public Def<ParsedClauseImpl>, public User {
 
 class ParsedDeclarationImpl : public Def<ParsedDeclarationImpl>, public User {
  public:
-  inline ParsedDeclarationImpl(ParsedModuleImpl *module_,
-                               const DeclarationKind kind_)
-      : Def<ParsedDeclarationImpl>(this),
-        User(this),
-        module(module_),
-        context(std::make_shared<parse::DeclarationContext>(kind_)),
-        parameters(this) {
-    context->redeclarations.AddUse(this);
-  }
+  virtual ~ParsedDeclarationImpl(void);
 
-  inline ParsedDeclarationImpl(
-      ParsedModuleImpl *module_,
-      const std::shared_ptr<parse::DeclarationContext> &context_)
-      : Def<ParsedDeclarationImpl>(this),
-        User(this),
-        module(module_),
-        context(context_),
-        parameters(this) {
-    assert(!context->redeclarations.Empty());
-    context->redeclarations.AddUse(this);
-  }
+  ParsedDeclarationImpl(ParsedModuleImpl *module_,
+                        const DeclarationKind kind_);
+
+  ParsedDeclarationImpl(
+        ParsedModuleImpl *module_,
+        const std::shared_ptr<parse::DeclarationContext> &context_);
 
   inline DisplayRange ParsedRange(void) const {
     return DisplayRange(parsed_tokens.front().Position(),
@@ -418,7 +350,7 @@ class ParsedDeclarationImpl : public Def<ParsedDeclarationImpl>, public User {
   ParsedDeclarationImpl *next_redecl{nullptr};
 
   // The context that collects all of the declarations together.
-  const std::shared_ptr<parse::DeclarationContext> context;
+  std::shared_ptr<parse::DeclarationContext> context;
 
   // The position of the declaration.
   DisplayPosition directive_pos;
@@ -516,13 +448,10 @@ class ParsedForeignConstantImpl : public Def<ParsedForeignConstantImpl> {
   bool can_overide{true};
 };
 
-class ParsedForeignTypeImpl : public Def<ParsedForeignTypeImpl> {
+class ParsedForeignTypeImpl : public Def<ParsedForeignTypeImpl>, public User {
  public:
-  inline ParsedForeignTypeImpl(void)
-      : Def<ParsedForeignTypeImpl>(this) {}
-
-  // The next foreign type anywhere in the parse.
-  ParsedForeignTypeImpl *next{nullptr};
+  virtual ~ParsedForeignTypeImpl(void);
+  ParsedForeignTypeImpl(void);
 
   // The name of this type.
   Token name;
@@ -541,7 +470,7 @@ class ParsedForeignTypeImpl : public Def<ParsedForeignTypeImpl> {
     bool can_override{true};
     bool is_present{false};
     bool is_transparent{false};
-    std::vector<std::unique_ptr<ParsedForeignConstantImpl>> constants;
+    std::unique_ptr<UseList<ParsedForeignConstantImpl>> constants;
   } info[kNumLanguages];
 };
 
@@ -552,9 +481,10 @@ class ParsedInlineImpl : public Def<ParsedInlineImpl> {
       bool is_prologue_)
       : Def<ParsedInlineImpl>(this),
         range(range_),
-        code(code_),
+        code(code_.data(), code_.size()),
         language(language_),
-        is_prologue(is_prologue_) {}
+        location(is_prologue_ ? InlineLocation::kPrologue :
+                    InlineLocation::kEpilogue) {}
 
   // Next inline in this module.
   ParsedInlineImpl *next{nullptr};
@@ -562,25 +492,16 @@ class ParsedInlineImpl : public Def<ParsedInlineImpl> {
   const DisplayRange range;
   const std::string code;
   const Language language;
-  const bool is_prologue;
+  const InlineLocation location;
 };
 
 class ParsedModuleImpl
-    : public std::enable_shared_from_this<ParsedModuleImpl> {
+    : public std::enable_shared_from_this<ParsedModuleImpl>,
+      public User {
  public:
-  ParsedModuleImpl(const DisplayConfiguration &config_)
-      : config(config_),
-        imports(this),
-        inlines(this),
-        foreign_types(this),
-        foreign_constants(this),
-        declarations(this),
-        exports(this),
-        locals(this),
-        queries(this),
-        functors(this),
-        messages(this),
-        clauses(this) {}
+
+  ~ParsedModuleImpl(void);
+  ParsedModuleImpl(const DisplayConfiguration &config_);
 
   const DisplayConfiguration config;
 
@@ -601,20 +522,25 @@ class ParsedModuleImpl
 
   std::vector<std::shared_ptr<ParsedModuleImpl>> non_root_modules;
 
-
   DefList<ParsedImportImpl> imports;
   DefList<ParsedInlineImpl> inlines;
   DefList<ParsedForeignTypeImpl> foreign_types;
+  DefList<ParsedForeignTypeImpl> builtin_types;
   DefList<ParsedForeignConstantImpl> foreign_constants;
 
+  // All declarations defined in this module, in the order in which they are
+  // defined.
   DefList<ParsedDeclarationImpl> declarations;
+
+  // Type-specific lists of the declarations within `declarations`. These lists
+  // let us focus on specific subsets of the declarations within the module.
   UseList<ParsedExportImpl> exports;
   UseList<ParsedLocalImpl> locals;
   UseList<ParsedQueryImpl> queries;
   UseList<ParsedFunctorImpl> functors;
   UseList<ParsedMessageImpl> messages;
 
-  // All clauses defined in this module.
+  // All clauses defined in this module, in the order in which they are defined.
   DefList<ParsedClauseImpl> clauses;
 
   // Mapping of identifier IDs to foreign types.
@@ -623,7 +549,6 @@ class ParsedModuleImpl
   // Maps identifier IDs to foreign constants.
   std::unordered_map<uint32_t, ParsedForeignConstantImpl *>
       id_to_foreign_constant;
-
 
   // Local declarations, grouped by `id=(name_id, arity)`.
   std::unordered_map<uint64_t, ParsedDeclarationImpl *> local_declarations;

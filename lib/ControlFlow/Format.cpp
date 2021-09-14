@@ -322,7 +322,8 @@ OutputStream &operator<<(OutputStream &os, ProgramGenerateRegion region) {
   auto i = 0u;
   auto input_vars = region.InputVariables();
 
-  for (auto param : functor.Parameters()) {
+  ParsedDeclaration decl(functor);
+  for (ParsedParameter param : decl.Parameters()) {
     if (param.Binding() == ParameterBinding::kFree) {
       os << sep << '_';
     } else {

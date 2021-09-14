@@ -104,6 +104,9 @@ class ErrorStream {
   }
 
   const ErrorStream &
+  operator<<(const ParsedVariable &maybe_var) const;
+
+  const ErrorStream &
   operator<<(const std::optional<ParsedVariable> &maybe_var) const;
 
  private:
@@ -195,6 +198,12 @@ class Error {
   // in particular being referenced.
   ::hyde::Note Note(const DisplayRange &range,
                     const DisplayRange &sub_range) const;
+
+  // An error message related to a highlighted range of tokens, with a sub-range
+  // in particular being referenced.
+  ::hyde::Note Note(const DisplayRange &range,
+                    const DisplayRange &sub_range,
+                    const DisplayPosition &pos_in_sub_range) const;
 
  private:
   ErrorStream Stream(void) const;
