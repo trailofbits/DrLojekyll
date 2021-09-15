@@ -79,14 +79,18 @@ OutputStream &operator<<(OutputStream &os, ParsedParameter param) {
 
 OutputStream &operator<<(OutputStream &os, ParsedDeclarationName decl_name) {
   auto name = decl_name.decl.Name();
-  if (name.Lexeme() == Lexeme::kIdentifierUnnamedAtom) {
-    os << "pred" << decl_name.decl.Id();
-  } else {
-    os << name;
-    if (os.RenameLocals() && decl_name.decl.IsLocal()) {
-      os << "_" << decl_name.decl.Id();
-    }
+  switch (name.Lexeme()) {
+    case Lexeme::kIdentifierAtom:
+      os << name;
+      if (os.RenameLocals() && decl_name.decl.IsLocal()) {
+        os << "pred_" << decl_name.decl.Id();
+      }
+      break;
+    default:
+      os << "pred_" << decl_name.decl.Id();
+      break;
   }
+
   return os;
 }
 
@@ -261,45 +265,41 @@ OutputStream &operator<<(OutputStream &os, ParsedInline code_) {
 
 OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
 
-  // Forward declaration.
-  if (!type.IsBuiltIn()) {
-    os << "#foreign " << type.Name() << '.';
+  if (type.IsBuiltIn()) {
+    return os;
   }
+
+  // Start with a forward declaration.
+  os << "#foreign " << type.Name() << '.';
 
   // Actual definitions, if any.
   for (auto lang : {Language::kUnknown, Language::kCxx, Language::kPython}) {
 
-    if (!type.IsBuiltIn() && type.IsSpecialized(lang)) {
-      auto maybe_code = type.CodeToInline(lang);
-      if (!maybe_code) {
-        continue;
-      }
-
-      const auto code = *maybe_code;
-      os << "\n#foreign " << type.Name() << " ```";
-
-      switch (lang) {
-        case Language::kUnknown: break;
-        case Language::kCxx: os << "c++ "; break;
-        case Language::kPython: os << "python "; break;
-      }
-
-      os << code << "```";
-
-      if (auto constructor = type.Constructor(lang); constructor) {
-        os << " ```" << constructor->first << '$' << constructor->second
-           << "```";
-      }
-
-      if (!type.IsBuiltIn() && type.IsReferentiallyTransparent(lang)) {
-        os << " @transparent";
-      }
-      os << '.';
+    auto maybe_code = type.CodeToInline(lang);
+    if (!maybe_code) {
+      continue;
     }
 
-    for (auto foreign_const : type.Constants(lang)) {
-      os << '\n' << foreign_const;
+    os << "\n#foreign " << type.Name() << " ```";
+
+    switch (lang) {
+      case Language::kUnknown: break;
+      case Language::kCxx: os << "c++ "; break;
+      case Language::kPython: os << "python "; break;
     }
+
+    os << (*maybe_code) << "```";
+
+    if (auto constructor = type.Constructor(lang); constructor) {
+      os << " ```" << constructor->first << '$' << constructor->second
+         << "```";
+    }
+
+    if (type.IsReferentiallyTransparent(lang)) {
+      os << " @transparent";
+    }
+
+    os << '.';
   }
   return os;
 }
@@ -333,7 +333,9 @@ OutputStream &operator<<(OutputStream &os, ParsedModule module) {
 
   // First, declare the foreign types. They may be used by the functors.
   for (ParsedForeignType type : module.ForeignTypes()) {
-    os << type << "\n";
+    if (!type.IsBuiltIn()) {
+      os << type << "\n";
+    }
   }
 
   for (ParsedForeignConstant cv : module.ForeignConstants()) {

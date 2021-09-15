@@ -115,8 +115,9 @@ class ParsedVariable : public Node<ParsedVariable, ParsedVariableImpl> {
   bool operator==(const ParsedVariable &that) const noexcept;
   bool operator!=(const ParsedVariable &that) const noexcept;
 
-  // Return the number of uses of this variable.
-  unsigned NumUses(void) const;
+  // Return whether or not this variable is used more than once. Appearances
+  // in the head of a clause count as a use.
+  bool HasMoreThanOneUse(void) const noexcept;
 
  protected:
   friend class ParsedAssignment;

@@ -227,10 +227,15 @@ bool ParserImpl::ReadNextToken(Token &tok_out) {
       case Lexeme::kIdentifierVariable: {
         const auto id = next_tok.IdentifierId();
         if (context->foreign_types.count(id)) {
+          assert(context->foreign_types[id] != nullptr);
           next_tok = next_tok.AsForeignType();
+          assert(next_tok.IdentifierId() == id);
+
         } else if (context->foreign_constants.count(id)) {
+          assert(context->foreign_constants[id] != nullptr);
           next_tok = next_tok.AsForeignConstant(
               context->foreign_constants[id]->type.Kind());
+          assert(next_tok.IdentifierId() == id);
         }
       }
         [[clang::fallthrough]];

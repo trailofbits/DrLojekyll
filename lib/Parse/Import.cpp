@@ -92,6 +92,8 @@ void ParserImpl::ParseImport(ParsedModuleImpl *module) {
 
   // Go and parse the module.
   ParserImpl sub_impl(context);
+  assert(sub_impl.context.get() == context.get());
+
   auto sub_mod_opt = sub_impl.ParseDisplay(
       context->display_manager.OpenPath(resolved_path.string(), sub_config),
       sub_config);

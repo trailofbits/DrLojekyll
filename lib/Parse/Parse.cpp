@@ -377,9 +377,10 @@ bool ParsedVariable::operator!=(const ParsedVariable &that) const noexcept {
   return impl->first_appearance != that.impl->first_appearance;
 }
 
-// Return the number of uses of this variable.
-unsigned ParsedVariable::NumUses(void) const {
-  return impl->NumUses();
+// Return whether or not this variable is used more than once. Appearances
+// in the head of a clause count as a use.
+bool ParsedVariable::HasMoreThanOneUse(void) const noexcept {
+  return impl->first_appearance->next_appearance != nullptr;
 }
 
 // Return the variable to which `literal` assigned.

@@ -105,7 +105,6 @@ ParserImpl::CreateLiteralVariable(ParsedClauseImpl *clause, Token tok,
   lhs->next_appearance = var;
 
   var->first_appearance = lhs->first_appearance;
-  var->id.flat = var->Id();
   var->type = lhs->type;
 
   return var;

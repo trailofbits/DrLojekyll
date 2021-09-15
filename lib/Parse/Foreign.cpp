@@ -81,11 +81,13 @@ void ParserImpl::ParseForeignTypeDecl(ParsedModuleImpl *module) {
             Lexeme::kIdentifierVariable == lexeme ||
             Lexeme::kIdentifierType == lexeme) {
           const auto id = tok.IdentifierId();
-          name = tok;
-          state = 1;
+          name = tok.AsForeignType();
+
+          assert(name.IdentifierId() == id);
+
           auto &found_type = context->foreign_types[id];
           if (!found_type) {
-            alloc_type = module->foreign_types.Create();
+            alloc_type = module->root_module->foreign_types.Create();
             found_type = alloc_type;
             found_type->name = tok.AsForeignType();
 
@@ -97,6 +99,8 @@ void ParserImpl::ParseForeignTypeDecl(ParsedModuleImpl *module) {
 
           type = found_type;
           type->decls.push_back(scope_range);
+
+          state = 1;
           continue;
 
         } else {
@@ -394,11 +398,40 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
           // Create a named constant on a foreign type.
           case Lexeme::kIdentifierType: {
             alloc_const->type = TypeLoc(tok);
-            state = 1;
             type = context->foreign_types[tok.IdentifierId()];
+            alloc_const->parent = type;
+            assert(type != nullptr);
+
+            break;
+          }
+
+          case Lexeme::kIdentifierAtom:
+          case Lexeme::kIdentifierVariable: {
+
+            auto &found_type = context->foreign_types[tok.IdentifierId()];
+            if (found_type) {
+              context->error_log.Append(scope_range, tok_range)
+                  << "Internal error: parser did not change variable/atom token '"
+                  << tok << "' into a type token";
+
+            } else {
+              context->error_log.Append(scope_range, tok_range)
+                  << "Cannot declare foreign constant on as-of-yet undeclared "
+                  << "foreign type '" << tok << "'";
+
+              // Recover.
+              found_type = module->root_module->builtin_types.Create();
+              found_type->name = tok;
+
+              module->root_module->id_to_foreign_type.emplace(
+                  tok.IdentifierId(), found_type);
+            }
+
+            type = found_type;
             assert(type != nullptr);
             alloc_const->parent = type;
-            continue;
+
+            break;
           }
 
           // Create a named constant on a built-in type.
@@ -412,16 +445,15 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
             auto &found_type = context->foreign_types[id];
             if (!found_type) {
               found_type = module->root_module->builtin_types.Create();
-              type->name = tok;
-              type->is_built_in = true;
+              found_type->name = tok;
+              found_type->is_built_in = true;
             }
 
             type = found_type;
             assert(type != nullptr);
             alloc_const->parent = type;
 
-            state = 1;
-            continue;
+            break;
           }
 
           default:
@@ -430,6 +462,9 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
                 << "' instead";
             return;
         }
+
+        state = 1;
+        continue;
 
       // Name of the foreign constant.
       case 1:

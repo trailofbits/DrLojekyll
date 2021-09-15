@@ -260,6 +260,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
     pred_name = Token();
     negation_tok = Token();
     pred_decl = nullptr;
+    pred = nullptr;
     pred_vars.clear();
   };
 
@@ -306,6 +307,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
 
           } else {
             decl = clause->declaration;
+            assert(decl != nullptr);
             state = 5;
             continue;
           }
@@ -388,16 +390,17 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
             state = 4;
             continue;
 
-          // We matched it against a clasue head.
-          } else if (TryMatchClauseWithDecl(module, clause)) {
-            decl = clause->declaration;
-            state = 4;
-            continue;
-
           // `TryMatchClauseWithDecl` failed and will have reported an error.
-          } else {
+          } else if (!TryMatchClauseWithDecl(module, clause)) {
             assert(0 < context->error_log.Size());
             return;
+
+          // We matched it against a clasue head.
+          } else {
+            decl = clause->declaration;
+            assert(decl != nullptr);
+            state = 4;
+            continue;
           }
 
         } else {

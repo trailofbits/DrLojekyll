@@ -297,6 +297,8 @@ Token Token::AsForeignType(void) const {
     default: break;
   }
 
+  assert(ret.IdentifierId() == IdentifierId());
+
   return ret;
 }
 
@@ -315,6 +317,7 @@ Token Token::AsForeignConstant(::hyde::TypeKind kind) const {
     }
     default: break;
   }
+  assert(ret.IdentifierId() == IdentifierId());
 
   return ret;
 }

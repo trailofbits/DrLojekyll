@@ -1386,7 +1386,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   }
 
   auto do_var = [&](ParsedVariable var) {
-    if (1u == var.NumUses() && !var.IsUnnamed()) {
+    if (!var.HasMoreThanOneUse() && !var.IsUnnamed()) {
       log.Append(clause.SpellingRange(), var.SpellingRange())
           << "Named variable '" << var << "' is only used once; you should use "
           << "either '_' or prefix the name with an '_' to explicitly mark it "
@@ -1524,7 +1524,9 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 
   // Fixup all `vc` IDs so that within a set they all match.
   for (auto &vc : context.vars) {
-    vc->id = vc->FindAs<VarColumn>()->id;
+    if (vc) {
+      vc->id = vc->FindAs<VarColumn>()->id;
+    }
   }
 
   // Go back through the comparisons and look for clause-local unsatisfiable
