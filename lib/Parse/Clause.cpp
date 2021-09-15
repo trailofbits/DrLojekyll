@@ -176,6 +176,8 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
                              ParsedDeclarationImpl *decl) {
 
   ParsedClauseImpl *clause = module->clauses.Create(module);
+  clause->declaration = decl;
+
   prev_named_var.clear();
 
   Token tok;
@@ -303,6 +305,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
             return;
 
           } else {
+            decl = clause->declaration;
             state = 5;
             continue;
           }
@@ -678,7 +681,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
           // Don't allow comparisons against the same named variable. This
           // simplifies later checks, and makes sure that iteration over the
           // comparisons containing a given variable are well-founded.
-          if (ParsedVariable(lhs).Id() == ParsedVariable(rhs).Id()) {
+          if (lhs->first_appearance == rhs->first_appearance) {
             const DisplayRange assign_range(lhs->name.Position(),
                                             rhs->name.NextPosition());
             context->error_log.Append(scope_range, assign_range)
@@ -968,7 +971,8 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
           // A functor with a range of one-to-one or one-or-more is guaranteed
           // to produce at least one output, and so negating it would yield
           // and always-false situation.
-          if (pred_decl->context->kind == DeclarationKind::kFunctor &&
+          if (negation_tok.IsValid() &&
+              pred_decl->context->kind == DeclarationKind::kFunctor &&
               (pred_decl->range == FunctorRange::kOneToOne ||
                pred_decl->range == FunctorRange::kOneOrMore)) {
             auto err = context->error_log.Append(scope_range, pred_range);
@@ -1022,6 +1026,17 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
   assert(clause->declaration == decl);
   const auto clause_decl_context = decl->context.get();
   clause_decl_context->clauses.AddUse(clause);
+
+  for (ParsedVariableImpl *var : clause->head_variables) {
+    // NOTE(pag): This has a side-effect of filling in
+    //            `var->first_appearance->id`.
+    var->id.flat = var->Id();
+  }
+  for (ParsedVariableImpl *var : clause->body_variables) {
+    // NOTE(pag): This has a side-effect of filling in
+    //            `var->first_appearance->id`.
+    var->id.flat = var->Id();
+  }
 
   const auto is_message_clause =
       DeclarationKind::kMessage == clause_decl_context->kind;

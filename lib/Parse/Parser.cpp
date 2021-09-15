@@ -837,7 +837,7 @@ void ParserImpl::ParseLocalExport(
         << "' must end with a period";
     RemoveDecl(local);
 
-  // Add the local to the module.
+  // Add the local/export to the module.
   } else {
     const auto decl_for_clause = local;
     FinalizeDeclAndCheckConsistency(local);
@@ -1264,6 +1264,37 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
   const parse::DeclarationContext *decl_context = decl->context.get();
   auto &redecls = decl_context->redeclarations;
 
+  // Link this declaration in.
+  switch (auto &unique_redeclarations = decl->context->unique_redeclarations;
+          decl->context->kind) {
+    case DeclarationKind::kFunctor:
+    case DeclarationKind::kQuery:
+      for (auto redecl : unique_redeclarations) {
+        const auto arity = decl->parameters.Size();
+        auto all_same = true;
+        for (auto i = 0u; i < arity; ++i) {
+          ParsedParameterImpl *const old_p = redecl->parameters[i];
+          ParsedParameterImpl *const new_p = decl->parameters[i];
+          if (old_p->opt_binding.Lexeme() != new_p->opt_binding.Lexeme()) {
+            all_same = false;
+          }
+        }
+        if (!all_same) {
+          return;  // Not a unique redecl.
+        }
+      }
+
+      // If we made it down here, then it's not unique.
+      unique_redeclarations.AddUse(decl);
+      break;
+
+    default:
+      if (unique_redeclarations.Empty()) {
+        unique_redeclarations.AddUse(decl);
+      }
+      break;
+  }
+
   auto num_redecls = redecls.Size();
   if (1u >= num_redecls) {
     return;
@@ -1414,36 +1445,6 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
     note << "Previous inline attribute is here";
     RemoveDecl(decl);
     return;
-  }
-
-  switch (auto &unique_redeclarations = decl->context->unique_redeclarations;
-          decl->context->kind) {
-    case DeclarationKind::kFunctor:
-    case DeclarationKind::kQuery:
-      for (auto redecl : unique_redeclarations) {
-        const auto arity = decl->parameters.Size();
-        auto all_same = true;
-        for (auto i = 0u; i < arity; ++i) {
-          ParsedParameterImpl *const old_p = redecl->parameters[i];
-          ParsedParameterImpl *const new_p = decl->parameters[i];
-          if (old_p->opt_binding.Lexeme() != new_p->opt_binding.Lexeme()) {
-            all_same = false;
-          }
-        }
-        if (!all_same) {
-          return;  // Not a unique redecl.
-        }
-      }
-
-      // If we made it down here, then it's not unique.
-      unique_redeclarations.AddUse(decl);
-      break;
-
-    default:
-      if (unique_redeclarations.Empty()) {
-        unique_redeclarations.AddUse(decl);
-      }
-      break;
   }
 }
 

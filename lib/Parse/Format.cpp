@@ -340,13 +340,13 @@ OutputStream &operator<<(OutputStream &os, ParsedModule module) {
     os << cv << '\n';
   }
 
-  for (auto sub_module : ParsedModuleIterator(module)) {
+  for (ParsedModule sub_module : ParsedModuleIterator(module)) {
     for (ParsedFunctor decl : sub_module.Functors()) {
       do_decl(decl);
     }
   }
 
-  for (auto sub_module : ParsedModuleIterator(module)) {
+  for (ParsedModule sub_module : ParsedModuleIterator(module)) {
     for (ParsedQuery decl : sub_module.Queries()) {
       do_decl(decl);
     }
@@ -366,18 +366,18 @@ OutputStream &operator<<(OutputStream &os, ParsedModule module) {
     }
   }
 
-  for (auto sub_module : ParsedModuleIterator(module)) {
-    for (auto code : sub_module.Inlines()) {
+  for (ParsedModule sub_module : ParsedModuleIterator(module)) {
+    for (ParsedInline code : sub_module.Inlines()) {
       if (code.IsPrologue()) {
         os << code << "\n";
       }
     }
 
-    for (auto clause : sub_module.Clauses()) {
+    for (ParsedClause clause : sub_module.Clauses()) {
       os << clause << "\n";
     }
 
-    for (auto code : sub_module.Inlines()) {
+    for (ParsedInline code : sub_module.Inlines()) {
       if (!code.IsPrologue()) {
         os << code << "\n";
       }

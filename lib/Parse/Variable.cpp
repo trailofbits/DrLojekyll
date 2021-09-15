@@ -37,10 +37,6 @@ ParsedVariableImpl *ParserImpl::CreateVariable(ParsedClauseImpl *clause,
     var->first_appearance = var;
   }
 
-  // NOTE(pag): This has a side-effect of filling in
-  //            `var->first_appearance->id`.
-  var->id.flat = var->Id();
-
   return var;
 }
 

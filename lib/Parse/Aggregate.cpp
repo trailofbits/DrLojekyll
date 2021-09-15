@@ -7,11 +7,18 @@ namespace {
 
 static void AnalyzeAggregateVars(ParsedAggregateImpl *impl,
                                  const ErrorLog &log) {
+  ParsedDeclarationImpl * const decl = impl->functor->declaration;
+  if (decl->context->kind != DeclarationKind::kFunctor) {
+    assert(0u < log.Size());
+    return;
+  }
+
   for (ParsedVariableImpl *param_var : impl->predicate->argument_uses) {
     ParsedVariableImpl *found_as = nullptr;
+
     auto arg_num = 0u;
     for (ParsedVariableImpl *arg_var : impl->functor->argument_uses) {
-      if (param_var->Id() == arg_var->Id()) {
+      if (param_var->first_appearance == arg_var->first_appearance) {
         found_as = arg_var;
         break;
       }
@@ -22,7 +29,6 @@ static void AnalyzeAggregateVars(ParsedAggregateImpl *impl,
       impl->group_vars.AddUse(param_var);
 
     } else {
-      ParsedDeclarationImpl * const decl = impl->functor->declaration;
       ParsedParameterImpl * const param = decl->parameters[arg_num];
       switch (param->opt_binding.Lexeme()) {
         case Lexeme::kKeywordBound:
@@ -214,6 +220,8 @@ bool ParserImpl::ParseAggregatedPredicate(
           anon_decl->rparen = tok;
           pred->rparen = tok;
           anon_clause_toks.push_back(tok);
+
+          FinalizeDeclAndCheckConsistency(anon_decl);
 
           state = 4;
           continue;
