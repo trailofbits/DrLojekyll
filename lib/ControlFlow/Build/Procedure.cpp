@@ -37,18 +37,26 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
         impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
     parent->AddRegion(loop);
     loop->vector.Emplace(loop, vec);
+    OP *next_parent = loop;
 
     DataModel *model = impl->view_to_model[receive]->FindAs<DataModel>();
     TABLE *table = model->table;
-    CHANGERECORD *insert = nullptr;
+    CHANGETUPLE *insert = nullptr;
 
     // If this message receive has a corresponding table, then save it as
     // a record here.
     if (table) {
-      insert = impl->operation_regions.CreateDerived<CHANGERECORD>(
-          impl->next_id++, loop, TupleState::kAbsent, TupleState::kPresent);
+//      CHANGERECORD *insert = impl->operation_regions.CreateDerived<CHANGERECORD>(
+//          impl->next_id++, loop, TupleState::kAbsent, TupleState::kPresent);
+//      insert->table.Emplace(insert, table);
+//      loop->body.Emplace(loop, insert);
+
+      insert = impl->operation_regions.CreateDerived<CHANGETUPLE>(
+          loop, TupleState::kAbsent, TupleState::kPresent);
       insert->table.Emplace(insert, table);
       loop->body.Emplace(loop, insert);
+
+      next_parent = insert;
     }
 
     for (auto col : receive.Columns()) {
@@ -59,15 +67,13 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
 
       if (insert) {
         insert->col_values.AddUse(var);
-        const auto record_var = insert->record_vars.Create(
-            impl->next_id++,VariableRole::kRecordElement);
-        record_var->defining_region = insert;
-        record_var->query_column = col;
-        insert->col_id_to_var.emplace(col.Id(), record_var);
+//        const auto record_var = insert->record_vars.Create(
+//            impl->next_id++,VariableRole::kRecordElement);
+//        record_var->defining_region = insert;
+//        record_var->query_column = col;
+//        insert->col_id_to_var.emplace(col.Id(), record_var);
       }
     }
-
-    OP *next_parent = insert ? insert : static_cast<OP *>(loop);
 
     BuildEagerInsertionRegions(impl, receive, context, next_parent,
                                receive.Successors(), table);

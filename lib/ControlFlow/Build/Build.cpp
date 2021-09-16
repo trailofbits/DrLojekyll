@@ -2197,22 +2197,23 @@ std::optional<Program> Program::Build(const ::hyde::Query &query) {
     MapVariables(proc);
   }
 
-  impl->Analyze();
+  if (false) {
+    impl->Analyze();
 
-//  ExtractPrimaryProcedure(impl.get(), entry_proc, context);
-//
-//  impl->Optimize();
-//
-//  // Assign defining regions to each variable.
-//  //
-//  // NOTE(pag): We don't really want to map variables throughout the building
-//  //            process because otherwise every time we replaced all uses of
-//  //            one region with another, we'd screw up the mapping.
-//  for (auto proc : impl->procedure_regions) {
-//    MapVariables(proc);
-//  }
+  } else {
+    ExtractPrimaryProcedure(impl.get(), entry_proc, context);
 
-  //impl->Analyze();
+    impl->Optimize();
+
+    // Assign defining regions to each variable.
+    //
+    // NOTE(pag): We don't really want to map variables throughout the building
+    //            process because otherwise every time we replaced all uses of
+    //            one region with another, we'd screw up the mapping.
+    for (auto proc : impl->procedure_regions) {
+      MapVariables(proc);
+    }
+  }
 
   // Finally, go through our tables. Any table with no indices is given a
   // full table index, on the assumption that it is used for things like state

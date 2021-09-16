@@ -194,6 +194,14 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       : os(os_),
         module(module_) {}
 
+  void Visit(ProgramModeSwitchRegion region) override {
+    if (auto body = region.Body()) {
+      body->Accept(*this);
+    } else {
+      os << os.Indent() << "pass\n";
+    }
+  }
+
   void Visit(ProgramCallRegion region) override {
     os << Comment(os, region, "Program Call Region");
 
@@ -712,7 +720,8 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     //
     // NOTE(pag): The codegen for negations depends upon transitioning from
     //            absent to unknown as a way of preventing race conditions.
-    const auto indices = region.Table().Indices();
+    const auto table = region.Table();
+    const auto indices = table.Indices();
     if (region.ToState() == TupleState::kPresent ||
         region.FromState() == TupleState::kAbsent) {
       os << os.Indent() << "if not present_bit:\n";
@@ -721,7 +730,6 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       auto has_indices = false;
       for (auto index : indices) {
         const auto key_cols = index.KeyColumns();
-        const auto val_cols = index.ValueColumns();
 
         auto key_prefix = "(";
         auto key_suffix = ")";
@@ -734,20 +742,18 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
         has_indices = true;
         os << os.Indent() << TableIndex(os, index);
 
-        // The index is implemented with a `set`.
-        if (val_cols.empty()) {
-          os << ".add(" << tuple_var << ")\n";
-
-        // The index is implemented with a `defaultdict`.
-        } else {
-          os << "[" << key_prefix;
-          sep = "";
-          for (auto indexed_col : index.KeyColumns()) {
-            os << sep << tuple_var << "[" << indexed_col.Index() << "]";
-            sep = ", ";
+        os << "[" << key_prefix;
+        sep = "";
+        for (auto indexed_col : key_cols) {
+          os << sep << tuple_var;
+          if (1u < table.Columns().size()) {
+            os << "[" << indexed_col.Index() << "]";
           }
-          os << key_suffix << "].append(" << tuple_var << ")\n";
+          sep = ", ";
         }
+        os << key_suffix << "]";
+
+        os << ".append(" << tuple_var << ")\n";
       }
 
       if (!has_indices) {
