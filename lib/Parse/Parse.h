@@ -486,6 +486,22 @@ class ParsedInlineImpl : public Def<ParsedInlineImpl> {
   const InlineLocation location;
 };
 
+class ParsedDatabaseNameImpl : public Def<ParsedDatabaseNameImpl> {
+ public:
+  inline ParsedDatabaseNameImpl(Token introducer_tok_, Token name_tok_,
+                                Token dot_, std::string name_)
+      : Def<ParsedDatabaseNameImpl>(this),
+        introducer_tok(introducer_tok_),
+        name_tok(name_tok_),
+        dot_tok(dot_),
+        name(std::move(name_)) {}
+
+  const Token introducer_tok;
+  const Token name_tok;
+  const Token dot_tok;
+  const std::string name;
+};
+
 class ParsedModuleImpl
     : public std::enable_shared_from_this<ParsedModuleImpl>,
       public User {
@@ -513,6 +529,7 @@ class ParsedModuleImpl
 
   std::vector<std::shared_ptr<ParsedModuleImpl>> non_root_modules;
 
+  DefList<ParsedDatabaseNameImpl> names;
   DefList<ParsedImportImpl> imports;
   DefList<ParsedInlineImpl> inlines;
   DefList<ParsedForeignTypeImpl> foreign_types;

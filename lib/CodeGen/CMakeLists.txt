@@ -2,19 +2,20 @@
 
 set(CodeGen_PUBLIC_H
     "${PROJECT_SOURCE_DIR}/include/drlojekyll/CodeGen/CodeGen.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/CodeGen/MessageSerialization.h"
 )
 
 set(CodeGen_SRCS
-    "MessageSerialization.cpp"
     "CPlusPlus/Database.cpp"
     "CPlusPlus/Interface.cpp"
+    "CPlusPlus/Service.cpp"
     "CPlusPlus/Util.cpp"
     "CPlusPlus/Util.h"
+    "FlatBuffer/Interface.cpp"
     "Python/Database.cpp"
     "Python/Interface.cpp"
     "Python/Util.cpp"
     "Python/Util.h"
+    "Util.cpp"
 )
 
 set(CodeGen_PRIV_DEPS

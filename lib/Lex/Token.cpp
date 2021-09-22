@@ -92,7 +92,8 @@ DisplayPosition Token::NextPosition(void) const {
 
     case ::hyde::Lexeme::kLiteralCode:
     case ::hyde::Lexeme::kLiteralCxxCode:
-    case ::hyde::Lexeme::kLiteralPythonCode: {
+    case ::hyde::Lexeme::kLiteralPythonCode:
+    case ::hyde::Lexeme::kLiteralFlatBufferCode: {
       const auto code = As<lex::CodeLiteralToken>();
       index += code.Load<lex::IndexDisp>();
       line += code.Load<lex::LineDisp>();
@@ -154,7 +155,8 @@ unsigned Token::SpellingWidth(void) const {
     case ::hyde::Lexeme::kInvalidUnknown:
     case ::hyde::Lexeme::kLiteralCode:
     case ::hyde::Lexeme::kLiteralCxxCode:
-    case ::hyde::Lexeme::kLiteralPythonCode: {
+    case ::hyde::Lexeme::kLiteralPythonCode:
+    case ::hyde::Lexeme::kLiteralFlatBufferCode: {
       int64_t num_lines = 0;
       int64_t num_cols = 0;
       if (Position().TryComputeDistanceTo(NextPosition(), nullptr, &num_lines,
@@ -201,7 +203,8 @@ unsigned Token::CodeId(void) const {
   switch (Lexeme()) {
     case ::hyde::Lexeme::kLiteralCode:
     case ::hyde::Lexeme::kLiteralCxxCode:
-    case ::hyde::Lexeme::kLiteralPythonCode: {
+    case ::hyde::Lexeme::kLiteralPythonCode:
+    case ::hyde::Lexeme::kLiteralFlatBufferCode: {
       return As<lex::CodeLiteralToken>().Load<lex::Id>();
     }
     default: return 0;

@@ -172,6 +172,9 @@ class ParserImpl {
   // module.
   void ParseInlineCode(ParsedModuleImpl *module);
 
+  // Try to parse `sub_range` as a database name declaration.
+  void ParseDatabase(ParsedModuleImpl *module);
+
   // Try to match a clause with a declaration.
   bool TryMatchClauseWithDecl(ParsedModuleImpl *module,
                               ParsedClauseImpl *clause);

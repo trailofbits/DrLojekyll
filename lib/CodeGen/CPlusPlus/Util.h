@@ -60,8 +60,5 @@ const char *OperatorString(ComparisonOperator op);
 std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
                                DataVariable var);
 
-// Return all messages.
-std::unordered_set<ParsedMessage> Messages(ParsedModule module);
-
 }  // namespace cxx
 }  // namespace hyde

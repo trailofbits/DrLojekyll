@@ -1,40 +1,5 @@
 # Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
-# Copyright 2021, Trail of Bits, Inc. All rights reserved.
-
-
-
-if(WIN32)
-  set(SlabRuntime_PUBLIC_H)
-  set(SlabRuntime_SRCS)
-else()
-  set(SlabRuntime_PUBLIC_H
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Slab.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabIndex.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabList.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabManager.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabPointer.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabReference.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabStorage.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabTable.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabTuple.h"
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/SlabVector.h"
-  )
-  set(SlabRuntime_SRCS
-    "Slab/Error.cpp"
-    "Slab/Error.h"
-    "Slab/Slab.cpp"
-    "Slab/Slab.h"
-    "Slab/SlabList.cpp"
-    "Slab/SlabManager.cpp"
-    "Slab/SlabManager.h" 
-    "Slab/SlabReference.cpp"
-    "Slab/SlabStorage.cpp"
-    "Slab/SlabTable.cpp"
-    "Slab/SlabVector.cpp"
-  )
-endif()
-
 set(Runtime_PUBLIC_H
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/xxhash.h"
 
@@ -59,17 +24,16 @@ set(Runtime_PUBLIC_H
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Util.h"
 )
 
-
-
 set(Runtime_SRCS
   ${SlabRuntime_SRCS}
-  "Std/Storage.cpp"
+  "StdStorage.cpp"
 )
 
 set(Runtime_PRIV_DEPS
 )
 
 set(Runtime_DEPS
+  flatbuffers
 )
 
 dr_define_static_library(Runtime

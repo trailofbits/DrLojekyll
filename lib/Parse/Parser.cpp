@@ -1193,6 +1193,16 @@ void ParserImpl::ParseAllTokens(ParsedModuleImpl *module) {
         ParseInlineCode(module);
         continue;
 
+      // Declare the name of this datbase.
+      //
+      //    #database atom_name.
+      //
+      // This affects later code generation. E.g. the
+      case Lexeme::kHashDatabase:
+        ReadStatement();
+        ParseDatabase(module);
+        continue;
+
       // A clause. For example:
       //
       //    foo(...).
@@ -1390,6 +1400,8 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
     return;
   }
 
+  const DeclarationKind prev_decl_kind = prev_decl->context->kind;
+
   // Make sure all parameters bindings, types, merge declarations, etc. match
   // across all re-declarations.
   for (size_t i = 0; i < num_params; ++i) {
@@ -1397,8 +1409,8 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
     ParsedParameterImpl * const curr_param = decl->parameters[i];
     if ((prev_param->opt_binding.Lexeme() !=
          curr_param->opt_binding.Lexeme()) &&
-        prev_decl->context->kind != DeclarationKind::kFunctor &&
-        prev_decl->context->kind != DeclarationKind::kQuery) {
+        prev_decl_kind != DeclarationKind::kFunctor &&
+        prev_decl_kind != DeclarationKind::kQuery) {
       auto err = context->error_log.Append(
           scope_range, curr_param->opt_binding.SpellingRange());
       err << "Parameter binding attribute differs";
@@ -1406,6 +1418,27 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
       auto note = err.Note(prev_decl_range,
                            prev_param->opt_binding.SpellingRange());
       note << "Previous parameter binding attribute is here";
+
+      RemoveDecl(decl);
+      return;
+    }
+
+    // Make sure the names of the parameters match, as these are all "exported"
+    // symbols to codegen, and we want the names of structure fields and such to
+    // be consistently named.
+    if ((prev_decl_kind == DeclarationKind::kFunctor ||
+         prev_decl_kind == DeclarationKind::kQuery ||
+         prev_decl_kind == DeclarationKind::kMessage) &&
+        (prev_param->name.IdentifierId() !=
+         curr_param->name.IdentifierId())) {
+      auto err = context->error_log.Append(
+          scope_range, curr_param->name.SpellingRange());
+      err << "Parameter name on externally visible declaration (query, "
+          << "message, functor) differs from prior declaration";
+
+      auto note = err.Note(prev_decl_range,
+                           prev_param->name.SpellingRange());
+      note << "Previous parameter name here";
 
       RemoveDecl(decl);
       return;
@@ -1449,6 +1482,76 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
                          prev_decl->inline_attribute.SpellingRange());
     note << "Previous inline attribute is here";
     RemoveDecl(decl);
+    return;
+  }
+}
+
+// Try to parse `sub_range` as a database name declaration.
+void ParserImpl::ParseDatabase(ParsedModuleImpl *module) {
+  Token tok;
+  if (!ReadNextSubToken(tok)) {
+    assert(false);
+  }
+
+  assert(tok.Lexeme() == Lexeme::kHashDatabase);
+
+  const Token introducer_tok = tok;
+
+  if (!ReadNextSubToken(tok)) {
+    context->error_log.Append(scope_range, introducer_tok.NextPosition())
+        << "Unexpected end-of-stream here; expected an atom for the database "
+        << "name here";
+    return;
+  }
+
+  const Token db_name = tok;
+  switch (db_name.Lexeme()) {
+    case Lexeme::kIdentifierAtom:
+    case Lexeme::kIdentifierVariable:
+    case Lexeme::kIdentifierConstant:
+    case Lexeme::kIdentifierType:
+      break;
+    default:
+      context->error_log.Append(scope_range, introducer_tok.NextPosition())
+          << "Expected an atom or variable identifier, but got '"
+          << db_name << "' instead";
+      return;
+  }
+
+  if (!ReadNextSubToken(tok)) {
+    context->error_log.Append(scope_range, db_name.NextPosition())
+        << "Unexpected end-of-stream here; expected a period to end the "
+        << "database name declaration here";
+    return;
+  }
+
+  std::string_view data_view;
+  if (!context->display_manager.TryReadData(db_name.SpellingRange(),
+                                            &data_view) ||
+      data_view.empty()) {
+    context->error_log.Append(scope_range, db_name.SpellingRange())
+        << "Unable to read database name, or database name is empty";
+    return;
+  }
+
+  const Token dot = tok;
+  std::string name_str(data_view.data(), data_view.size());
+
+  const auto name = module->root_module->names.Create(
+      introducer_tok, db_name, dot, std::move(name_str));
+  const auto first_name = module->root_module->names[0];
+
+  if (name->name != first_name->name) {
+    auto err = context->error_log.Append(scope_range, db_name.SpellingRange());
+
+    err
+        << "Unexpected change in database name here; previous name was '"
+        << first_name->name << "'";
+
+    err.Note(DisplayRange(first_name->introducer_tok.Position(),
+                          first_name->dot_tok.NextPosition()),
+             first_name->name_tok.SpellingRange())
+        << "Previous name declaration was here";
     return;
   }
 }
@@ -1907,8 +2010,13 @@ Parser::ParseStream(std::istream &is,
 }
 
 // Add a directory as a search path for files.
-void Parser::AddModuleSearchPath(std::string_view path) const {
+void Parser::AddModuleSearchPath(std::filesystem::path path) const {
   impl->context->import_search_paths.emplace_back(path);
+}
+
+// Return a copy of the list of search paths used by the parser.
+std::vector<std::filesystem::path> Parser::SearchPaths(void) const noexcept {
+  return impl->context->import_search_paths;
 }
 
 }  // namespace hyde

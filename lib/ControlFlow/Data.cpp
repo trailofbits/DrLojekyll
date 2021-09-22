@@ -146,7 +146,7 @@ DataIndexImpl::DataIndexImpl(unsigned id_, DataTableImpl *table_,
 
 // Get or create a table in the program.
 DataTableImpl *DataTableImpl::GetOrCreate(ProgramImpl *impl, Context &,
-                                              QueryView view) {
+                                          QueryView view) {
 
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
 
@@ -195,16 +195,16 @@ DataTableImpl *DataTableImpl::GetOrCreate(ProgramImpl *impl, Context &,
   if (!model->table) {
     model->table = impl->tables.Create(impl->next_id++);
 
-//    std::vector<unsigned> offsets;
-//    unsigned col_index = 0;
+    std::vector<unsigned> offsets;
+    unsigned col_index = 0;
     for (auto col : cols) {
-//      offsets.push_back(col_index++);
+      offsets.push_back(col_index++);
       (void) model->table->columns.Create(impl->next_id++, col.Type().Kind(),
                                           model->table);
     }
 
-//    // Always create an index over every column.
-//    (void) model->table->GetOrCreateIndex(impl, std::move(offsets));
+    // Always create an index over every column.
+    (void) model->table->GetOrCreateIndex(impl, std::move(offsets));
   }
 
   const auto old_size = model->table->views.size();

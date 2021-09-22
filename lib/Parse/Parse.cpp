@@ -83,6 +83,7 @@ ParsedModuleImpl::~ParsedModuleImpl(void) {
 ParsedModuleImpl::ParsedModuleImpl(const DisplayConfiguration &config_)
     : User(this),
       config(config_),
+      names(this),
       imports(this),
       inlines(this),
       foreign_types(this),
@@ -1106,6 +1107,10 @@ bool ParsedMessage::IsPublished(void) const noexcept {
   return !impl->context->clauses.Empty();
 }
 
+bool ParsedMessage::IsReceived(void) const noexcept {
+  return impl->context->clauses.Empty();
+}
+
 // Can this message receive/publish removals?
 bool ParsedMessage::IsDifferential(void) const noexcept {
   return impl->differential_attribute.IsValid();
@@ -1125,6 +1130,31 @@ unsigned ParsedMessage::NumNegatedUses(void) const noexcept {
 
 DisplayRange ParsedModule::SpellingRange(void) const noexcept {
   return DisplayRange(impl->first.Position(), impl->last.Position());
+}
+
+
+DisplayRange ParsedDatabaseName::SpellingRange(void) const noexcept {
+  return DisplayRange(impl->introducer_tok.Position(),
+                      impl->dot_tok.NextPosition());
+}
+
+Token ParsedDatabaseName::Name(void) const noexcept {
+  return impl->name_tok;
+}
+
+std::string ParsedDatabaseName::NameAsString(void) const noexcept {
+  return impl->name;
+}
+
+// Return the name of the database, if any.
+std::optional<ParsedDatabaseName>
+ParsedModule::DatabaseName(void) const noexcept {
+  auto &names = impl->root_module->names;
+  if (names.Empty()) {
+    return std::nullopt;
+  } else {
+    return ParsedDatabaseName(names[0]);
+  }
 }
 
 // Return the ID of this module. Returns `~0u` if not valid.

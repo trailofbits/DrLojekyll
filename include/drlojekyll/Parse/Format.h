@@ -30,6 +30,7 @@ OutputStream &operator<<(OutputStream &os, ParsedClause clause);
 OutputStream &operator<<(OutputStream &os, ParsedInline code);
 OutputStream &operator<<(OutputStream &os, ParsedForeignType type);
 OutputStream &operator<<(OutputStream &os, ParsedForeignConstant constant);
+OutputStream &operator<<(OutputStream &os, ParsedDatabaseName name);
 OutputStream &operator<<(OutputStream &os, ParsedModule module);
 
 }  // namespace hyde

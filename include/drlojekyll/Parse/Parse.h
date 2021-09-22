@@ -33,9 +33,9 @@ class ParsedClause;
 class ParsedComparison;
 class ParsedPredicate;
 
-enum class Language : unsigned { kUnknown, kCxx, kPython };
+enum class Language : unsigned { kUnknown, kCxx, kPython, kFlatBuffer };
 enum class InlineLocation : bool { kEpilogue = false, kPrologue = true };
-static constexpr auto kNumLanguages = 3u;
+static constexpr auto kNumLanguages = 4u;
 
 // Represents a literal.
 class ParsedLiteralImpl;
@@ -705,6 +705,7 @@ class ParsedMessage : public Node<ParsedMessage, ParsedMessageImpl> {
   // Returns `true` if this message is the head of any clause, i.e. if there
   // are rules that publish this message.
   bool IsPublished(void) const noexcept;
+  bool IsReceived(void) const noexcept;
 
   // Can this message receive/publish removals?
   bool IsDifferential(void) const noexcept;
@@ -729,11 +730,33 @@ class ParsedImport;
 class ParsedInline;
 class ParsedModuleIterator;
 
+class ParsedDatabaseNameImpl;
+class ParsedDatabaseName
+    : public Node<ParsedDatabaseName, ParsedDatabaseNameImpl> {
+ public:
+
+  // Spelling range of the
+  DisplayRange SpellingRange(void) const noexcept;
+
+  // Name of the database.
+  Token Name(void) const noexcept;
+
+  // Name of this database as a string.
+  std::string NameAsString(void) const noexcept;
+
+ protected:
+  friend class ParsedModule;
+  using Node<ParsedDatabaseName, ParsedDatabaseNameImpl>::Node;
+};
+
 // Represents a module parsed from a display.
 class ParsedModuleImpl;
 class ParsedModule {
  public:
   DisplayRange SpellingRange(void) const noexcept;
+
+  // Return the name of the database, if any.
+  std::optional<ParsedDatabaseName> DatabaseName(void) const noexcept;
 
   // Return the ID of this module. Returns `~0u` if not valid.
   uint64_t Id(void) const noexcept;

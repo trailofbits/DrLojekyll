@@ -8,6 +8,7 @@ enable_testing()
 
 include(cmake/add_sanitizer_settings.cmake)
 include(cmake/dr_define_static_library.cmake)
+include(cmake/utils.cmake)
 
 # --------------------------------------------
 # build-time options -------------------------
@@ -47,26 +48,7 @@ endif()
 # Make sure cmake can find our custom Find* modules.
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-if(ENABLE_TESTS)
-  # Google Test ------------------------------
-  #
-  # Cribbed from https://github.com/google/googletest/tree/master/googletest
-  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-  add_subdirectory(vendor/googletest-release-1.10.0
-      EXCLUDE_FROM_ALL)
-
-  # rapidcheck -------------------------------
-  set(RC_ENABLE_GTEST ON CACHE BOOL "" FORCE)
-  add_subdirectory(vendor/rapidcheck
-      EXCLUDE_FROM_ALL)
-endif()
-
-# reproc -------------------------------------
-set(REPROC++ ON CACHE BOOL "" FORCE)
-set(REPROC_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(REPROC_TEST OFF CACHE BOOL "" FORCE)
-# set(REPROC_OBJECT_LIBRARIES ON)
-add_subdirectory(vendor/reproc-14.2.1)
+add_subdirectory(vendor)
 
 # --------------------------------------------
 # CMake installation stuff -------------------
@@ -80,17 +62,18 @@ configure_package_config_file("${PROJECT_NAME}Config.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
     INSTALL_DESTINATION "${DRLOJEKYLL_CMAKE_INSTALL_DIR}"
 )
-# Runtime header
-install(
-  FILES
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Runtime.h"
-  DESTINATION
-    "include/drlojekyll/Runtime"
-  )
+# # Runtime header
+# install(
+#   FILES
+#     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Runtime.h"
+#   DESTINATION
+#     "include/drlojekyll/Runtime"
+#   )
 install(
     FILES
         "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
         "${PROJECT_SOURCE_DIR}/cmake/FindFilesystem.cmake"
+        "${PROJECT_SOURCE_DIR}/cmake/Compiler.cmake"
     DESTINATION "${DRLOJEKYLL_CMAKE_INSTALL_DIR}"
 )
 install(EXPORT "${PROJECT_NAME}Targets"

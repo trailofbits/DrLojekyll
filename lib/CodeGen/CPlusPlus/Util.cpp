@@ -166,20 +166,5 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
   return value.str();
 }
 
-// Return all messages.
-std::unordered_set<ParsedMessage> Messages(ParsedModule root_module) {
-  std::unordered_set<ParsedMessage> seen;
-
-  for (auto module : ParsedModuleIterator(root_module)) {
-    for (auto message : module.Messages()) {
-      if (ParsedDeclaration(message).IsFirstDeclaration()) {
-        seen.emplace(message);
-      }
-    }
-  }
-
-  return seen;
-}
-
 }  // namespace cxx
 }  // namespace hyde

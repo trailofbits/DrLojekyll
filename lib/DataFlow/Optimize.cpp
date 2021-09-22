@@ -189,6 +189,8 @@ void QueryImpl::RelabelGroupIDs(void) {
       // Look at the users of this column, e.g. joins, aggregates, tuples,
       // and copy their view's group ids back to this view.
       col->ForEachUser([=](VIEW *user) {
+        assert(view != user);
+
         // If the user if a JOIN, AGGREGATE, or KVINDEX, then take its group
         // ID.
         if (user->group_id) {

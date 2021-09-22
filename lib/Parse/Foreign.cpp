@@ -133,6 +133,25 @@ void ParserImpl::ParseForeignTypeDecl(ParsedModuleImpl *module) {
             continue;
           }
 
+        } else if (Lexeme::kLiteralFlatBufferCode == lexeme) {
+          last_lang = Language::kFlatBuffer;
+          const auto code_id = tok.CodeId();
+          if (!context->string_pool.TryReadCode(code_id, &code) ||
+              !fixup_code()) {
+            context->error_log.Append(scope_range, tok_range)
+                << "Empty or invalid FlatBuffer code literal in foreign type "
+                << "declaration";
+            state = 5;
+            continue;
+          }
+
+          auto &data = type->info[static_cast<unsigned>(Language::kFlatBuffer)];
+          if (!set_data(data, false)) {
+            state = 3;
+            report_trailing = false;
+            continue;
+          }
+
         } else if (Lexeme::kLiteralPythonCode == lexeme) {
           last_lang = Language::kPython;
           const auto code_id = tok.CodeId();
@@ -495,6 +514,20 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
             context->error_log.Append(scope_range, tok_range)
                 << "Empty or invalid C++ code literal in foreign constant "
                 << "declaration";
+            state = 3;
+            report_trailing = false;
+            continue;
+          }
+
+        } else if (Lexeme::kLiteralFlatBufferCode == lexeme) {
+          alloc_const->lang = Language::kFlatBuffer;
+          alloc_const->can_overide = false;
+          const auto code_id = tok.CodeId();
+          if (!context->string_pool.TryReadCode(code_id, &code) ||
+              !fixup_code()) {
+            context->error_log.Append(scope_range, tok_range)
+                << "Empty or invalid FlatBuffer code literal in foreign "
+                << "constant declaration";
             state = 3;
             report_trailing = false;
             continue;

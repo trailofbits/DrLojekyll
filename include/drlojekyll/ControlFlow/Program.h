@@ -263,7 +263,7 @@ class DataColumn : public Node<DataColumn, DataColumnImpl> {
   unsigned Index(void) const noexcept;
 
   // Type of this column.
-  TypeKind Type(void) const noexcept;
+  TypeLoc Type(void) const noexcept;
 
   // Possible names that can be associated with this column.
   //
@@ -317,6 +317,9 @@ class DataTable : public Node<DataTable, DataTableImpl> {
 
   // Apply a function to each user.
   void ForEachUser(std::function<void(ProgramRegion)> cb);
+
+  // Return the list of views associated with this table.
+  const std::vector<QueryView> Views(void) const noexcept;
 
  private:
   using Node<DataTable, DataTableImpl>::Node;

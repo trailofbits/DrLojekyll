@@ -257,6 +257,7 @@ OutputStream &operator<<(OutputStream &os, ParsedInline code_) {
     case Language::kUnknown: os << '\n'; break;
     case Language::kCxx: os << "c++\n"; break;
     case Language::kPython: os << "python\n"; break;
+    case Language::kFlatBuffer: os << "flat\n"; break;
   }
 
   os << code << "\n```.";
@@ -286,6 +287,7 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
       case Language::kUnknown: break;
       case Language::kCxx: os << "c++ "; break;
       case Language::kPython: os << "python "; break;
+      case Language::kFlatBuffer: os << "flat "; break;
     }
 
     os << (*maybe_code) << "```";
@@ -310,6 +312,7 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignConstant constant) {
     case Language::kUnknown: break;
     case Language::kCxx: os << "c++ "; break;
     case Language::kPython: os << "python "; break;
+    case Language::kFlatBuffer: os << "flat "; break;
   }
 
   os << constant.Constructor() << "```";
@@ -320,8 +323,17 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignConstant constant) {
   return os;
 }
 
+OutputStream &operator<<(OutputStream &os, ParsedDatabaseName name) {
+  os << "#database " << name.NameAsString() << '.';
+  return os;
+}
+
 OutputStream &operator<<(OutputStream &os, ParsedModule module) {
   module = module.RootModule();
+
+  if (auto name = module.DatabaseName()) {
+    os << (*name) << "\n";
+  }
 
   auto do_decl = [&os](ParsedDeclaration decl) {
     if (decl.IsFirstDeclaration()) {

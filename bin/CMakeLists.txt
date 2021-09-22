@@ -9,6 +9,10 @@ target_link_libraries(drlojekyll PRIVATE
     settings_private
     settings_public
     std::filesystem
+    
+    # Custom target that gives us access to the source code that is needed to
+    # emit flatbuffer code.
+    flatclib
 
     ControlFlow
     CodeGen

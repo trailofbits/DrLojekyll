@@ -17,18 +17,17 @@
 
 namespace hyde {
 namespace cxx {
-
 namespace {
 
 static void DeclareMessageVector(OutputStream &os, ParsedModule module,
                                  DataVector vector) {
   os << os.Indent() << "::hyde::rt::Vector<StorageT";
   for (auto type : vector.ColumnTypes()) {
-    const TypeLoc tl(type);
-    if (tl.IsReferentiallyTransparent(module, Language::kCxx)) {
-      os << ", " << TypeName(module, tl);
+    TypeLoc type_loc(type);
+    if (type_loc.IsReferentiallyTransparent(module, Language::kCxx)) {
+      os << ", " << TypeName(module, type);
     } else {
-      os << ", const " << TypeName(module, tl) << " &";
+      os << ", ::hyde::rt::InternRef<" << TypeName(module, type) << ">";
     }
   }
   os << "> vec_" << vector.Id() << ";\n";
@@ -48,13 +47,12 @@ static void DeclareAppendMessageMethod(OutputStream &os, ParsedModule module,
 
   os << message.Name() << '_' << message.Arity();
   auto sep = "(";
-  for (ParsedParameter param : decl.Parameters()) {
-    if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
-      os << sep << TypeName(module, param.Type()) << ' ';
-    } else {
-      os << sep << "const " << TypeName(module, param.Type()) << " &";
+  for (auto param : decl.Parameters()) {
+    os << sep << TypeName(module, param.Type()) << ' ';
+    if (!param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+      os << "&&";
     }
-    os << 'p' << param.Index() << " /* " << param.Name() << " */";
+    os << param.Name();
     sep = ", ";
   }
   os << ") noexcept {\n";
@@ -64,7 +62,16 @@ static void DeclareAppendMessageMethod(OutputStream &os, ParsedModule module,
      << os.Indent() << "vec_" << vec.Id();
   sep = ".Add(";
   for (auto param : decl.Parameters()) {
-    os << sep << 'p' << param.Index();
+    os << sep;
+    const auto is_transparent = param.Type().IsReferentiallyTransparent(
+        module, Language::kCxx);
+    if (!is_transparent) {
+      os << "std::forward<" << TypeName(module, param.Type()) << ">(";
+    }
+    os << param.Name();
+    if (!is_transparent) {
+      os << ')';
+    }
     sep = ", ";
   }
   os << ");\n";
@@ -81,30 +88,21 @@ static void DeclareAppendMessageMethod(OutputStream &os, ParsedModule module,
 void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   os << "/* Auto-generated file */\n\n"
      << "#pragma once\n\n"
-     << "#include <algorithm>\n"
-     << "#include <cstdlib>\n"
-     << "#include <cstdio>\n"
-     << "#include <optional>\n"
+     << "#include <memory>\n"
+     << "#include <string>\n"
      << "#include <tuple>\n"
-     << "#include <unordered_map>\n"
-     << "#include <vector>\n\n"
+     << "#include <utility>\n"
      << "#include <drlojekyll/Runtime/Runtime.h>\n\n"
      << "#ifndef __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n"
      << "#  define __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n";
-  const auto module = program.ParsedModule();
+
+  ParsedModule module = program.ParsedModule();
+  auto inlines = Inlines(module, Language::kCxx);
 
   // Output prologue code.
-  for (auto sub_module : ParsedModuleIterator(module)) {
-    for (auto code : sub_module.Inlines()) {
-      switch (code.Language()) {
-        case Language::kUnknown:
-        case Language::kCxx:
-          if (code.IsPrologue()) {
-            os << code.CodeToInline() << "\n\n";
-          }
-          break;
-        default: break;
-      }
+  for (auto code : inlines) {
+    if (code.IsPrologue()) {
+      os << code.CodeToInline() << "\n\n";
     }
   }
 
@@ -230,7 +228,6 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   os << os.Indent() << "};\n\n";
 
   for (ParsedMessage message : messages) {
-    const ParsedDeclaration decl(message);
     const auto &name = message_to_name[message];
     const auto id = name_to_id[name];
 
@@ -263,6 +260,8 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     }
     os << os.Indent() << "using TupleType = std::tuple<";
     sep = "";
+
+    ParsedDeclaration decl(message);
     for (auto param : decl.Parameters()) {
       os << sep << TypeName(module, param.Type().Kind());
       sep = ", ";
@@ -360,7 +359,8 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
       continue;
     }
 
-    const ParsedDeclaration decl(message);
+    ParsedDeclaration decl(message);
+
     os << os.Indent() << "void " << message.Name() << "_" << message.Arity()
        << "(";
 
@@ -371,7 +371,8 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
         os << TypeName(module, param.Type())
            << " p";
       } else {
-        os << "const " << TypeName(module, param.Type()) << " &p";
+        os << "const " << TypeName(module, param.Type())
+           << " &p";
       }
       os << param.Index() << " /* " << param.Name() << " */";
       sep = ", ";
@@ -433,7 +434,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
       continue;
     }
 
-    const ParsedDeclaration decl(message);
+    ParsedDeclaration decl(message);
 
     os << "\n"
        << os.Indent() << "void " << message.Name() << "_" << message.Arity();
@@ -444,7 +445,8 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
       if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
         os << TypeName(module, param.Type()) << " p";
       } else {
-        os << "const " << TypeName(module, param.Type()) << " &p";
+        os << "const " << TypeName(module, param.Type())
+           << " &p";
       }
       os << param.Index();
       sep = ", ";
@@ -493,7 +495,8 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
       if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
         os << TypeName(module, param.Type()) << " p";
       } else {
-        os << "const " << TypeName(module, param.Type()) << " &p";
+        os << "const " << TypeName(module, param.Type())
+           << " &p";
       }
       os << param.Index();
       sep = ", ";
@@ -534,7 +537,8 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
       if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
         os << TypeName(module, param.Type()) << " p";
       } else {
-        os << "const " << TypeName(module, param.Type()) << " &p";
+        os << "const " << TypeName(module, param.Type())
+           << " &p";
       }
       os << param.Index();
       sep = ", ";
@@ -626,6 +630,20 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
       os << sep << TypeName(module, param.Type());
       sep = ", ";
     }
+    os << ">;\n";
+
+    os << os.Indent() << "using " << gClassName << "Query" << next_query_id
+       << "InternalTupleType = std::tuple<";
+    sep = "";
+    for (ParsedParameter param : decl.Parameters()) {
+      if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+        os << sep << TypeName(module, param.Type());
+      } else {
+        os << sep << "::hyde::rt::InternRef<" << TypeName(module, param.Type())
+           << ">";
+      }
+      sep = ", ";
+    }
     os << ">;\n"
        << os.Indent() << "template <typename StorageT, typename LogT, "
        << "typename FunctorsT>\n"
@@ -642,12 +660,13 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
        << os.Indent() << "using RetTupleType = " << gClassName << "Query"
        << next_query_id << "RetTupleType;\n"
        << os.Indent() << gClassName << "<StorageT, LogT, FunctorsT> &db;\n\n"
-       << os.Indent() << "ParamTupleType params;\n\n";
+       << os.Indent() << "ParamTupleType params;\n"
+       << os.Indent() << "std::optional<RetTupleType> ret;\n\n";
 
     // This is either a table or index scan.
     if (num_rets) {
-      os << os.Indent() << "RetTupleType ret;\n"
-         << os.Indent()
+
+      os << os.Indent()
          << "using ScanType = ::hyde::rt::Scan<StorageT, ::hyde::rt::";
 
       // This is an index scan.
@@ -713,7 +732,19 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
       }
       os << ")) {\n";
       os.PushIndent();
-      os << os.Indent() << "found = &params;\n";
+      os << os.Indent() << "ret.emplace(";
+      sep = "";
+      for (ParsedParameter param : decl.Parameters()) {
+        if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+          os << sep << "std::get<" << param.Index() << ">(params)";
+        } else {
+          os << sep << "*std::get<" << param.Index() << ">(params)";
+        }
+        sep = ", ";
+      }
+
+      os << ");\n";
+      os << os.Indent() << "found = &*ret;\n";
       os.PopIndent();
       os << os.Indent() << "}\n";
       os.PopIndent();
@@ -725,7 +756,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     if (num_rets) {
       os << os.Indent() << "while (it != end) {\n";
       os.PushIndent();
-      os << os.Indent() << "ret = *it;\n"
+      os << os.Indent() << "auto internal_ret = *it;\n"
          << os.Indent() << "++it;\n";
 
       // Index scans are over-approximate -- they may include unrelated data, so
@@ -739,7 +770,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
         for (ParsedParameter param : decl.Parameters()) {
           if (param.Binding() == ParameterBinding::kBound) {
             os << sep << "std::get<" << i << ">(params) != std::get<"
-               << j << ">(ret)";
+               << j << ">(internal_ret)";
             sep = " || ";
             ++i;
           }
@@ -759,7 +790,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
            << Procedure(os, *(query_info.forcing_function));
         sep = "(";
         for (ParsedParameter param : decl.Parameters()) {
-          os << sep << "std::get<" << param.Index() << ">(ret)";
+          os << sep << "std::get<" << param.Index() << ">(internal_ret)";
           sep = ", ";
         }
         os << ")) {\n";
@@ -769,14 +800,27 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
         os << os.Indent() << "}\n";
       }
 
-      os << os.Indent() << "return &ret;\n";
+      os << os.Indent() << "ret.emplace(";
+      sep = "";
+      for (ParsedParameter param : decl.Parameters()) {
+        if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+          os << sep << "std::get<" << param.Index() << ">(internal_ret)";
+        } else {
+          os << sep << "*std::get<" << param.Index() << ">(internal_ret)";
+        }
+        sep = ", ";
+      }
+
+      os << ");\n";
+
+      os << os.Indent() << "return &*ret;\n";
       os.PopIndent();
       os << os.Indent() << "}\n"
          << os.Indent() << "return nullptr;\n";
     } else {
-      os << os.Indent() << "const auto ret = found;\n"
+      os << os.Indent() << "const auto new_ret = found;\n"
          << os.Indent() << "found = nullptr;\n"
-         << os.Indent() << "return ret;\n";
+         << os.Indent() << "return new_ret;\n";
     }
     os.PopIndent();
     os << os.Indent() << "}\n"  // TryGetNext.
@@ -802,6 +846,8 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
        << next_query_id << "ParamTupleType;\n"
        << os.Indent() << "using RetTupleType = " << gClassName << "Query"
        << next_query_id << "RetTupleType;\n"
+       << os.Indent() << "using InternalTupleType = " << gClassName << "Query"
+       << next_query_id << "InternalTupleType;\n"
        << os.Indent() << "static constexpr auto kId = " << next_query_id
        << ";\n"
        << os.Indent() << "static constexpr auto kName = \"" << name << "\";\n"

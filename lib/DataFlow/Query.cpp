@@ -99,6 +99,12 @@ QueryStream QueryStream::From(const QuerySelect &sel) noexcept {
   return QueryStream(stream);
 }
 
+QueryStream QueryStream::From(const QueryInsert &ins) noexcept {
+  const auto stream = ins.impl->stream.get();
+  assert(stream != nullptr);
+  return QueryStream(stream);
+}
+
 QueryStream::QueryStream(const QueryIO &io) noexcept
     : QueryStream(io.impl) {}
 

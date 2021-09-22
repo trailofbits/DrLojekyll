@@ -735,7 +735,7 @@ unsigned DataColumn::Index(void) const noexcept {
 }
 
 // Type of this column.
-TypeKind DataColumn::Type(void) const noexcept {
+TypeLoc DataColumn::Type(void) const noexcept {
   return impl->type;
 }
 
@@ -776,6 +776,11 @@ void DataTable::VisitUsers(ProgramVisitor &visitor) {
 void DataTable::ForEachUser(std::function<void(ProgramRegion)> cb) {
   impl->ForEachUse<ProgramRegionImpl>(
       [&](ProgramRegionImpl *region, DataTableImpl *) { cb(region); });
+}
+
+// Return the list of views associated with this table.
+const std::vector<QueryView> DataTable::Views(void) const noexcept {
+  return impl->views;
 }
 
 VectorKind DataVector::Kind(void) const noexcept {

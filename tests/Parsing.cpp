@@ -10,7 +10,6 @@
 
 #include "UnitTests.h"
 #include "drlojekyll/CodeGen/CodeGen.h"
-#include "drlojekyll/CodeGen/MessageSerialization.h"
 #include "drlojekyll/ControlFlow/Format.h"
 #include "drlojekyll/Display/DisplayConfiguration.h"
 #include "drlojekyll/Display/DisplayManager.h"
@@ -31,19 +30,6 @@ std::ostream &operator<<(std::ostream &os, const ErrorLog &log) {
 }
 
 }  // namespace hyde
-
-// How many kinds of messages are there in the given parsed module?
-static size_t NumMessages(const hyde::ParsedModule &module) {
-  size_t num_messages = 0;
-
-  // Note: would use std::distance here, but `hyde::ParsedModule` doesn't
-  // implement all the necessary APIs.
-  for (auto message : module.Messages()) {
-    (void) message;
-    num_messages += 1;
-  }
-  return num_messages;
-}
 
 // Return a vector of all *.dr files immediately under the directories
 template <typename... Path>
@@ -96,16 +82,6 @@ TEST_P(PassingExamplesParsingSuite, Examples) {
   auto mmod = parser.ParsePath(path_str, display_cfg);
   EXPECT_TRUE(err_log.IsEmpty()) << "Parsing failed:" << std::endl << err_log;
   ASSERT_TRUE(mmod.has_value());
-
-  // Generate code for message schemas
-  for (auto module : hyde::ParsedModuleIterator(*mmod)) {
-    auto schemas =
-        hyde::GenerateAvroMessageSchemas(display_mgr, module, err_log);
-    EXPECT_TRUE(err_log.IsEmpty())
-        << "Message schema generation failed:" << std::endl
-        << err_log;
-    EXPECT_TRUE(schemas.size() == NumMessages(module));
-  }
 
   // Build the query
   auto query_opt = hyde::Query::Build(*mmod, err_log);

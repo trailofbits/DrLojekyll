@@ -153,6 +153,7 @@ class QueryStreamImpl;
 class QueryStream : public Node<QueryStream, QueryStreamImpl> {
  public:
   static QueryStream From(const QuerySelect &sel) noexcept;
+  static QueryStream From(const QueryInsert &ins) noexcept;
 
   QueryStream(const QueryIO &io) noexcept;
   QueryStream(const QueryConstant &const_) noexcept;

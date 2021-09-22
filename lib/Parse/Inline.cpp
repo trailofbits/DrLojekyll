@@ -70,6 +70,15 @@ void ParserImpl::ParseInlineCode(ParsedModuleImpl *module) {
     }
     language = Language::kPython;
 
+  } else if (Lexeme::kLiteralFlatBufferCode == tok.Lexeme()) {
+    const auto code_id = tok.CodeId();
+    if (!context->string_pool.TryReadCode(code_id, &code) || !fixup_code()) {
+      context->error_log.Append(scope_range, tok_range)
+          << "Empty or invalid FlatBuffer code literal in inline statement";
+      return;
+    }
+    language = Language::kFlatBuffer;
+
   // Parse out a string literal, e.g. `#epilogue "..."`.
   } else if (Lexeme::kLiteralString == tok.Lexeme()) {
     const auto code_id = tok.StringId();

@@ -42,11 +42,12 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
     DataModel *model = impl->view_to_model[receive]->FindAs<DataModel>();
     TABLE *table = model->table;
     CHANGETUPLE *insert = nullptr;
+//    CHANGERECORD *insert = nullptr;
 
     // If this message receive has a corresponding table, then save it as
     // a record here.
     if (table) {
-//      CHANGERECORD *insert = impl->operation_regions.CreateDerived<CHANGERECORD>(
+//      insert = impl->operation_regions.CreateDerived<CHANGERECORD>(
 //          impl->next_id++, loop, TupleState::kAbsent, TupleState::kPresent);
 //      insert->table.Emplace(insert, table);
 //      loop->body.Emplace(loop, insert);
@@ -96,18 +97,27 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
         impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
     parent->AddRegion(loop);
     loop->vector.Emplace(loop, removal_vec);
+    OP *next_parent = loop;
 
     DataModel *model = impl->view_to_model[receive]->FindAs<DataModel>();
     TABLE *table = model->table;
-    CHANGERECORD *remove = nullptr;
+    CHANGETUPLE *remove = nullptr;
+//    CHANGERECORD *remove = nullptr;
 
     // If this message receive has a corresponding table, then save it as
     // a record here.
     if (table) {
-      remove = impl->operation_regions.CreateDerived<CHANGERECORD>(
-          impl->next_id++, loop, TupleState::kPresent, TupleState::kAbsent);
+//      remove = impl->operation_regions.CreateDerived<CHANGERECORD>(
+//          impl->next_id++, loop, TupleState::kPresent, TupleState::kAbsent);
+//      remove->table.Emplace(remove, table);
+//      loop->body.Emplace(loop, remove);
+
+      remove = impl->operation_regions.CreateDerived<CHANGETUPLE>(
+          loop, TupleState::kPresent, TupleState::kAbsent);
       remove->table.Emplace(remove, table);
       loop->body.Emplace(loop, remove);
+
+      next_parent = remove;
     }
 
     for (auto col : receive.Columns()) {
@@ -118,15 +128,13 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
 
       if (remove) {
         remove->col_values.AddUse(var);
-        const auto record_var = remove->record_vars.Create(
-            impl->next_id++,VariableRole::kRecordElement);
-        record_var->defining_region = remove;
-        record_var->query_column = col;
-        remove->col_id_to_var.emplace(col.Id(), record_var);
+//        const auto record_var = remove->record_vars.Create(
+//            impl->next_id++,VariableRole::kRecordElement);
+//        record_var->defining_region = remove;
+//        record_var->query_column = col;
+//        remove->col_id_to_var.emplace(col.Id(), record_var);
       }
     }
-
-    OP *next_parent = remove ? remove : static_cast<OP *>(loop);
 
     BuildEagerRemovalRegions(
         impl, receive, context, next_parent, receive.Successors(), table);

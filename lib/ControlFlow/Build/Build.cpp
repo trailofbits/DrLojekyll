@@ -54,13 +54,13 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
     }
   });
 
-//  // We will always unique all input data into records, to help kick off
-//  // all later record-based analysis.
-//  for (auto io : query.IOs()) {
-//    for (auto receive : io.Receives()) {
-//      (void) TABLE::GetOrCreate(impl, context, receive);
-//    }
-//  }
+  // We will always unique all input data into records, to help kick off
+  // all later record-based analysis.
+  for (auto io : query.IOs()) {
+    for (auto receive : io.Receives()) {
+      (void) TABLE::GetOrCreate(impl, context, receive);
+    }
+  }
 
   for (auto view : query.Inserts()) {
     auto insert = QueryInsert::From(view);
@@ -2183,10 +2183,12 @@ std::optional<Program> Program::Build(const ::hyde::Query &query) {
   }
 
   FixupContainingProcedure(impl.get());
-
   impl->Optimize();
 
+  ExtractPrimaryProcedure(impl.get(), entry_proc, context);
+
   FixupContainingProcedure(impl.get());
+  impl->Optimize();
 
   // Assign defining regions to each variable.
   //
@@ -2197,24 +2199,17 @@ std::optional<Program> Program::Build(const ::hyde::Query &query) {
     MapVariables(proc);
   }
 
-  if (false) {
-    impl->Analyze();
-
-  } else {
-    ExtractPrimaryProcedure(impl.get(), entry_proc, context);
-
-    impl->Optimize();
-
-    // Assign defining regions to each variable.
-    //
-    // NOTE(pag): We don't really want to map variables throughout the building
-    //            process because otherwise every time we replaced all uses of
-    //            one region with another, we'd screw up the mapping.
-    for (auto proc : impl->procedure_regions) {
-      MapVariables(proc);
-    }
+  // Assign defining regions to each variable.
+  //
+  // NOTE(pag): We don't really want to map variables throughout the building
+  //            process because otherwise every time we replaced all uses of
+  //            one region with another, we'd screw up the mapping.
+  for (auto proc : impl->procedure_regions) {
+    MapVariables(proc);
   }
 
+  // impl->Analyze();
+#if 0
   // Finally, go through our tables. Any table with no indices is given a
   // full table index, on the assumption that it is used for things like state
   // checking.
@@ -2227,7 +2222,7 @@ std::optional<Program> Program::Build(const ::hyde::Query &query) {
       (void) table->GetOrCreateIndex(impl.get(), std::move(offsets));
     }
   }
-
+#endif
   return Program(std::move(impl));
 }
 

@@ -12,7 +12,7 @@ namespace hyde {
 namespace {
 
 static OutputStream &Type(OutputStream &os, ParsedModule module,
-                          TypeKind kind) {
+                          TypeLoc kind) {
   if (auto type = module.ForeignType(kind); type) {
     os << type->Name();
   } else {

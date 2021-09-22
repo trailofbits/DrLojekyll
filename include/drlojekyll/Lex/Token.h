@@ -162,6 +162,15 @@ enum class Lexeme : uint8_t {
   kHashInlinePrologueStmt,
   kHashInlineEpilogueStmt,
 
+  // Use to name the database. For example:
+  //
+  //    #database foo.
+  //
+  // This will name the database `foo` (atom), which is then used to
+  // disambiguate different auto-generated code, e.g. via `namespace foo`
+  // in C++.
+  kHashDatabase,
+
   // Boolean type.
   kTypeBoolean,
 
@@ -238,12 +247,18 @@ enum class Lexeme : uint8_t {
   kLiteralTrue,
   kLiteralFalse,
 
-  // Literal C/C++ code. Looks like:
+  // Literal C/C++, Python, or FlatBuffer code. Looks like:
   //
-  // <! ... stuff here ... !>
+  //      ```<lang> stuff here```
+  //
+  // For example:
+  //      ```python <code>```
+  //      ```c++ <code>```
+  //      ```flat <code>```
   kLiteralCode,
   kLiteralCxxCode,
   kLiteralPythonCode,
+  kLiteralFlatBufferCode,
 
   // Identifiers, e.g. for atoms, functors, messages, etc.
   kIdentifierAtom,
