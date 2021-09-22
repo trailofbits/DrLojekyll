@@ -44,9 +44,9 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
   os << "#include <grpcpp/grpcpp.h>\n"
      << "#include <flatbuffers/flatbuffers.h>\n"
      << "#include \"" << file_name << "_generated.h\"\n"
-     << "#include \"" << file_name << ".grpc.fb.h\n"
-     << "#include \"" << file_name << ".interface.h\n"
-     << "#include \"" << file_name << ".db.h\n\n";
+     << "#include \"" << file_name << ".grpc.fb.h\"\n"
+     << "#include \"" << file_name << ".interface.h\"\n"
+     << "#include \"" << file_name << ".db.h\"\n\n";
 
 //     << "#ifndef __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n"
 //     << "#  define __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n";

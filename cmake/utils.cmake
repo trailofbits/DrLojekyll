@@ -109,12 +109,10 @@ function(fetch_git_dependency)
     set(TAG_CMD "")
   endif()
 
-  if(GIT_DEP_PATCH_COMMAND)
-    set(PATCH_CMD "PATCH_COMMAND ${GIT_DEP_PATCH_COMMAND}")
-  elseif(GIT_DEP_APPLY_PATCH)
-    set(PATCH_CMD "PATCH_COMMAND git apply \"${GIT_DEP_APPLY_PATCH}\"")
-  else()
-    set(PATCH_CMD "")
+  if(GIT_DEP_APPLY_PATCH)
+    set(GIT_DEP_PATCH_COMMAND "git apply \"${GIT_DEP_APPLY_PATCH}\"")
+  elseif(NOT GIT_DEP_PATCH_COMMAND)
+    set(GIT_DEP_PATCH_COMMAND "")
   endif()
   
   if(GIT_DEP_SOURCE_SUBDIR)
@@ -144,16 +142,6 @@ function(fetch_git_dependency)
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/_deps/${NAME_LOWER}-subbuild)
   if(result)
     message(FATAL_ERROR "Build step for ${GIT_DEP_NAME} failed: ${result}")
-  endif()
-
-  if(GIT_DEP_SOURCE_SUBDIR)
-    add_subdirectory(
-      ${CMAKE_BINARY_DIR}/_deps/${NAME_LOWER}-src/${GIT_DEP_SOURCE_SUBDIR}
-      ${CMAKE_BINARY_DIR}/_deps/${NAME_LOWER}-build)
-  else()
-    add_subdirectory(
-      ${CMAKE_BINARY_DIR}/_deps/${NAME_LOWER}-src
-      ${CMAKE_BINARY_DIR}/_deps/${NAME_LOWER}-build)
   endif()
 
   message(STATUS "Building ${GIT_DEP_NAME}: ...DONE")
