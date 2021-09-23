@@ -93,6 +93,23 @@ fetch_git_dependency(
     -DCARES_BUILD_TESTS=OFF
     -DCARES_BUILD_TOOLS=OFF)
 
+fetch_git_dependency(
+  NAME
+    protobuf
+  REPOSITORY
+    "https://github.com/protocolbuffers/protobuf.git"
+  TAG
+    "v3.18.0"
+  DEPENDS
+    zlib
+  SOURCE_SUBDIR
+    cmake
+  CMAKE_ARGS
+    -DBUILD_SHARED_LIBS=OFF
+    -Dprotobuf_BUILD_SHARED_LIBS=OFF
+    -Dprotobuf_BUILD_TESTS=OFF
+    -Dprotobuf_WITH_ZLIB=ON)
+
 #if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 #  set(GPR_TLS_FIXES -DCMAKE_C_FLAGS="-DGRPC_BAZEL_BUILD=1" -DCMAKE_CXX_FLAGS="-DGRPC_BAZEL_BUILD=1")
 #endif()
@@ -106,11 +123,15 @@ fetch_git_dependency(
     "v1.22.0"
   DEPENDS
     openssl
+    c-ares
+    zlib
+    protobuf
+    gflags
   CMAKE_ARGS
     -DgRPC_BUILD_TESTS=OFF
     -DgRPC_BACKWARDS_COMPATIBILITY_MODE=OFF
     -DgRPC_ZLIB_PROVIDER=package
-    -DgRPC_PROTOBUF_PROVIDER=module
+    -DgRPC_PROTOBUF_PROVIDER=package
     -DgRPC_GFLAGS_PROVIDER=package
     -DgRPC_CARES_PROVIDER=package
     -DgRPC_SSL_PROVIDER=package
@@ -127,3 +148,4 @@ fetch_git_dependency(
     "v2.0.0"
   CMAKE_ARGS
     -DFLATBUFFERS_BUILD_TESTS=OFF)
+
