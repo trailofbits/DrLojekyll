@@ -146,3 +146,34 @@ function(fetch_git_dependency)
 
   message(STATUS "Building ${GIT_DEP_NAME}: ...DONE")
 endfunction()
+
+function(defineWarningSilencerTarget)
+  add_library(drlojekyll_disable_warnings INTERFACE)
+
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(drlojekyll_disable_warnings INTERFACE
+      -w
+    )
+
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(drlojekyll_disable_warnings INTERFACE
+      /W0
+    )
+  endif()
+endfunction()
+
+function(defineSanitizersTarget)
+  set(flag_list
+    -fomit-frame-pointer
+    -fsanitize=address,undefined
+  )
+
+  add_library(drlojekyll_sanitizers INTERFACE)
+  target_compile_options(drlojekyll_sanitizers INTERFACE
+    ${flag_list}
+  )
+
+  target_link_options(drlojekyll_sanitizers INTERFACE
+    ${flag_list}
+  )
+endfunction()

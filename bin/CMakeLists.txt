@@ -4,7 +4,8 @@
 find_package(Filesystem REQUIRED)
 
 add_executable(drlojekyll
-    drlojekyll/Main.cpp)
+    drlojekyll/Main.cpp
+)
 
 target_link_libraries(drlojekyll PRIVATE
     settings_private
@@ -23,8 +24,17 @@ target_link_libraries(drlojekyll PRIVATE
     flatc_internals
 )
 
+if(DRLOJEKYLL_ENABLE_SANITIZERS)
+    target_link_libraries(drlojekyll PRIVATE
+        drlojekyll_sanitizers
+    )
+endif()
+
 add_executable(${PROJECT_NAME}::drlojekyll ALIAS drlojekyll)
 
-install(
-  TARGETS drlojekyll
-  EXPORT "${PROJECT_NAME}Targets")
+if(DRLOJEKYLL_ENABLE_INSTALL)
+    install(
+        TARGETS drlojekyll
+        EXPORT "${PROJECT_NAME}Targets"
+    )
+endif()

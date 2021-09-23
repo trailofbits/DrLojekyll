@@ -18,6 +18,12 @@ function(dr_define_static_library libname)
 
     add_library(${PROJECT_NAME}::${libname} ALIAS ${libname})
 
+    if(DRLOJEKYLL_ENABLE_SANITIZERS)
+        target_link_libraries(${libname} PUBLIC
+            drlojekyll_sanitizers
+        )
+    endif()
+
     if(CURLIB_DEPENDENCIES)
         target_link_libraries(${libname}
             PUBLIC ${CURLIB_DEPENDENCIES}

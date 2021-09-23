@@ -24,3 +24,13 @@ foreach(disabled_option ${disabled_option_list})
 endforeach()
 
 add_subdirectory(src EXCLUDE_FROM_ALL)
+
+target_link_libraries(rapidcheck PRIVATE
+  drlojekyll_disable_warnings
+)
+
+if(DRLOJEKYLL_ENABLE_SANITIZERS)
+  target_link_libraries(rapidcheck PRIVATE
+    drlojekyll_sanitizers
+  )
+endif()

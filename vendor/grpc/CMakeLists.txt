@@ -85,3 +85,21 @@ foreach(executable_target ${executable_target_list})
     add_executable("gRPC::${executable_target}" ALIAS "${executable_target}")
   endif()
 endforeach()
+
+foreach(target_name ${library_target_list} ${executable_target_list})
+  if(NOT TARGET "${target_name}")
+    continue()
+  endif()
+
+  # The plain signature of target_link_libraries has been used
+  # already, so we have to do the same
+  target_link_libraries("${target_name}"
+    drlojekyll_disable_warnings
+  )
+
+  if(DRLOJEKYLL_ENABLE_SANITIZERS)
+    target_link_libraries("${target_name}"
+      drlojekyll_sanitizers
+    )
+  endif()
+endforeach()
