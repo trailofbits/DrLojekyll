@@ -14,6 +14,11 @@ set(disabled_option_list
   gtest_hide_internal_symbols
 )
 
+set(target_name_list
+  gtest
+  gtest_main
+)
+
 foreach(enabled_option ${enabled_option_list})
   set("${enabled_option}" true CACHE BOOL "Forced googletest setting" FORCE)
 endforeach()
@@ -23,3 +28,15 @@ foreach(disabled_option ${disabled_option_list})
 endforeach()
 
 add_subdirectory(src EXCLUDE_FROM_ALL)
+
+foreach(target_name ${target_name_list})
+  target_link_libraries("${target_name}" PRIVATE
+    drlojekyll_disable_warnings
+  )
+
+  if(DRLOJEKYLL_ENABLE_SANITIZERS)
+    target_link_libraries("${target_name}" PRIVATE
+      drlojekyll_sanitizers
+    )
+  endif()
+endforeach()

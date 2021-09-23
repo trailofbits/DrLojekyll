@@ -57,6 +57,10 @@ add_library(flatc_internals
   patches/disable_logger.cpp
 )
 
+target_link_libraries(flatc_internals PRIVATE
+  drlojekyll_disable_warnings
+)
+
 target_compile_features(flatc_internals PRIVATE
   cxx_std_11
 )

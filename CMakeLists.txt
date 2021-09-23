@@ -8,6 +8,12 @@ include("cmake/add_sanitizer_settings.cmake")
 include("cmake/dr_define_static_library.cmake")
 include("cmake/utils.cmake")
 
+if(DRLOJEKYLL_ENABLE_SANITIZERS)
+  defineSanitizersTarget()
+endif()
+
+defineWarningSilencerTarget()
+
 add_subdirectory("libraries" EXCLUDE_FROM_ALL)
 
 if(DRLOJEKYLL_ENABLE_VENDORED_LIBRARIES)
