@@ -1,14 +1,24 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 cmake_minimum_required(VERSION 3.17)
-
 project(DrLojekyll LANGUAGES C CXX)
 
-enable_testing()
+include("cmake/options.cmake")
+include("cmake/add_sanitizer_settings.cmake")
+include("cmake/dr_define_static_library.cmake")
+include("cmake/utils.cmake")
 
-include(cmake/add_sanitizer_settings.cmake)
-include(cmake/dr_define_static_library.cmake)
-include(cmake/utils.cmake)
+add_subdirectory("libraries" EXCLUDE_FROM_ALL)
+
+if(DRLOJEKYLL_ENABLE_VENDORED_LIBRARIES)
+  add_subdirectory("vendor" EXCLUDE_FROM_ALL)
+endif()
+
+# TODO: Move this where the library is required
+find_package(gRPC CONFIG REQUIRED)
+if(NOT TARGET gRPC::grpc++)
+    message(FATAL_ERROR "gRPC was not found")
+endif()
 
 # --------------------------------------------
 # build-time options -------------------------
@@ -48,55 +58,54 @@ endif()
 # Make sure cmake can find our custom Find* modules.
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-add_subdirectory(vendor)
-list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/vendor/install")
-list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/vendor/install/lib/cmake/xxHash")
-list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/vendor/install/lib/cmake/GTest")
-list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/vendor/install/lib/cmake/reproc")
-list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/vendor/install/lib/cmake/protobuf")
-list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/vendor/install/lib/cmake/c-ares")
-list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/vendor/install/lib/cmake/grpc")
-list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/vendor/install/lib/cmake/flatbuffers")
+#list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/vendor/install")
+#list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/vendor/install/lib/cmake/xxHash")
+#list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/vendor/install/lib/cmake/GTest")
+#list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/vendor/install/lib/cmake/reproc")
+#list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/vendor/install/lib/cmake/protobuf")
+#list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/vendor/install/lib/cmake/c-ares")
+#list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/vendor/install/lib/cmake/grpc")
+#list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/vendor/install/lib/cmake/flatbuffers")
 
-message("WOO" ${CMAKE_PREFIX_PATH})
-find_package(Flatbuffers CONFIG REQUIRED)
-find_package(gRPC CONFIG REQUIRED)
-find_package(GTest CONFIG REQUIRED)
+#message("WOO" ${CMAKE_PREFIX_PATH})
+#find_package(Flatbuffers CONFIG REQUIRED)
+#find_package(gRPC CONFIG REQUIRED)
+#find_package(GTest CONFIG REQUIRED)
 
-get_target_property(flatc_SOURCES flatc SOURCES)
-get_target_property(flatc_COMPILE_OPTIONS flatc COMPILE_OPTIONS)
-get_target_property(flatc_COMPILE_DEFINITIONS flatc COMPILE_DEFINITIONS)
-get_target_property(flatc_INCLUDE_DIRECTORIES flatc INCLUDE_DIRECTORIES)
-get_target_property(flatc_LINK_DIRECTORIES flatc LINK_DIRECTORIES)
+#get_target_property(flatc_SOURCES flatc SOURCES)
+#get_target_property(flatc_COMPILE_OPTIONS flatc COMPILE_OPTIONS)
+#get_target_property(flatc_COMPILE_DEFINITIONS flatc COMPILE_DEFINITIONS)
+#get_target_property(flatc_INCLUDE_DIRECTORIES flatc INCLUDE_DIRECTORIES)
+#get_target_property(flatc_LINK_DIRECTORIES flatc LINK_DIRECTORIES)
     
 # Iterate over the source files of the `flatc` compiler target, remove the
 # file with the `main` function, and add package it up as `flatclib`.
-foreach(fb_source_file IN LISTS flatc_SOURCES)
-  if(NOT fb_source_file MATCHES "^.*flatc_main.cpp$")
-    list(APPEND FLATBUFFERS_COMPILER_FILES "${FlatBuffers_SOURCE_DIR}/${fb_source_file}")
-  endif()
-endforeach()
+#foreach(fb_source_file IN LISTS flatc_SOURCES)
+#  if(NOT fb_source_file MATCHES "^.*flatc_main.cpp$")
+#    list(APPEND FLATBUFFERS_COMPILER_FILES "${FlatBuffers_SOURCE_DIR}/${fb_source_file}")
+#  endif()
+#endforeach()
 
-add_library(flatclib STATIC ${FLATBUFFERS_COMPILER_FILES})
+#add_library(flatclib STATIC ${FLATBUFFERS_COMPILER_FILES})
 
-if(NOT flatc_COMPILE_OPTIONS STREQUAL "flatc_COMPILE_OPTIONS-NOTFOUND")
-  target_compile_options(flatclib PRIVATE ${flatc_COMPILE_OPTIONS})
-endif()
+#if(NOT flatc_COMPILE_OPTIONS STREQUAL "flatc_COMPILE_OPTIONS-NOTFOUND")
+#  target_compile_options(flatclib PRIVATE ${flatc_COMPILE_OPTIONS})
+#endif()
 
-if(NOT flatc_COMPILE_DEFINITIONS STREQUAL "flatc_COMPILE_DEFINITIONS-NOTFOUND")
-  target_compile_definitions(flatclib PRIVATE ${flatc_COMPILE_DEFINITIONS})
-endif()
+#if(NOT flatc_COMPILE_DEFINITIONS STREQUAL "flatc_COMPILE_DEFINITIONS-NOTFOUND")
+#  target_compile_definitions(flatclib PRIVATE ${flatc_COMPILE_DEFINITIONS})
+#endif()
 
-if(NOT flatc_INCLUDE_DIRECTORIES STREQUAL "flatc_INCLUDE_DIRECTORIES-NOTFOUND")
-  target_include_directories(flatclib PUBLIC ${flatc_INCLUDE_DIRECTORIES})
-endif()
+#if(NOT flatc_INCLUDE_DIRECTORIES STREQUAL "flatc_INCLUDE_DIRECTORIES-NOTFOUND")
+#  target_include_directories(flatclib PUBLIC ${flatc_INCLUDE_DIRECTORIES})
+#endif()
 
-if(NOT flatc_COMPILE_DEFINITIONS STREQUAL "flatc_COMPILE_DEFINITIONS-NOTFOUND")
-  target_link_directories(flatclib PRIVATE ${flatc_LINK_DIRECTORIES})
-endif()
+#if(NOT flatc_COMPILE_DEFINITIONS STREQUAL "flatc_COMPILE_DEFINITIONS-NOTFOUND")
+#  target_link_directories(flatclib PRIVATE ${flatc_LINK_DIRECTORIES})
+#endif()
 
-target_link_libraries(flatclib PRIVATE
-  settings_public)
+#target_link_libraries(flatclib PRIVATE
+#  settings_public)
 
 # --------------------------------------------
 # CMake installation stuff -------------------
@@ -195,10 +204,10 @@ install(
 add_subdirectory(lib)
 add_subdirectory(bin)
 
-if(ENABLE_LIBFUZZER)
+if(DRLOJEKYLL_ENABLE_LIBFUZZER)
   add_subdirectory(fuzz)
 endif()
 
-if(ENABLE_TESTS)
+if(DRLOJEKYLL_ENABLE_TESTS)
   add_subdirectory(tests)
 endif()

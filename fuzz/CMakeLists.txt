@@ -16,6 +16,10 @@ target_link_libraries(drlojekyll-parser-fuzzer PRIVATE
 
 add_executable(drlojekyll-backend-fuzzer
     BackendFuzzer.cpp)
+
+# find_package(reproc REQUIRED)
+find_package(reproc++ REQUIRED)
+
 target_link_libraries(drlojekyll-backend-fuzzer PRIVATE
     settings_public
     settings_private
