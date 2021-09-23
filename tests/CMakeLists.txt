@@ -1,6 +1,15 @@
 # Cribbed from https://github.com/google/googletest/tree/master/googletest.
 
-cmake_minimum_required(VERSION 3.17)
+include(CTest)
+enable_testing()
+
+# Here are the targets we can link against:
+# GTest::gtest
+# GTest::gtest_main
+find_package(GTest REQUIRED)
+
+# Link against rapidcheck
+find_package(rapidcheck CONFIG REQUIRED)
 
 include(GoogleTest)
 
@@ -67,3 +76,8 @@ gtest_discover_tests(unittests)
 
 # If we want some other test cases aside from gtest, we can explicitly add them:
 # add_test(NAME test_foo COMMAND true)
+
+add_test(
+    NAME unittests
+    COMMAND unittests
+)

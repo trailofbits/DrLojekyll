@@ -41,16 +41,19 @@ function(dr_define_static_library libname)
       PRIVATE ${CURLIB_CURDIR}
     )
     string(TOLOWER ${PROJECT_NAME} lower_project_name)
-    install(
-      TARGETS ${libname}
-      EXPORT "${PROJECT_NAME}Targets"
-      RUNTIME
-        DESTINATION "bin"
-      LIBRARY
-        DESTINATION "lib/${lower_project_name}"
-      ARCHIVE
-        DESTINATION "lib/${lower_project_name}"
-      PUBLIC_HEADER
-        DESTINATION "include/${lower_project_name}/${libname}"
-    )
+
+    if(DRLOJEKYLL_ENABLE_INSTALL)
+        install(
+        TARGETS ${libname}
+        EXPORT "${PROJECT_NAME}Targets"
+        RUNTIME
+            DESTINATION "bin"
+        LIBRARY
+            DESTINATION "lib/${lower_project_name}"
+        ARCHIVE
+            DESTINATION "lib/${lower_project_name}"
+        PUBLIC_HEADER
+            DESTINATION "include/${lower_project_name}/${libname}"
+        )
+    endif()
 endfunction()

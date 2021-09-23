@@ -5,14 +5,11 @@ find_package(Filesystem REQUIRED)
 
 add_executable(drlojekyll
     drlojekyll/Main.cpp)
+
 target_link_libraries(drlojekyll PRIVATE
     settings_private
     settings_public
     std::filesystem
-    
-    # Custom target that gives us access to the source code that is needed to
-    # emit flatbuffer code.
-    flatclib
 
     ControlFlow
     CodeGen
@@ -22,6 +19,8 @@ target_link_libraries(drlojekyll PRIVATE
     Parse
     Util
     Version
+
+    flatc_internals
 )
 
 add_executable(${PROJECT_NAME}::drlojekyll ALIAS drlojekyll)
