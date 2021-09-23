@@ -1,0 +1,89 @@
+name: Main
+
+on:
+  push:
+    branches:
+      - '*'
+
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  posix:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-20.04, macos-10.15]
+        build_type: [RelWithDebInfo, Debug]
+
+    steps:
+    - uses: actions/checkout@v1
+
+    - name: Generate the cache key
+      id: cache_key
+      run: echo ::set-output name=VALUE::build_${{ matrix.os }}_type-${{ matrix.build_type }}
+
+    - name: Update the cache (ccache)
+      uses: actions/cache@v1.0.3
+      with:
+        path: ccache
+        key: ${{ steps.cache_key.outputs.VALUE }}_ccache
+
+    - name: Update the cache (git submodules)
+      uses: actions/cache@v1.0.3
+      with:
+        path: .git/modules
+        key: ${{ steps.cache_key.outputs.VALUE }}_gitsubmodules
+
+    - name: Create the build folders
+      run: mkdir -p ccache build install downloads package
+
+    - name: Synchronize the submodules
+      run: git submodule sync --recursive
+
+    - name: Update the submodules
+      run: git submodule update --init --recursive
+
+    - name: Install system dependencies (Ubuntu)
+      if: ${{ contains(matrix.os, 'ubuntu') }}
+      run: |
+        sudo apt update
+
+        sudo apt-get install -y \
+          ccache \
+          cmake \
+          ninja-build
+
+    - name: Install system dependencies (macOS)
+      if: ${{ contains(matrix.os, 'macos') }}
+      run: |
+        brew install \
+          ccache \
+          ninja
+
+    - name: Configure the project
+      run: |
+        export CCACHE_DIR="$(realpath ccache)"
+
+        cmake \
+          -S . \
+          -B build \
+          -G Ninja \
+          -DCMAKE_C_COMPILER=clang \
+          -DCMAKE_CXX_COMPILER=clang++ \
+          -DCMAKE_BUILD_TYPE:STRING=${{ matrix.build_type }}
+
+    - name: Build the project
+      run: |
+        export CCACHE_DIR="$(realpath ccache)"
+
+        cmake \
+          --build build \
+          --target grpc \
+          -- -v
+
+        cmake \
+          --build build \
+          -- -v
