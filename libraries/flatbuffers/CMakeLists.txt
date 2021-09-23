@@ -65,6 +65,10 @@ target_include_directories(flatc_internals INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/src/include"
 )
 
+# Inherit ASAN settings, if enabled.
+target_link_libraries(flatc_internals PRIVATE
+    settings_public)
+
 foreach(property_name ${property_name_list})
   get_target_property(property_value flatc "${property_name}")
   if(NOT property_value)

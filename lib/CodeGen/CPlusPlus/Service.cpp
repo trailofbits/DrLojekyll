@@ -17,6 +17,198 @@
 
 namespace hyde {
 namespace cxx {
+namespace {
+
+static bool AllParametersAreBound(ParsedDeclaration decl) {
+  auto all_bound = true;
+  for (ParsedParameter param : decl.Parameters()) {
+    if (param.Binding() != ParameterBinding::kBound) {
+      all_bound = false;
+      break;
+    }
+  }
+  return all_bound;
+}
+
+static void DeclareQuery(ParsedQuery query, OutputStream &os) {
+  ParsedDeclaration decl(query);
+
+
+  os << "\n\n"
+     << os.Indent() << "::grpc::Status Query_" << query.Name() << "_"
+     << decl.BindingPattern() << "(\n";
+  os.PushIndent();
+  os << os.Indent() << "::grpc::ServerContext *context,\n"
+     << os.Indent() << "const flatbuffers::grpc::Message<"
+     << query.Name() << "_"  << decl.BindingPattern() << "> *request,\n";
+
+  if (AllParametersAreBound(decl)) {
+    os << os.Indent() << "flatbuffers::grpc::Message<"
+       << query.Name() << "_" << query.Arity() << "> *response";
+  } else {
+    os << os.Indent() << "::grpc::ServerWriter< flatbuffers::grpc::Message<"
+       << "flatbuffers::grpc::Message<"
+       << query.Name() << "_" << query.Arity() << ">> *writer";
+  }
+
+  os << ")";
+
+  os.PopIndent();
+}
+
+static void DeclareServiceMethods(const std::vector<ParsedQuery> &queries,
+                                  OutputStream &os) {
+
+  os << os.Indent() << "virtual ~DatabaseService(void) = default;";
+
+  for (ParsedQuery query : queries) {
+    DeclareQuery(query, os);
+    os << " final;";
+  }
+  os << "\n\n"
+     << os.Indent() << "::grpc::Status Update(\n";
+  os.PushIndent();
+  os << os.Indent() << "::grpc::ServerContext *context,\n"
+     << os.Indent() << "::grpc::ServerReaderWriter<flatbuffers::grpc::Message<OutputMessage>,\n"
+     << os.Indent() << "                           flatbuffers::grpc::Message<InputMessage>> *stream) final;\n";
+  os.PopIndent();
+}
+
+static void DefineDatabaseLog(ParsedModule module,
+                              const std::vector<ParsedMessage> &messages,
+                              OutputStream &os) {
+  os << "class FlatBufferMessageBuilder final {\n";
+  os.PushIndent();
+  os << os.Indent() << "private:\n";
+  os.PushIndent();
+  os << os.Indent() << "flatbuffers::grpc::MessageBuilder mb;";
+
+  // Create vectors for holding offsets.
+  bool has_differential = false;
+  for (ParsedMessage message : messages) {
+    if (!message.IsPublished()) {
+      continue;
+    }
+
+    os << "\n"
+       << os.Indent() << "std::vector<flatbuffers::Offset<Message_" << message.Name()
+       << "_" << message.Arity() << ">> " << message.Name() << "_"
+       << message.Arity() << "_added;";
+
+    if (message.IsDifferential()) {
+      has_differential = true;
+      os << "\n"
+         << os.Indent() << "std::vector<flatbuffers::Offset<Message_" << message.Name()
+         << "_" << message.Arity() << ">> " << message.Name() << "_"
+         << message.Arity() << "_removed;";
+    }
+  }
+
+  os << "\n" << os.Indent() << "has_added{false};";
+  if (has_differential) {
+    os << "\n" << os.Indent() << "has_removed{false};";
+  }
+
+  os.PopIndent();  // private
+  os << "\n\n"
+     << os.Indent() << "public:";
+  os.PushIndent();
+
+  // Define a function that builds up the flatbuffer message and clears out
+  // all other empty buffers.
+  os << "\n\n"
+     << os.Indent() << "inline bool HasAnyMessages(void) const noexcept {\n";
+  os.PushIndent();
+  os << os.Indent() << "return has_added";
+  if (has_differential) {
+    os << " || has_removed";
+  }
+  os << ";\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n\n"
+     << "if (has_added) {\n";
+  os.PushIndent();
+
+  for (ParsedMessage message : messages) {
+    if (!message.IsPublished()) {
+      continue;
+    }
+  }
+  os.PopIndent();
+  os << os.Indent() << "}\n";
+
+  if (has_differential) {
+    os << os.Indent() << "if (has_removed) {\n";
+    os.PushIndent();
+
+    os.PopIndent();
+    os << os.Indent() << "}\n";
+  }
+  // Define the message logging function for each message.
+  for (ParsedMessage message : messages) {
+    if (!message.IsPublished()) {
+      continue;
+    }
+
+    ParsedDeclaration decl(message);
+    os << "\n\n"
+       << os.Indent() << "void " << message.Name() << "_" << message.Arity();
+
+    auto sep = "(";
+    for (auto param : decl.Parameters()) {
+      os << sep;
+      if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+        os << TypeName(module, param.Type()) << " ";
+      } else {
+        os << "const " << TypeName(module, param.Type()) << " &";
+      }
+      os << param.Name();
+      sep = ", ";
+    }
+
+    os << sep << "bool added) {\n";
+    os.PushIndent();
+    os << os.Indent() << "auto offset = CreateMessage_"
+       << message.Name() << "_" << message.Arity() << "(mb";
+
+    for (auto param : decl.Parameters()) {
+      os << ", " << param.Name();
+    }
+
+    os << ");\n"
+       << os.Indent() << "if (added) {\n";
+    os.PushIndent();
+
+    os << os.Indent() << "has_added = true;\n"
+       << os.Indent() << message.Name() << "_"
+       << message.Arity() << "_added.emplace_back(std::move(offset));\n";
+
+    os.PopIndent();
+    os << os.Indent() << "}";
+    if (message.IsDifferential()) {
+      os << " else {\n";
+      os.PushIndent();
+
+      os << os.Indent() << "has_removed = true;\n"
+         << os.Indent() << message.Name() << "_"
+         << message.Arity() << "_removed.emplace_back(std::move(offset));\n";
+
+      os.PopIndent();
+      os << os.Indent() << "}\n";
+    } else {
+      os << "\n";
+    }
+
+    os.PopIndent();
+    os << os.Indent() << "}";
+  }
+
+  os.PopIndent();  // public
+  os.PopIndent();
+  os << "\n};\n\n";
+}
+
+}  // namespace
 
 // Emits C++ code for the given program to `os`.
 void GenerateServiceCode(const Program &program, OutputStream &os) {
@@ -48,8 +240,8 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
      << "#include \"" << file_name << ".interface.h\"\n"
      << "#include \"" << file_name << ".db.h\"\n\n";
 
-//     << "#ifndef __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n"
-//     << "#  define __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n";
+  auto queries = Queries(module);
+  auto messages = Messages(module);
 
   // Output prologue code.
   auto inlines = Inlines(module, Language::kCxx);
@@ -63,13 +255,14 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
     os << "namespace " << ns_name << " {\n\n";
   }
 
-  os << "class DatabaseService : public Database::Service {\n";
-  os.PushIndent();
-  os << "public:\n";
-  os.PushIndent();
-  os << os.Indent() << "virtual ~DatabaseImpl(void);\n";
-  os.PopIndent();  // public
+  DefineDatabaseLog(module, messages, os);
 
+  os << "class DatabaseService final : public Database::Service {\n";
+  os.PushIndent();
+  os << os.Indent() << "public:\n";
+  os.PushIndent();
+  DeclareServiceMethods(queries, os);
+  os.PopIndent();  // public
   os.PopIndent();
   os << "};\n\n";  // DatabaseImpl
 
@@ -127,7 +320,7 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
   // Build the actual server.
      << os.Indent() << "auto server = builder.BuildAndStart();\n";
 
-  os << "return EXIT_SUCCESS;\n";
+  os << os.Indent() << "return EXIT_SUCCESS;\n";
   os.PopIndent();
   os << "}\n\n";
 }

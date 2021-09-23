@@ -1610,7 +1610,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   DeclareMessageLog(os, program, module);
 
   // A program gets its own class
-  os << "template <typename StorageT, typename LogT, typename FunctorsT>\n";
+  os << "template <typename StorageT, typename LogT=DatabaseLog, typename FunctorsT=DatabaseFunctors>\n";
   os << "class " << gClassName << " {\n";
   os.PushIndent();  // class
 
