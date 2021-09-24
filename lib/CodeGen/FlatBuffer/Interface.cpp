@@ -321,6 +321,7 @@ static void DeclareService(Program program, ParsedModule module,
   // Declare a service.
   os.PopIndent();
   os << os.Indent() << "}\n\n"
+     << os.Indent() << "table Empty {}\n\n"
      << os.Indent() << "rpc_service Database {\n";
   os.PushIndent();
 
@@ -347,8 +348,8 @@ static void DeclareService(Program program, ParsedModule module,
   }
 
   // Apply an input message to the database, producing an output message.
-  os << os.Indent()
-     << "Update(InputMessage):OutputMessage (streaming: \"bidi\");\n";
+  os << os.Indent() << "Publish(InputMessage):Empty;\n"
+     << os.Indent() << "Subscribe(Empty):OutputMessage (streaming: \"server\");\n";
 
   os.PopIndent();
   os << os.Indent() << "}\n\n";

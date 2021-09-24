@@ -81,11 +81,19 @@ static void DeclareServiceMethods(const std::vector<ParsedQuery> &queries,
     os << " final;";
   }
   os << "\n\n"
-     << os.Indent() << "::grpc::Status Update(\n";
+     << os.Indent() << "::grpc::Status Publish(\n";
   os.PushIndent();
   os << os.Indent() << "::grpc::ServerContext *context,\n"
-     << os.Indent() << "::grpc::ServerReaderWriter<flatbuffers::grpc::Message<OutputMessage>,\n"
-     << os.Indent() << "                           flatbuffers::grpc::Message<InputMessage>> *stream) final;\n";
+     << os.Indent() << "flatbuffers::grpc::Message<InputMessage> *request,\n"
+     << os.Indent() << "flatbuffers::grpc::Message<Empty> *response) final;";
+  os.PopIndent();
+
+  os << "\n\n"
+     << os.Indent() << "::grpc::Status Subscribe(\n";
+  os.PushIndent();
+  os << os.Indent() << "::grpc::ServerContext *context,\n"
+     << os.Indent() << "flatbuffers::grpc::Message<Empty> *request,\n"
+     << os.Indent() << "::grpc::ServerWriter<flatbuffers::grpc::Message<OutputMessage>> *writer) final;\n";
   os.PopIndent();
 }
 
@@ -194,6 +202,93 @@ static void DefineQueryMethods(const std::vector<ParsedQuery> &queries,
     os.PopIndent();
     os << "}";
   }
+}
+
+// Define a method that clients invoke to publish messages to the server.
+static void DefinePublishMethod(const std::vector<ParsedMessage> &messages,
+                                OutputStream &os) {
+  os << "\n\n::grpc::Status DatabaseService::Publish(\n";
+  os.PushIndent();
+  os << os.Indent() << "::grpc::ServerContext *context,\n"
+     << os.Indent() << "flatbuffers::grpc::Message<InputMessage> *request,\n"
+     << os.Indent() << "flatbuffers::grpc::Message<Empty> *response) {\n\n"
+     << os.Indent() << "const auto req_msg = request->GetRoot();\n"
+     << os.Indent() << "if (!req_msg) {\n";
+  os.PushIndent();
+  os << os.Indent() << "return grpc::Status::OK;\n";
+  os.PopIndent();
+
+  os << os.Indent() << "}\n\n"
+     << os.Indent() << "auto input_msg = std::make_unique<DatabaseInputMessageType>();\n";
+
+  bool has_differential = false;
+  for (ParsedMessage message : messages) {
+    if (message.IsReceived() && message.IsDifferential()) {
+      has_differential = true;
+      break;
+    }
+  }
+
+  auto do_message = [&] (ParsedMessage message, const char *vector,
+                         const char *method_prefix) {
+    ParsedDeclaration decl(message);
+    os << os.Indent() << "if (auto " << message.Name()
+       << "_" << message.Arity() << " = " << vector << "->" << message.Name()
+       << "_" << message.Arity() << "()) {\n";
+    os.PushIndent();
+
+    os << os.Indent() << "for (auto entry : *" << message.Name() << "_"
+       << message.Arity() << ") {\n";
+    os.PushIndent();
+    os << os.Indent() << "input_msg->" << method_prefix << message.Name() << "_"
+       << message.Arity();
+    auto sep = "(";
+    for (ParsedParameter param : decl.Parameters()) {
+      os << sep << "entry->" << param.Name() << "()";
+      sep = ", ";
+    }
+    os << ");\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n";  // vector iteration.
+
+    os.PopIndent();
+    os << os.Indent() << "}\n";  // vector pointer.
+  };
+
+  // Handle added messages.
+  os << os.Indent() << "if (auto added = req_msg->added()) {\n";
+  os.PushIndent();
+  for (ParsedMessage message : messages) {
+    if (message.IsReceived()) {
+      do_message(message, "added", "produce_");
+    }
+  }
+  os.PopIndent();
+  os << os.Indent() << "}\n";  // added
+
+  // Handle removed messages.
+  if (has_differential) {
+    os << os.Indent() << "if (auto removed = req_msg->removed()) {\n";
+    os.PushIndent();
+    for (ParsedMessage message : messages) {
+      if (message.IsReceived() && message.IsDifferential()) {
+        do_message(message, "removed", "retract_");
+      }
+    }
+    os.PopIndent();
+    os << os.Indent() << "}\n";  // added
+  }
+
+  os << os.Indent() << "if (input_msg->Size()) {\n";
+  os.PushIndent();
+  os << os.Indent() << "std::unique_lock<std::mutex> locker(gInputMessagesLock);\n"
+     << os.Indent() << "gInputMessages.push_back(std::move(input_msg));\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n"
+     << os.Indent() << "return grpc::Status::OK;\n";
+
+  os.PopIndent();
+  os << os.Indent() << "}";
 }
 
 // Define the `Build` method of the `FlatBufferMessageBuilder` class, which
@@ -428,6 +523,7 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
      << "#include <cstring>\n"
      << "#include <list>\n"
      << "#include <memory>\n"
+     << "#include <mutex>\n"
      << "#include <shared_mutex>\n"
      << "#include <sstream>\n"
      << "#include <string>\n"
@@ -495,6 +591,9 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
 
   // Define the query methods out-of-line.
   DefineQueryMethods(queries, os);
+  DefinePublishMethod(messages, os);
+
+  os << "\n\n";
 
   if (!ns_name.empty()) {
     os << "}  // namespace " << ns_name << "\n\n";
