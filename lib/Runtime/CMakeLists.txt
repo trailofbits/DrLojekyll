@@ -10,9 +10,7 @@ set(Runtime_PUBLIC_H
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Result.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Runtime.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Serializer.h"
-  
-  ${SlabRuntime_PUBLIC_H}
-  
+    
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/StdRuntime.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/StdScan.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/StdSet.h"
@@ -25,7 +23,6 @@ set(Runtime_PUBLIC_H
 )
 
 set(Runtime_SRCS
-  ${SlabRuntime_SRCS}
   "StdStorage.cpp"
 )
 
@@ -34,6 +31,8 @@ set(Runtime_PRIV_DEPS
 
 set(Runtime_DEPS
   flatbuffers
+  concurrentqueue
+  gRPC::grpc++
 )
 
 dr_define_static_library(Runtime

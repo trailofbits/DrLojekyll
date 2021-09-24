@@ -1,4 +1,4 @@
-# Copyright 2020, Trail of Bits, Inc. All rights reserved.
+# Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
 list(APPEND CMAKE_MODULE_PATH
   "${CMAKE_CURRENT_SOURCE_DIR}/modules"

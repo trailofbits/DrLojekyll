@@ -584,6 +584,7 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
      << "using DatabaseStorageType = hyde::rt::StdStorage;\n"
      << "using DatabaseInputMessageType = DatabaseInputMessage<DatabaseStorageType>;\n"
      << "static std::list<std::unique_ptr<DatabaseInputMessageType>> gInputMessages;\n"
+     << "static moodycamel::"
      << "static std::mutex gInputMessagesLock;\n"
      << "static FlatBufferMessageBuilder gDatabaseLog;\n"
      << "static std::shared_mutex gDatabaseLock;\n"

@@ -1,4 +1,4 @@
-# Copyright 2020, Trail of Bits, Inc. All rights reserved.
+# Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
 set(enabled_option_list
   FLATBUFFERS_BUILD_FLATLIB
