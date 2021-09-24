@@ -19,6 +19,7 @@ namespace hyde {
 namespace cxx {
 namespace {
 
+// Determines if all parameteres to a declaration are `bound`-attributed.
 static bool AllParametersAreBound(ParsedDeclaration decl) {
   auto all_bound = true;
   for (ParsedParameter param : decl.Parameters()) {
@@ -30,12 +31,24 @@ static bool AllParametersAreBound(ParsedDeclaration decl) {
   return all_bound;
 }
 
-static void DeclareQuery(ParsedQuery query, OutputStream &os) {
+// Declare a `Query_*` method on the service, which corresponds with a
+// `#query` in the code. Query methods are suffixed by the binding parameters.
+//
+// A query whose parameters are all bound is treated as an existence check,
+// and returns a single message, or absent that, a cancelled status.
+//
+// A query that has at least one free parameter streams back the found tuples
+// to the requester.
+static void DeclareQuery(ParsedQuery query, OutputStream &os, bool out_of_line) {
   ParsedDeclaration decl(query);
 
 
   os << "\n\n"
-     << os.Indent() << "::grpc::Status Query_" << query.Name() << "_"
+     << os.Indent() << "::grpc::Status ";
+  if (out_of_line) {
+    os << "DatabaseService::";
+  }
+  os << "Query_" << query.Name() << "_"
      << decl.BindingPattern() << "(\n";
   os.PushIndent();
   os << os.Indent() << "::grpc::ServerContext *context,\n"
@@ -56,13 +69,15 @@ static void DeclareQuery(ParsedQuery query, OutputStream &os) {
   os.PopIndent();
 }
 
+// Declare the prototypes of all query methods on the `DatabaseService`
+// class. We'll define the methods out-of-line.
 static void DeclareServiceMethods(const std::vector<ParsedQuery> &queries,
                                   OutputStream &os) {
 
   os << os.Indent() << "virtual ~DatabaseService(void) = default;";
 
   for (ParsedQuery query : queries) {
-    DeclareQuery(query, os);
+    DeclareQuery(query, os, false);
     os << " final;";
   }
   os << "\n\n"
@@ -74,6 +89,209 @@ static void DeclareServiceMethods(const std::vector<ParsedQuery> &queries,
   os.PopIndent();
 }
 
+static void DefineQuery(ParsedQuery query, OutputStream &os) {
+  ParsedDeclaration decl(query);
+  os << os.Indent() << "std::shared_lock<std::shared_mutex> locker(gDatabaseLock);\n"
+     << os.Indent() << "auto status = grpc::GRPC_STATUS_NOT_FOUND;\n"
+     << os.Indent() << "const auto num_generated = gDatabase." << query.Name()
+     << "_" << decl.BindingPattern();
+
+  auto sep = "(";
+  auto has_free_params = false;
+  for (ParsedParameter param : decl.Parameters()) {
+    if (param.Binding() == ParameterBinding::kBound) {
+      os << sep << param.Name();
+      sep = ", ";
+    } else if (param.Binding() == ParameterBinding::kFree) {
+      has_free_params = true;
+    }
+  }
+
+  os << sep;
+  sep = "[&status, =] (";
+  for (ParsedParameter param : decl.Parameters()) {
+    os << sep << "auto p" << param.Index();
+    sep = ", ";
+  }
+  os << ") -> bool {\n";
+  os.PushIndent();
+
+  os << os.Indent() << "flatbuffers::grpc::MessageBuilder mb;\n";
+
+  // TODO(pag): Eventually create flatbuffer offsets for non-trivial
+  //            types.
+//  for (ParsedParameter param : decl.Parameters()) {
+//    switch (param.Type().UnderlyingKind()) {
+//
+//    }
+//  }
+
+  os << os.Indent() << "mb.Finish(Create" << query.Name() << "_"
+     << decl.Arity() << "(mb";
+
+  for (ParsedParameter param : decl.Parameters()) {
+    os << ", p" << param.Index();
+  }
+
+  os << "));\n"
+     << os.Indent() << "auto message = mb.ReleaseMessage<"
+     << query.Name() << "_" << decl.Arity() << ">();\n";
+
+  // If there are free parameters, then we're doing server-to-client streaming
+  // using `writer`.
+  if (has_free_params) {
+    os << os.Indent() << "if (!writer->Write(message)) {\n";
+    os.PushIndent();
+    os << os.Indent() << "status = grpc::CANCELLED;\n"
+       << os.Indent() << "return false;\n";
+    os.PopIndent();
+    os << os.Indent() << "} else {\n";
+    os.PushIndent();
+    os << os.Indent() << "status = grpc::Status::OK;\n"
+       << os.Indent() << "return true;\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n";
+
+  // If there are not any free parameters, then we're sending back a message
+  // to the client using `response`.
+  } else {
+    os << os.Indent() << "status = grpc::Status::OK;\n"
+       << os.Indent() << "*response = std::move(message);\n"
+       << os.Indent() << "return true;\n";
+  }
+
+  os.PopIndent();  // End of lambda to query callback.
+  os << os.Indent() << "});\n";
+
+  os << os.Indent() << "return grpc::Status(status, kQuery_"
+     << query.Name() << "_" << query.Arity()
+     << ");\n";
+}
+
+// Define the out-of-line method bodies for each of the `Query_*`methods.
+static void DefineQueryMethods(const std::vector<ParsedQuery> &queries,
+                               OutputStream &os) {
+  if (queries.empty()) {
+    return;
+  }
+
+  os << "\n";
+
+  for (ParsedQuery query : queries) {
+    ParsedDeclaration decl(query);
+    if (decl.IsFirstDeclaration()) {
+      os << "\nstatic const std::string kQuery_" << decl.Name()
+         << "_" << decl.Arity() << "{\"" << decl.Name()
+         << "_" << decl.Arity() << "\"};";
+    }
+  }
+
+  for (ParsedQuery query : queries) {
+    DeclareQuery(query, os, true);
+    os << " {\n";
+    os.PushIndent();
+    DefineQuery(query, os);
+    os.PopIndent();
+    os << "}";
+  }
+}
+
+// Define the `Build` method of the `FlatBufferMessageBuilder` class, which
+// goes and packages up all messages into flatbuffer vectors and into
+// added/removed messages. Normally, the offsets to the messages-to-be-published
+// are held in `std::vector`s.
+static void DefineDatabaseLogBuild(const std::vector<ParsedMessage> &messages,
+                                   OutputStream &os) {
+
+  auto has_differential = false;
+  for (ParsedMessage message : messages) {
+    if (message.IsPublished() && message.IsDifferential()) {
+      has_differential = true;
+    }
+  }
+
+  os << os.Indent() << "flatbuffers::grpc::Message<OutputMessage> Build(void) {\n";
+  os.PushIndent();
+  os << os.Indent() << "flatbuffers::Offset<AddedOutputMessage> added_offset;\n";
+  if (has_differential) {
+    os << os.Indent() << "flatbuffers::Offset<RemovedOutputMessage> removed_offset;\n";
+  }
+
+  os << os.Indent() << "if (has_added) {\n";
+  os.PushIndent();
+
+  auto do_message = [&os] (ParsedMessage message, const char *suffix) {
+    os << os.Indent() << "flatbuffers::Offset<Message_"
+       << message.Name() << "_" << message.Arity() << "> "
+       << message.Name() << "_" << message.Arity() << "_added_offset;\n"
+       << os.Indent() << "if (!" << message.Name() << "_"
+       << message.Arity() << suffix << ".empty()) {\n";
+    os.PushIndent();
+
+    os << os.Indent() << "" << message.Name() << "_"
+       << message.Arity() << suffix << "_offset = flatbuffers::CreateVector<Message_"
+       << message.Name() << "_" << message.Arity() << ">("
+       << message.Name() << "_" << message.Arity() << suffix << ".data(), "
+       << message.Name() << "_" << message.Arity() << suffix << ".size());\n"
+       << os.Indent() << message.Name() << "_"
+       << message.Arity() << suffix << ".clear();\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n";
+  };
+
+  for (ParsedMessage message : messages) {
+    if (message.IsPublished()) {
+      do_message(message, "_added");
+    }
+  }
+  os << os.Indent() << "added_offset = CreateAddedOutputMessage(mb";
+  for (ParsedMessage message : messages) {
+    if (message.IsPublished()) {
+      os << ", " << message.Name() << "_" << message.Arity() << "_added_offset";
+    }
+  }
+  os << ");\n";
+
+  os.PopIndent();
+  os << os.Indent() << "}\n";  // has_added
+
+  if (has_differential) {
+    os << os.Indent() << "if (has_removed) {\n";
+    os.PushIndent();
+    for (ParsedMessage message : messages) {
+      if (message.IsPublished() && message.IsDifferential()) {
+        do_message(message, "_removed");
+      }
+    }
+    os << os.Indent() << "removed_offset = CreateRemovedOutputMessage(mb";
+    for (ParsedMessage message : messages) {
+      if (message.IsPublished()) {
+        os << ", " << message.Name() << "_" << message.Arity()
+           << "_removed_offset";
+      }
+    }
+    os << ");\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n";  // has_removed
+  }
+
+  os << os.Indent() << "has_added = false;\n";
+  if (has_differential) {
+    os << os.Indent() << "has_removed = false;\n";
+  }
+  os << os.Indent() << "mb.Finish(CreateOutputMessage(mb, added_offset";
+  if (has_differential) {
+    os << ", removed_offset";
+  }
+  os << "));\n"
+     << os.Indent() << "return mb.ReleaseMessage<OutputMessage>();\n";
+  os.PopIndent();
+  os << os.Indent() << "}";
+}
+
+// Define the `FlatBufferMessageBuilder` class, which has one method per
+// published message. The role of this message builder is to accumulate
+// messages into a flatbuffer to be published to all connected clients.
 static void DefineDatabaseLog(ParsedModule module,
                               const std::vector<ParsedMessage> &messages,
                               OutputStream &os) {
@@ -90,23 +308,24 @@ static void DefineDatabaseLog(ParsedModule module,
       continue;
     }
 
-    os << "\n"
-       << os.Indent() << "std::vector<flatbuffers::Offset<Message_" << message.Name()
-       << "_" << message.Arity() << ">> " << message.Name() << "_"
-       << message.Arity() << "_added;";
-
-    if (message.IsDifferential()) {
-      has_differential = true;
+    auto declare_vec = [&] (const char *suffix) {
       os << "\n"
          << os.Indent() << "std::vector<flatbuffers::Offset<Message_" << message.Name()
          << "_" << message.Arity() << ">> " << message.Name() << "_"
-         << message.Arity() << "_removed;";
+         << message.Arity() << suffix << ";";
+    };
+
+    declare_vec("_added");
+
+    if (message.IsDifferential()) {
+      has_differential = true;
+      declare_vec("_removed");
     }
   }
 
-  os << "\n" << os.Indent() << "has_added{false};";
+  os << "\n" << os.Indent() << "bool has_added{false};";
   if (has_differential) {
-    os << "\n" << os.Indent() << "has_removed{false};";
+    os << "\n" << os.Indent() << "bool has_removed{false};";
   }
 
   os.PopIndent();  // private
@@ -125,25 +344,10 @@ static void DefineDatabaseLog(ParsedModule module,
   }
   os << ";\n";
   os.PopIndent();
-  os << os.Indent() << "}\n\n"
-     << "if (has_added) {\n";
-  os.PushIndent();
+  os << os.Indent() << "}\n\n";
 
-  for (ParsedMessage message : messages) {
-    if (!message.IsPublished()) {
-      continue;
-    }
-  }
-  os.PopIndent();
-  os << os.Indent() << "}\n";
+  DefineDatabaseLogBuild(messages, os);
 
-  if (has_differential) {
-    os << os.Indent() << "if (has_removed) {\n";
-    os.PushIndent();
-
-    os.PopIndent();
-    os << os.Indent() << "}\n";
-  }
   // Define the message logging function for each message.
   for (ParsedMessage message : messages) {
     if (!message.IsPublished()) {
@@ -208,6 +412,11 @@ static void DefineDatabaseLog(ParsedModule module,
   os << "\n};\n\n";
 }
 
+// Defines some queues for reading/writing data.
+static void DefineQueues(OutputStream &os) {
+
+}
+
 }  // namespace
 
 // Emits C++ code for the given program to `os`.
@@ -217,7 +426,12 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
      << "#include <cstdlib>\n"
      << "#include <cstdio>\n"
      << "#include <cstring>\n"
+     << "#include <list>\n"
+     << "#include <memory>\n"
+     << "#include <shared_mutex>\n"
      << "#include <sstream>\n"
+     << "#include <string>\n"
+     << "#include <vector>\n\n"
      << "#include <drlojekyll/Runtime/Runtime.h>\n\n";
 
   const auto module = program.ParsedModule();
@@ -239,6 +453,9 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
      << "#include \"" << file_name << ".grpc.fb.h\"\n"
      << "#include \"" << file_name << ".interface.h\"\n"
      << "#include \"" << file_name << ".db.h\"\n\n";
+//     << "DEFINE_string(host, \"localhost\", \"Server host name\");\n";
+
+  DefineQueues(os);
 
   auto queries = Queries(module);
   auto messages = Messages(module);
@@ -257,6 +474,7 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
 
   DefineDatabaseLog(module, messages, os);
 
+  // Define the main gRPC service class, and declare each of its methods.
   os << "class DatabaseService final : public Database::Service {\n";
   os.PushIndent();
   os << os.Indent() << "public:\n";
@@ -264,7 +482,19 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
   DeclareServiceMethods(queries, os);
   os.PopIndent();  // public
   os.PopIndent();
-  os << "};\n\n";  // DatabaseImpl
+  os << "};";  // DatabaseService
+
+  os << "\n\n"
+     << "using DatabaseStorageType = hyde::rt::StdStorage;\n"
+     << "using DatabaseInputMessageType = DatabaseInputMessage<DatabaseStorageType>;\n"
+     << "static std::list<std::unique_ptr<DatabaseInputMessageType>> gInputMessages;\n"
+     << "static std::mutex gInputMessagesLock;\n"
+     << "static FlatBufferMessageBuilder gDatabaseLog;\n"
+     << "static std::shared_mutex gDatabaseLock;\n"
+     << "static Database<DatabaseStorageType, FlatBufferMessageBuilder> gDatabase;";
+
+  // Define the query methods out-of-line.
+  DefineQueryMethods(queries, os);
 
   if (!ns_name.empty()) {
     os << "}  // namespace " << ns_name << "\n\n";
