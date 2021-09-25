@@ -106,14 +106,26 @@ static void GenerateFlatBufferOutput(const Parser &dr_parser,
                source_file_name.c_str());
 
   if (gCxxOutDir) {
+    auto out_dir = std::filesystem::path(gCxxOutDir).generic_string() + "/";
     parser.opts.lang = flatbuffers::IDLOptions::kCpp;
-    flatbuffers::GenerateCPP(parser, gCxxOutDir, gDatabaseName);
-    flatbuffers::GenerateCppGRPC(parser, gCxxOutDir, gDatabaseName);
+    auto ret1 = flatbuffers::GenerateCPP(parser, out_dir.c_str(),
+                                         gDatabaseName);
+    auto ret2 = flatbuffers::GenerateCppGRPC(parser, out_dir.c_str(),
+                                             gDatabaseName);
+    assert(ret1);
+    assert(ret2);
+    (void) ret1; (void) ret2;
   }
   if (gPyOutDir) {
+    auto out_dir = std::filesystem::path(gPyOutDir).generic_string() + "/";
     parser.opts.lang = flatbuffers::IDLOptions::kPython;
-    flatbuffers::GeneratePython(parser, gCxxOutDir, gDatabaseName);
-    flatbuffers::GeneratePythonGRPC(parser, gCxxOutDir, gDatabaseName);
+    auto ret1 = flatbuffers::GeneratePython(parser, out_dir.c_str(),
+                                            gDatabaseName);
+    auto ret2 = flatbuffers::GeneratePythonGRPC(parser, out_dir.c_str(),
+                                                gDatabaseName);
+    assert(ret1);
+    assert(ret2);
+    (void) ret1; (void) ret2;
   }
 }
 
@@ -124,10 +136,7 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
     return EXIT_FAILURE;
   }
 
-  if (!(gIRStream || gCxxOutDir || gPyOutDir || gFlatCodeStream)) {
-    return EXIT_SUCCESS;
-  }
-
+  auto ret = EXIT_SUCCESS;
   try {
     std::string fb_schema;
 
@@ -165,6 +174,7 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
        hyde::FileStream service_fs(
            display_manager,
            (dir / (gDatabaseName + ".cpp")).generic_string());
+
        hyde::cxx::GenerateServiceCode(*program_opt, service_fs.os);
     }
 
@@ -184,6 +194,7 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
       (*gFlatCodeStream) << fb_schema;
     }
   } catch (...) {
+    ret = EXIT_FAILURE;
   }
 
   // NOTE(pag): We do this later because if we produce the control-flow IR
@@ -194,7 +205,7 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
     gDOTStream->Flush();
   }
 
-  return EXIT_SUCCESS;
+  return ret;
 }
 
 // Process a parsed module.

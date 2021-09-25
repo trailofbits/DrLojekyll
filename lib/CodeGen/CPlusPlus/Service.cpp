@@ -34,7 +34,7 @@ static bool AllParametersAreBound(ParsedDeclaration decl) {
 // Define structures for holding the messages that need to be sent back to
 // clients.
 static void DefineOutboxes(OutputStream &os) {
-  os << "struct Outbox {\n";
+  os << "\n\nstruct Outbox {\n";
   os.PushIndent();
   os << os.Indent() << "Outbox **prev_next{nullptr};\n"
      << os.Indent() << "Outbox *next{nullptr};\n"
@@ -49,7 +49,7 @@ static void DefineOutboxes(OutputStream &os) {
   os.PopIndent();
   os << "};\n\n"
      << "static Outbox *gFirstOutbox{nullptr};\n"
-     << "static std::mutex gOutboxesLock;\n\n";
+     << "static std::mutex gOutboxesLock;\n";
 }
 
 // Declare a `Query_*` method on the service, which corresponds with a
@@ -66,7 +66,7 @@ static void DeclareQuery(ParsedQuery query, OutputStream &os, bool out_of_line) 
   os << "\n\n"
      << os.Indent() << "::grpc::Status ";
   if (out_of_line) {
-    os << "DatabaseService::";
+    os << "DatalogService::";
   }
   os << "Query_" << query.Name() << "_"
      << decl.BindingPattern() << "(\n";
@@ -80,7 +80,6 @@ static void DeclareQuery(ParsedQuery query, OutputStream &os, bool out_of_line) 
        << query.Name() << "_" << query.Arity() << "> *response";
   } else {
     os << os.Indent() << "::grpc::ServerWriter< flatbuffers::grpc::Message<"
-       << "flatbuffers::grpc::Message<"
        << query.Name() << "_" << query.Arity() << ">> *writer";
   }
 
@@ -89,12 +88,12 @@ static void DeclareQuery(ParsedQuery query, OutputStream &os, bool out_of_line) 
   os.PopIndent();
 }
 
-// Declare the prototypes of all query methods on the `DatabaseService`
+// Declare the prototypes of all query methods on the `DatalogService`
 // class. We'll define the methods out-of-line.
 static void DeclareServiceMethods(const std::vector<ParsedQuery> &queries,
                                   OutputStream &os) {
 
-  os << os.Indent() << "virtual ~DatabaseService(void) = default;";
+  os << os.Indent() << "virtual ~DatalogService(void) = default;";
 
   for (ParsedQuery query : queries) {
     DeclareQuery(query, os, false);
@@ -104,7 +103,7 @@ static void DeclareServiceMethods(const std::vector<ParsedQuery> &queries,
      << os.Indent() << "::grpc::Status Publish(\n";
   os.PushIndent();
   os << os.Indent() << "::grpc::ServerContext *context,\n"
-     << os.Indent() << "flatbuffers::grpc::Message<InputMessage> *request,\n"
+     << os.Indent() << "const flatbuffers::grpc::Message<InputMessage> *request,\n"
      << os.Indent() << "flatbuffers::grpc::Message<Empty> *response) final;";
   os.PopIndent();
 
@@ -112,7 +111,7 @@ static void DeclareServiceMethods(const std::vector<ParsedQuery> &queries,
      << os.Indent() << "::grpc::Status Subscribe(\n";
   os.PushIndent();
   os << os.Indent() << "::grpc::ServerContext *context,\n"
-     << os.Indent() << "flatbuffers::grpc::Message<Empty> *request,\n"
+     << os.Indent() << "const flatbuffers::grpc::Message<Empty> *request,\n"
      << os.Indent() << "::grpc::ServerWriter<flatbuffers::grpc::Message<OutputMessage>> *writer) final;\n";
   os.PopIndent();
 }
@@ -120,7 +119,7 @@ static void DeclareServiceMethods(const std::vector<ParsedQuery> &queries,
 static void DefineQuery(ParsedQuery query, OutputStream &os) {
   ParsedDeclaration decl(query);
   os << os.Indent() << "std::shared_lock<std::shared_mutex> locker(gDatabaseLock);\n"
-     << os.Indent() << "auto status = grpc::GRPC_STATUS_NOT_FOUND;\n"
+     << os.Indent() << "auto status = grpc::StatusCode::NOT_FOUND;\n"
      << os.Indent() << "const auto num_generated = gDatabase." << query.Name()
      << "_" << decl.BindingPattern();
 
@@ -226,10 +225,10 @@ static void DefineQueryMethods(const std::vector<ParsedQuery> &queries,
 
 // Define a method that clients invoke to subscribe to messages from the server.
 static void DefineSubscribeMethod(OutputStream &os) {
-  os << "\n\n::grpc::Status DatabaseService::Subscribe(\n";
+  os << "\n\n::grpc::Status DatalogService::Subscribe(\n";
   os.PushIndent();
   os << os.Indent() << "::grpc::ServerContext *context,\n"
-     << os.Indent() << "flatbuffers::grpc::Message<Empty> *request,\n"
+     << os.Indent() << "const flatbuffers::grpc::Message<Empty> *request,\n"
      << os.Indent() << "::grpc::ServerWriter<flatbuffers::grpc::Message<OutputMessage>> *writer) {\n\n"
      << os.Indent() << "alignas(64) Outbox outbox;\n"
      << os.Indent() << "alignas(64) std::vector<std::shared_ptr<flatbuffers::grpc::Message<OutputMessage>>> messages;\n"
@@ -285,10 +284,10 @@ static void DefineSubscribeMethod(OutputStream &os) {
 // Define a method that clients invoke to publish messages to the server.
 static void DefinePublishMethod(const std::vector<ParsedMessage> &messages,
                                 OutputStream &os) {
-  os << "\n\n::grpc::Status DatabaseService::Publish(\n";
+  os << "\n\n::grpc::Status DatalogService::Publish(\n";
   os.PushIndent();
   os << os.Indent() << "::grpc::ServerContext *context,\n"
-     << os.Indent() << "flatbuffers::grpc::Message<InputMessage> *request,\n"
+     << os.Indent() << "const flatbuffers::grpc::Message<InputMessage> *request,\n"
      << os.Indent() << "flatbuffers::grpc::Message<Empty> *response) {\n\n"
      << os.Indent() << "const auto req_msg = request->GetRoot();\n"
      << os.Indent() << "if (!req_msg) {\n";
@@ -586,11 +585,6 @@ static void DefineDatabaseLog(ParsedModule module,
   os << "\n};\n\n";
 }
 
-// Defines some queues for reading/writing data.
-static void DefineQueues(OutputStream &os) {
-
-}
-
 // Defines the function that runs the database.
 static void DefineDatabaseThread(OutputStream &os) {
   // Make the main database thread.
@@ -673,39 +667,25 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
      << "#include \"" << file_name << ".db.h\"\n\n";
 //     << "DEFINE_string(host, \"localhost\", \"Server host name\");\n";
 
-  DefineOutboxes(os);
-  DefineQueues(os);
-
   auto queries = Queries(module);
   auto messages = Messages(module);
-
-  // Output prologue code.
-  auto inlines = Inlines(module, Language::kCxx);
-  for (ParsedInline code : inlines) {
-    if (code.IsPrologue()) {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
 
   if (!ns_name.empty()) {
     os << "namespace " << ns_name << " {\n\n";
   }
 
-  DefineOutboxes(os);
-
   DefineDatabaseLog(module, messages, os);
 
   // Define the main gRPC service class, and declare each of its methods.
-  os << "class DatabaseService final : public Database::Service {\n";
+  os << "class DatalogService final : public Datalog::Service {\n";
   os.PushIndent();
   os << os.Indent() << "public:\n";
   os.PushIndent();
   DeclareServiceMethods(queries, os);
   os.PopIndent();  // public
   os.PopIndent();
-  os << "};";  // DatabaseService
-
-  os << "\n\n"
+  os << "};"  // DatalogService
+     << "\n\n"
      << "using DatabaseStorageType = hyde::rt::StdStorage;\n"
      << "using DatabaseInputMessageType = DatabaseInputMessage<DatabaseStorageType>;\n"
      << "static std::vector<std::unique_ptr<DatabaseInputMessageType>> gInputMessages;\n"
@@ -720,6 +700,7 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
 
   // Define the query methods out-of-line.
   DefineQueryMethods(queries, os);
+  DefineOutboxes(os);
   DefinePublishMethod(messages, os);
   DefineSubscribeMethod(os);
 
@@ -729,13 +710,6 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
 
   if (!ns_name.empty()) {
     os << "}  // namespace " << ns_name << "\n\n";
-  }
-
-  // Output epilogue code.
-  for (ParsedInline code : inlines) {
-    if (code.IsEpilogue()) {
-      os << code.CodeToInline() << "\n\n";
-    }
   }
 
   os << "extern \"C\" int main(int argc, const char *argv[]) {\n";
@@ -776,7 +750,7 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
   os << os.Indent() << "}\n\n"
      << os.Indent() << "std::stringstream address_ss;\n"
      << os.Indent() << "address_ss << host << ':' << port;\n\n"
-     << os.Indent() << ns_name_prefix << "DatabaseService service;\n"
+     << os.Indent() << ns_name_prefix << "DatalogService service;\n"
 
   // Build a gRPC server builder, configuring it with host/port.
      << os.Indent() << "grpc::ServerBuilder builder;\n"

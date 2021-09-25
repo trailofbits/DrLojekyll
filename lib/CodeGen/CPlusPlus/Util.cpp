@@ -142,12 +142,12 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
       break;
     default:
       assert(false);
-      default_val = "{}";
+      default_val = "";
       break;
   }
 
   std::stringstream value;
-  value << prefix;
+  value << "{" << prefix;
   auto has_val = false;
   if (val) {
     if (auto lit = val->Literal()) {
@@ -162,7 +162,7 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
     value << default_val;
   }
 
-  value << suffix;
+  value << suffix << "}";
   return value.str();
 }
 

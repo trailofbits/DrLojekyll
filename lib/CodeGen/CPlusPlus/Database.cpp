@@ -281,7 +281,7 @@ static void DefineConstant(OutputStream &os, ParsedModule module,
   auto type = global.Type();
   if (CanInlineDefineConstant(global)) {
     os << os.Indent() << "static constexpr " << TypeName(module, type) << " "
-       << Var(os, global) << " = " << TypeName(module, type)
+       << Var(os, global) << " = "
        << TypeValueOrDefault(module, type, global) << ";\n";
 
   } else {
@@ -1582,6 +1582,12 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
      << "#ifndef __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n"
      << "#  define __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n";
   const auto module = program.ParsedModule();
+
+  std::string ns_name;
+  if (const auto db_name = module.DatabaseName()) {
+    ns_name = db_name->NameAsString();
+  }
+
   const auto inlines = Inlines(module, Language::kCxx);
 
   // Output prologue code.
@@ -1593,10 +1599,16 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
 
   os << "#endif  // __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n\n"
      << "#include <algorithm>\n"
+     << "#include <cstdio>\n"
+     << "#include <cinttypes>\n"
      << "#include <optional>\n"
      << "#include <tuple>\n"
      << "#include <unordered_map>\n"
      << "#include <vector>\n\n";
+
+  if (!ns_name.empty()) {
+    os << "namespace " << ns_name << " {\n";
+  }
 
   // Forward-declare user-provided functors
   for (ParsedFunctor func : Functors(module)) {
@@ -1605,7 +1617,16 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   }
   os << "\n";
 
+  if (!ns_name.empty()) {
+    os << "}  // namespace " << ns_name << "\n\n";
+  }
+
   DeclareDescriptors(os, program, module);
+
+  if (!ns_name.empty()) {
+    os << "namespace " << ns_name << " {\n";
+  }
+
   DeclareFunctors(os, program, module);
   DeclareMessageLog(os, program, module);
 
@@ -1723,7 +1744,6 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << "\\n\");\n";
   os.PopIndent();
   os << os.Indent() << "}\n";
-  os.PopIndent();
   os << os.Indent() << "fprintf(tables, \"";
   sep = "";
   for (auto table : program.Tables()) {
@@ -1737,6 +1757,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   }
   os << ");\n";
 
+  os.PopIndent();
   os << os.Indent() << "}\n\n";
 
   for (auto proc : program.Procedures()) {
@@ -1748,6 +1769,10 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os.PopIndent();  // private:
   os.PopIndent();  // class:
   os << "};\n\n";
+
+  if (!ns_name.empty()) {
+    os << "}  // namespace " << ns_name << "\n\n";
+  }
 
   os << "#ifndef __DRLOJEKYLL_EPILOGUE_CODE_" << gClassName << "\n"
      << "#  define __DRLOJEKYLL_EPILOGUE_CODE_" << gClassName << "\n";

@@ -97,9 +97,13 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
      << "#  define __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n";
 
   ParsedModule module = program.ParsedModule();
-  auto inlines = Inlines(module, Language::kCxx);
+  std::string ns_name;
+  if (const auto db_name = module.DatabaseName()) {
+    ns_name = db_name->NameAsString();
+  }
 
   // Output prologue code.
+  auto inlines = Inlines(module, Language::kCxx);
   for (auto code : inlines) {
     if (code.IsPrologue()) {
       os << code.CodeToInline() << "\n\n";
@@ -151,6 +155,10 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   }
 
   assert(entry_proc.has_value());
+
+  if (!ns_name.empty()) {
+    os << "namespace " << ns_name << " {\n";
+  }
 
   os << os.Indent()
      << "template <typename StorageT, typename LogT, typename FunctorsT>\n"
@@ -935,6 +943,10 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   }
   os.PopIndent();
   os << "}\n\n";  // End of `VisitQueries`.
+
+  if (!ns_name.empty()) {
+    os << "}  // namespace " << ns_name << "\n\n";
+  }
 }
 
 }  // namespace cxx

@@ -322,7 +322,7 @@ static void DeclareService(Program program, ParsedModule module,
   os.PopIndent();
   os << os.Indent() << "}\n\n"
      << os.Indent() << "table Empty {}\n\n"
-     << os.Indent() << "rpc_service Database {\n";
+     << os.Indent() << "rpc_service Datalog {\n";
   os.PushIndent();
 
   for (ParsedQuery query : queries) {
