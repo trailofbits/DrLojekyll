@@ -32,7 +32,6 @@ set(Runtime_PRIV_DEPS
 set(Runtime_DEPS
   flatbuffers
   concurrentqueue
-  gRPC::grpc++
 )
 
 dr_define_static_library(Runtime

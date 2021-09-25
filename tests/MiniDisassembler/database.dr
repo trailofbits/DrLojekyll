@@ -1,0 +1,31 @@
+; This example shows how to implement a recursive disassembler with Dr. Lojekyll
+
+#constant u8 FALL_THROUGH 0.
+#constant u8 CALL 1.
+
+#message instruction(u64 EA).
+#message raw_transfer(u64 FromEA, u64 ToEA, u8 TransferKind).
+
+#local function(ToEA)
+
+    ; The target of a function call is an instruction.
+    : raw_transfer(FromEA, ToEA, CALL)
+    , instruction(FromEA)
+    , instruction(ToEA)
+
+    ; Any instruction without a predecessor is a function.
+    : !raw_transfer(_, ToEA, _)
+    , instruction(ToEA).
+
+#query function_instructions(bound u64 FuncEA, free u64 InstEA)
+
+    ; The first instruction of a function is a function instruction.
+    : function(FuncEA)
+    , FuncEA = InstEA
+
+    ; The fall-through of one function instruction is also a function
+    ; instruction, assuming it's not a function head.
+    : function_instructions(FuncEA, PredEA)
+    , raw_transfer(PredEA, InstEA, FALL_THROUGH)
+    , !function(InstEA).
+

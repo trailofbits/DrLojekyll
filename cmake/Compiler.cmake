@@ -107,6 +107,12 @@ function(compile_datalog)
   # run the database as a server.
   if(DR_SERVICE_NAME)
   
+    
+    find_package(gRPC CONFIG REQUIRED)
+    if(NOT TARGET gRPC::grpc++)
+        message(FATAL_ERROR "gRPC was not found")
+    endif()
+  
     find_package(flatbuffers CONFIG REQUIRED)
     
     add_executable(${DR_SERVICE_NAME}
@@ -117,6 +123,7 @@ function(compile_datalog)
     
     target_link_libraries(${DR_SERVICE_NAME} PRIVATE
       ${DR_DRLOJEKYLL_RT}
+      gRPC::grpc++
       flatbuffers)
   endif()
   

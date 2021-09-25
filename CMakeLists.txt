@@ -20,19 +20,9 @@ if(DRLOJEKYLL_ENABLE_VENDORED_LIBRARIES)
   add_subdirectory("vendor" EXCLUDE_FROM_ALL)
 endif()
 
-# TODO: Move this where the library is required
-find_package(gRPC CONFIG REQUIRED)
-if(NOT TARGET gRPC::grpc++)
-    message(FATAL_ERROR "gRPC was not found")
-endif()
-
 # --------------------------------------------
 # build-time options -------------------------
 # --------------------------------------------
-option(ENABLE_LIBFUZZER "Build libFuzzer fuzz targets" OFF)
-option(ENABLE_SANITIZERS "Build with ASAN and UBSAN" OFF)
-option(ENABLE_TESTS "Build test suite" ON)
-option(WARNINGS_AS_ERRORS "Build treating warnings as errors" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_STANDARD_REQUIRED ON)
@@ -123,7 +113,7 @@ if(WARNINGS_AS_ERRORS)
 endif()
 
 # sanitizer settings -------------------------
-if(ENABLE_SANITIZERS)
+if(DRLOJEKYLL_ENABLE_SANITIZERS)
     add_sanitizer_settings(settings_public
         SANITIZERS
             address
@@ -134,7 +124,7 @@ if(ENABLE_SANITIZERS)
 endif()
 
 # fuzzer settings ----------------------------
-if(ENABLE_LIBFUZZER)
+if(DRLOJEKYLL_ENABLE_LIBFUZZER)
     if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         message(FATAL_ERROR "ENABLE_LIBFUZZER requires using Clang (currently using '${CMAKE_CXX_COMPILER_ID}')")
     endif()

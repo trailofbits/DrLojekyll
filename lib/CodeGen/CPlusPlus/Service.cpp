@@ -31,6 +31,27 @@ static bool AllParametersAreBound(ParsedDeclaration decl) {
   return all_bound;
 }
 
+// Define structures for holding the messages that need to be sent back to
+// clients.
+static void DefineOutboxes(OutputStream &os) {
+  os << "struct Outbox {\n";
+  os.PushIndent();
+  os << os.Indent() << "Outbox **prev_next{nullptr};\n"
+     << os.Indent() << "Outbox *next{nullptr};\n"
+     << os.Indent() << "moodycamel::LightweightSemaphore messages_sem;\n"
+     << os.Indent() << "std::mutex messages_lock;\n"
+     << os.Indent() << "std::vector<std::shared_ptr<flatbuffers::grpc::Message<OutputMessage>>> messages;\n\n"
+     << os.Indent() << "inline Outbox(void) {\n";
+  os.PushIndent();
+  os << os.Indent() << "messages.reserve(4u);\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n";  // constructor.
+  os.PopIndent();
+  os << "};\n\n"
+     << "static Outbox *gFirstOutbox{nullptr};\n"
+     << "static std::mutex gOutboxesLock;\n\n";
+}
+
 // Declare a `Query_*` method on the service, which corresponds with a
 // `#query` in the code. Query methods are suffixed by the binding parameters.
 //
@@ -41,7 +62,6 @@ static bool AllParametersAreBound(ParsedDeclaration decl) {
 // to the requester.
 static void DeclareQuery(ParsedQuery query, OutputStream &os, bool out_of_line) {
   ParsedDeclaration decl(query);
-
 
   os << "\n\n"
      << os.Indent() << "::grpc::Status ";
@@ -204,6 +224,64 @@ static void DefineQueryMethods(const std::vector<ParsedQuery> &queries,
   }
 }
 
+// Define a method that clients invoke to subscribe to messages from the server.
+static void DefineSubscribeMethod(OutputStream &os) {
+  os << "\n\n::grpc::Status DatabaseService::Subscribe(\n";
+  os.PushIndent();
+  os << os.Indent() << "::grpc::ServerContext *context,\n"
+     << os.Indent() << "flatbuffers::grpc::Message<Empty> *request,\n"
+     << os.Indent() << "::grpc::ServerWriter<flatbuffers::grpc::Message<OutputMessage>> *writer) {\n\n"
+     << os.Indent() << "alignas(64) Outbox outbox;\n"
+     << os.Indent() << "alignas(64) std::vector<std::shared_ptr<flatbuffers::grpc::Message<OutputMessage>>> messages;\n"
+     << os.Indent() << "messages.reserve(4u);\n\n"
+     << os.Indent() << "{\n";
+  os.PushIndent();
+  os << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
+     << os.Indent() << "outbox.next = gFirstOutbox;\n"
+     << os.Indent() << "outbox.prev_next = &gFirstOutbox;\n"
+     << os.Indent() << "if (gFirstOutbox) {\n";
+  os.PushIndent();
+  os << os.Indent() << "gFirstOutbox->prev_next = &(outbox.next);\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n";  // gFirstOutbox
+  os.PopIndent();
+  os << os.Indent() << "}\n\n";  // Link it in.
+
+  // Busy loop.
+  os << os.Indent() << "for (auto failed = false; !failed && !context->IsCancelled(); ) {\n";
+  os.PushIndent();
+  os << os.Indent() << "if (outbox.messages_sem.waitMany()) {\n";
+  os.PushIndent();
+  os << os.Indent() << "std::unique_lock<std::mutex> locker(outbox.messages_lock);\n"
+     << os.Indent() << "messages.swap(outbox.messages);\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n\n"  // waitMany
+     << os.Indent() << "for (const auto &message : messages) {\n";
+  os.PushIndent();
+  os << os.Indent() << "if (!writer->Write(*message)) {\n";
+  os.PushIndent();
+  os << os.Indent() << "failed = true;\n"
+     << os.Indent() << "break;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n";  // Write
+  os.PopIndent();
+  os << os.Indent() << "}\n\n"  // for
+     << os.Indent() << "messages.clear();\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n\n";  // busy loop.
+
+  // Unlink the stack-allocated `outbox`.
+  os << os.Indent() << "{\n";
+  os.PushIndent();
+  os << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
+     << os.Indent() << "*(outbox.prev_next) = outbox.next;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n"  // End of unlink.
+     << os.Indent() << "return grpc::Status::OK;\n";
+  os.PopIndent();
+  os << "}";  // End of Subscribe.
+}
+
 // Define a method that clients invoke to publish messages to the server.
 static void DefinePublishMethod(const std::vector<ParsedMessage> &messages,
                                 OutputStream &os) {
@@ -282,7 +360,8 @@ static void DefinePublishMethod(const std::vector<ParsedMessage> &messages,
   os << os.Indent() << "if (input_msg->Size()) {\n";
   os.PushIndent();
   os << os.Indent() << "std::unique_lock<std::mutex> locker(gInputMessagesLock);\n"
-     << os.Indent() << "gInputMessages.push_back(std::move(input_msg));\n";
+     << os.Indent() << "gInputMessages.push_back(std::move(input_msg));\n"
+     << os.Indent() << "gInputMessagesSemaphore.signal();\n";
   os.PopIndent();
   os << os.Indent() << "}\n"
      << os.Indent() << "return grpc::Status::OK;\n";
@@ -512,16 +591,59 @@ static void DefineQueues(OutputStream &os) {
 
 }
 
+// Defines the function that runs the database.
+static void DefineDatabaseThread(OutputStream &os) {
+  // Make the main database thread.
+  os << "static void DatabaseWriterThread(void) {\n";
+  os.PushIndent();
+  os << os.Indent() << "std::vector<std::unique_ptr<DatabaseInputMessageType>> inputs;\n"
+     << os.Indent() << "inputs.reserve(128);\n"
+     << os.Indent() << "while (true) {\n";
+  os.PushIndent();
+  os << os.Indent() << "if (gInputMessagesSemaphore.waitMany()) {\n";
+  os.PushIndent();
+  os << os.Indent() << "std::unique_lock<std::mutex> locker(gInputMessagesLock);\n"
+     << os.Indent() << "inputs.swap(gInputMessagesLock);\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n"  // waitMany
+     << os.Indent() << "for (const auto &input : inputs) {\n";
+  os.PushIndent();
+  os << os.Indent() << "std::unique_lock<std::shared_mutex> locker(gDatabaseLock);\n"
+     << os.Indent() << "input->Apply(gDatabase);\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n"  // for
+     << os.Indent() << "inputs.clear();\n"
+     << os.Indent() << "if (gDatabaseLog.HasAnyMessages()) {\n";
+  os.PushIndent();
+  os << os.Indent() << "auto output = std::make_shared<flatbuffers::grpc::Message<OutputMessage>>(gDatabaseLog.Build());\n"
+     << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
+     << os.Indent() << "for (auto output = gFirstOutbox; outbox;) {\n";
+  os.PushIndent();
+  os << os.Indent() << "std::unique_lock<std::mutex> outbox_locker(outbox->messages_lock);\n"
+     << os.Indent() << "outbox->messages.push_back(output);\n"
+     << os.Indent() << "outbox->messages_sem.signal();\n"
+     << os.Indent() << "output = outbox->next;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n";  // for
+  os.PopIndent();
+  os << os.Indent() << "}\n";  // HasAnyMessages
+  os.PopIndent();
+  os << os.Indent() << "}\n";  // while true
+  os.PopIndent();
+  os << "}\n\n";
+}
+
 }  // namespace
 
 // Emits C++ code for the given program to `os`.
 void GenerateServiceCode(const Program &program, OutputStream &os) {
   os << "/* Auto-generated file */\n\n"
      << "#pragma once\n\n"
+     << "#include <algorithm>\n"
      << "#include <cstdlib>\n"
      << "#include <cstdio>\n"
      << "#include <cstring>\n"
-     << "#include <list>\n"
+     << "#include <iostream>\n"
      << "#include <memory>\n"
      << "#include <mutex>\n"
      << "#include <shared_mutex>\n"
@@ -551,6 +673,7 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
      << "#include \"" << file_name << ".db.h\"\n\n";
 //     << "DEFINE_string(host, \"localhost\", \"Server host name\");\n";
 
+  DefineOutboxes(os);
   DefineQueues(os);
 
   auto queries = Queries(module);
@@ -568,6 +691,8 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
     os << "namespace " << ns_name << " {\n\n";
   }
 
+  DefineOutboxes(os);
+
   DefineDatabaseLog(module, messages, os);
 
   // Define the main gRPC service class, and declare each of its methods.
@@ -583,18 +708,24 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
   os << "\n\n"
      << "using DatabaseStorageType = hyde::rt::StdStorage;\n"
      << "using DatabaseInputMessageType = DatabaseInputMessage<DatabaseStorageType>;\n"
-     << "static std::list<std::unique_ptr<DatabaseInputMessageType>> gInputMessages;\n"
-     << "static moodycamel::"
+     << "static std::vector<std::unique_ptr<DatabaseInputMessageType>> gInputMessages;\n"
      << "static std::mutex gInputMessagesLock;\n"
+     << "static moodycamel::LightweightSemaphore gInputMessagesSemaphore;\n"
      << "static FlatBufferMessageBuilder gDatabaseLog;\n"
+     << "static DatabaseStorageType gStorage;\n"
      << "static std::shared_mutex gDatabaseLock;\n"
-     << "static Database<DatabaseStorageType, FlatBufferMessageBuilder> gDatabase;";
+     << "static DatabaseFunctors gFunctors;\n"
+     << "static Database<DatabaseStorageType, FlatBufferMessageBuilder> gDatabase(\n"
+     << "    gStorage, gDatabaseLog, gFunctors);\n";
 
   // Define the query methods out-of-line.
   DefineQueryMethods(queries, os);
   DefinePublishMethod(messages, os);
+  DefineSubscribeMethod(os);
 
   os << "\n\n";
+
+  DefineDatabaseThread(os);
 
   if (!ns_name.empty()) {
     os << "}  // namespace " << ns_name << "\n\n";
@@ -607,35 +738,44 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
     }
   }
 
-  os << "extern \"C\" int main(int argc, char *argv[]) {\n";
+  os << "extern \"C\" int main(int argc, const char *argv[]) {\n";
   os.PushIndent();
 
-  // Start with some YOLO-style argument parsing using `sscanf`.
-  os << os.Indent() << "std::stringstream ss;\n"
+  // Make some vectors reasonably big to avoid allocations at runtime, and start
+  // the database thread.
+  os << os.Indent() << "gInputMessages.reserve(128);\n"
+     << os.Indent() << "std::thread db_thread(" << ns_name_prefix << "DatabaseWriterThread);\n\n";
+  // Default argument values.
+  os << os.Indent() << "std::string host = \"localhost\";\n"
+     << os.Indent() << "unsigned port = 50052u;\n"
+
+  // Make a vector of arguments with a bit of fudge space.
+     << os.Indent() << "std::vector<const char *> args;\n"
      << os.Indent() << "for (auto i = 0; i < argc; ++i) {\n";
   os.PushIndent();
-  os << os.Indent() << "ss << ' ' << argv[i];\n";
+  os << os.Indent() << "args.push_back(argv[i]);\n";
+
   os.PopIndent();
   os << os.Indent() << "}\n"
-     << os.Indent() << "std::string args = ss.str();\n"
-     << os.Indent() << "args.resize(args.size() + 10);\n"
-     << os.Indent() << "const char *args_str = args.c_str();\n"
-     << os.Indent() << "std::string host(\"localhost\");\n"
-     << os.Indent() << "int host_len = 9;  // `localhost`\n"
-     << os.Indent() << "unsigned long port = 50052u;\n"
+     << os.Indent() << "args.push_back(\"\");\n"
 
-  // Parse the host name.
-     << os.Indent() << "if (sscanf(args_str, \"--host %*s\", &(host[0]), &host_len) == 2) {\n";
+  // Parse the arguments.
+     << os.Indent() << "for (auto i = 0ul; i < args.size() - 1ul; ) {\n";
   os.PushIndent();
-  os << os.Indent() << "host.resize(static_cast<unsigned>(host_len));\n";
+  os << os.Indent() << "const auto arg = args[i++];\n"
+     << os.Indent() << "const auto val = args[i++];\n"
+     << os.Indent() << "     if (!strcmp(arg, \"--host\")) host = val;\n"
+     << os.Indent() << "else if (!strcmp(arg, \"--port\")) port = static_cast<unsigned>(atol(val));\n"
+     << os.Indent() << "else {\n";
+  os.PushIndent();
+  os << os.Indent() << "std::cerr << \"Unrecognized option: \" << arg << ' ' << val << std::endl;\n"
+     << os.Indent() << "return EXIT_FAILURE;\n";
   os.PopIndent();
-  os << os.Indent() << "}\n"
-
-  // Parse the port.
-     << os.Indent() << "(void) sscanf(args_str, \"--port %lu\", &port);\n"
+  os << os.Indent() << "}\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n\n"
      << os.Indent() << "std::stringstream address_ss;\n"
-     << os.Indent() << "address_ss << host << ':' << port;\n"
-
+     << os.Indent() << "address_ss << host << ':' << port;\n\n"
      << os.Indent() << ns_name_prefix << "DatabaseService service;\n"
 
   // Build a gRPC server builder, configuring it with host/port.
@@ -648,9 +788,10 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
      << os.Indent() << "builder.RegisterService(&service);\n"
 
   // Build the actual server.
-     << os.Indent() << "auto server = builder.BuildAndStart();\n";
-
-  os << os.Indent() << "return EXIT_SUCCESS;\n";
+     << os.Indent() << "auto server = builder.BuildAndStart();\n"
+     << os.Indent() << "server->Wait();\n"
+     << os.Indent() << "db_thread.join();\n"
+     << os.Indent() << "return EXIT_SUCCESS;\n";
   os.PopIndent();
   os << "}\n\n";
 }
