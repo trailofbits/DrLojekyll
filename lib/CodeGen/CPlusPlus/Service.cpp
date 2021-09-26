@@ -265,7 +265,7 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
     // Busy loop.
     os << os.Indent() << "for (auto failed = false; !failed && !context->IsCancelled(); ) {\n";
     os.PushIndent();
-    os << os.Indent() << "if (outbox.messages_sem.waitMany()) {\n";
+    os << os.Indent() << "if (outbox.messages_sem.waitMany(4)) {\n";
     os.PushIndent();
     os << os.Indent() << "std::unique_lock<std::mutex> locker(outbox.messages_lock);\n"
        << os.Indent() << "messages.swap(outbox.messages);\n";
@@ -618,7 +618,7 @@ static void DefineDatabaseThread(const std::vector<ParsedMessage> &messages,
      << os.Indent() << "inputs.reserve(128);\n"
      << os.Indent() << "while (true) {\n";
   os.PushIndent();
-  os << os.Indent() << "if (gInputMessagesSemaphore.waitMany()) {\n";
+  os << os.Indent() << "if (gInputMessagesSemaphore.waitMany(4)) {\n";
   os.PushIndent();
   os << os.Indent() << "std::unique_lock<std::mutex> locker(gInputMessagesLock);\n"
      << os.Indent() << "inputs.swap(gInputMessages);\n";
@@ -687,7 +687,8 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
   }
 
   // Include auto-generated files.
-  os << "#include <grpcpp/grpcpp.h>\n"
+  os << "#include <blockingconcurrentqueue.h>\n"
+     << "#include <grpcpp/grpcpp.h>\n"
      << "#include <flatbuffers/flatbuffers.h>\n"
      << "#include \"" << file_name << "_generated.h\"\n"
      << "#include \"" << file_name << ".grpc.fb.h\"\n"
