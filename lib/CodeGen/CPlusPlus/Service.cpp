@@ -687,7 +687,7 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
   }
 
   // Include auto-generated files.
-  os << "#include <blockingconcurrentqueue.h>\n"
+  os << "#include <moodycamel/blockingconcurrentqueue.h>\n"
      << "#include <grpcpp/grpcpp.h>\n"
      << "#include <flatbuffers/flatbuffers.h>\n"
      << "#include \"" << file_name << "_generated.h\"\n"
