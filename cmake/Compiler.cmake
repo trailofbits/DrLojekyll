@@ -121,14 +121,19 @@ function(compile_datalog)
   # Generate an executable that we can set up as a standalone service that will
   # run the database as a server.
   if(DR_SERVICE_NAME)
-  
-    
     find_package(gRPC CONFIG REQUIRED)
     if(NOT TARGET gRPC::grpc++)
         message(FATAL_ERROR "gRPC was not found")
     endif()
   
-    find_package(flatbuffers CONFIG REQUIRED)
+    if(NOT TARGET flatbuffers)
+      # Since we are using a custom modded flatbuffers, we should
+      # probably change the name and take care of the install(EXPORT)
+      # for it
+      # find_package(flatbuffers CONFIG REQUIRED)
+
+      message(FATAL_ERROR "Failed to locate the flatbuffers fork")
+    endif()
     
     add_executable(${DR_SERVICE_NAME}
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.cpp"
