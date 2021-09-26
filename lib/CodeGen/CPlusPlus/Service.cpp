@@ -19,6 +19,15 @@ namespace hyde {
 namespace cxx {
 namespace {
 
+static bool PublishesAnyMessages(const std::vector<ParsedMessage> &messages) {
+  for (ParsedMessage message : messages) {
+    if (message.IsPublished()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Determines if all parameteres to a declaration are `bound`-attributed.
 static bool AllParametersAreBound(ParsedDeclaration decl) {
   auto all_bound = true;
@@ -127,7 +136,7 @@ static void DefineQuery(ParsedQuery query, OutputStream &os) {
   auto has_free_params = false;
   for (ParsedParameter param : decl.Parameters()) {
     if (param.Binding() == ParameterBinding::kBound) {
-      os << sep << param.Name();
+      os << sep << "request->" << param.Name() << "()";
       sep = ", ";
     } else if (param.Binding() == ParameterBinding::kFree) {
       has_free_params = true;
@@ -135,7 +144,7 @@ static void DefineQuery(ParsedQuery query, OutputStream &os) {
   }
 
   os << sep;
-  sep = "[&status, =] (";
+  sep = "[=, &status] (";
   for (ParsedParameter param : decl.Parameters()) {
     os << sep << "auto p" << param.Index();
     sep = ", ";
@@ -169,12 +178,12 @@ static void DefineQuery(ParsedQuery query, OutputStream &os) {
   if (has_free_params) {
     os << os.Indent() << "if (!writer->Write(message)) {\n";
     os.PushIndent();
-    os << os.Indent() << "status = grpc::CANCELLED;\n"
+    os << os.Indent() << "status = grpc::StatusCode::CANCELLED;\n"
        << os.Indent() << "return false;\n";
     os.PopIndent();
     os << os.Indent() << "} else {\n";
     os.PushIndent();
-    os << os.Indent() << "status = grpc::Status::OK;\n"
+    os << os.Indent() << "status = grpc::StatusCode::OK;\n"
        << os.Indent() << "return true;\n";
     os.PopIndent();
     os << os.Indent() << "}\n";
@@ -224,59 +233,63 @@ static void DefineQueryMethods(const std::vector<ParsedQuery> &queries,
 }
 
 // Define a method that clients invoke to subscribe to messages from the server.
-static void DefineSubscribeMethod(OutputStream &os) {
+static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
+                                  OutputStream &os) {
   os << "\n\n::grpc::Status DatalogService::Subscribe(\n";
   os.PushIndent();
   os << os.Indent() << "::grpc::ServerContext *context,\n"
      << os.Indent() << "const flatbuffers::grpc::Message<Empty> *request,\n"
-     << os.Indent() << "::grpc::ServerWriter<flatbuffers::grpc::Message<OutputMessage>> *writer) {\n\n"
-     << os.Indent() << "alignas(64) Outbox outbox;\n"
-     << os.Indent() << "alignas(64) std::vector<std::shared_ptr<flatbuffers::grpc::Message<OutputMessage>>> messages;\n"
-     << os.Indent() << "messages.reserve(4u);\n\n"
-     << os.Indent() << "{\n";
-  os.PushIndent();
-  os << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
-     << os.Indent() << "outbox.next = gFirstOutbox;\n"
-     << os.Indent() << "outbox.prev_next = &gFirstOutbox;\n"
-     << os.Indent() << "if (gFirstOutbox) {\n";
-  os.PushIndent();
-  os << os.Indent() << "gFirstOutbox->prev_next = &(outbox.next);\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n";  // gFirstOutbox
-  os.PopIndent();
-  os << os.Indent() << "}\n\n";  // Link it in.
+     << os.Indent() << "::grpc::ServerWriter<flatbuffers::grpc::Message<OutputMessage>> *writer) {\n\n";
 
-  // Busy loop.
-  os << os.Indent() << "for (auto failed = false; !failed && !context->IsCancelled(); ) {\n";
-  os.PushIndent();
-  os << os.Indent() << "if (outbox.messages_sem.waitMany()) {\n";
-  os.PushIndent();
-  os << os.Indent() << "std::unique_lock<std::mutex> locker(outbox.messages_lock);\n"
-     << os.Indent() << "messages.swap(outbox.messages);\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n\n"  // waitMany
-     << os.Indent() << "for (const auto &message : messages) {\n";
-  os.PushIndent();
-  os << os.Indent() << "if (!writer->Write(*message)) {\n";
-  os.PushIndent();
-  os << os.Indent() << "failed = true;\n"
-     << os.Indent() << "break;\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n";  // Write
-  os.PopIndent();
-  os << os.Indent() << "}\n\n"  // for
-     << os.Indent() << "messages.clear();\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n\n";  // busy loop.
+  if (PublishesAnyMessages(messages)) {
+    os << os.Indent() << "alignas(64) Outbox outbox;\n"
+       << os.Indent() << "alignas(64) std::vector<std::shared_ptr<flatbuffers::grpc::Message<OutputMessage>>> messages;\n"
+       << os.Indent() << "messages.reserve(4u);\n\n"
+       << os.Indent() << "{\n";
+    os.PushIndent();
+    os << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
+       << os.Indent() << "outbox.next = gFirstOutbox;\n"
+       << os.Indent() << "outbox.prev_next = &gFirstOutbox;\n"
+       << os.Indent() << "if (gFirstOutbox) {\n";
+    os.PushIndent();
+    os << os.Indent() << "gFirstOutbox->prev_next = &(outbox.next);\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n";  // gFirstOutbox
+    os.PopIndent();
+    os << os.Indent() << "}\n\n";  // Link it in.
 
-  // Unlink the stack-allocated `outbox`.
-  os << os.Indent() << "{\n";
-  os.PushIndent();
-  os << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
-     << os.Indent() << "*(outbox.prev_next) = outbox.next;\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n"  // End of unlink.
-     << os.Indent() << "return grpc::Status::OK;\n";
+    // Busy loop.
+    os << os.Indent() << "for (auto failed = false; !failed && !context->IsCancelled(); ) {\n";
+    os.PushIndent();
+    os << os.Indent() << "if (outbox.messages_sem.waitMany()) {\n";
+    os.PushIndent();
+    os << os.Indent() << "std::unique_lock<std::mutex> locker(outbox.messages_lock);\n"
+       << os.Indent() << "messages.swap(outbox.messages);\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n\n"  // waitMany
+       << os.Indent() << "for (const auto &message : messages) {\n";
+    os.PushIndent();
+    os << os.Indent() << "if (!writer->Write(*message)) {\n";
+    os.PushIndent();
+    os << os.Indent() << "failed = true;\n"
+       << os.Indent() << "break;\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n";  // Write
+    os.PopIndent();
+    os << os.Indent() << "}\n\n"  // for
+       << os.Indent() << "messages.clear();\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n\n";  // busy loop.
+
+    // Unlink the stack-allocated `outbox`.
+    os << os.Indent() << "{\n";
+    os.PushIndent();
+    os << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
+       << os.Indent() << "*(outbox.prev_next) = outbox.next;\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n";  // End of unlink.
+  }
+  os << os.Indent() << "return grpc::Status::OK;\n";
   os.PopIndent();
   os << "}";  // End of Subscribe.
 }
@@ -296,7 +309,7 @@ static void DefinePublishMethod(const std::vector<ParsedMessage> &messages,
   os.PopIndent();
 
   os << os.Indent() << "}\n\n"
-     << os.Indent() << "auto input_msg = std::make_unique<DatabaseInputMessageType>();\n";
+     << os.Indent() << "auto input_msg = std::make_unique<DatabaseInputMessageType>(gStorage);\n";
 
   bool has_differential = false;
   for (ParsedMessage message : messages) {
@@ -468,6 +481,11 @@ static void DefineDatabaseLogBuild(const std::vector<ParsedMessage> &messages,
 static void DefineDatabaseLog(ParsedModule module,
                               const std::vector<ParsedMessage> &messages,
                               OutputStream &os) {
+  if (!PublishesAnyMessages(messages)) {
+    os << "using FlatBufferMessageBuilder = DatabaseLog;\n\n";
+    return;
+  }
+
   os << "class FlatBufferMessageBuilder final {\n";
   os.PushIndent();
   os << os.Indent() << "private:\n";
@@ -586,7 +604,9 @@ static void DefineDatabaseLog(ParsedModule module,
 }
 
 // Defines the function that runs the database.
-static void DefineDatabaseThread(OutputStream &os) {
+static void DefineDatabaseThread(const std::vector<ParsedMessage> &messages,
+                                 OutputStream &os) {
+
   // Make the main database thread.
   os << "static void DatabaseWriterThread(void) {\n";
   os.PushIndent();
@@ -597,7 +617,7 @@ static void DefineDatabaseThread(OutputStream &os) {
   os << os.Indent() << "if (gInputMessagesSemaphore.waitMany()) {\n";
   os.PushIndent();
   os << os.Indent() << "std::unique_lock<std::mutex> locker(gInputMessagesLock);\n"
-     << os.Indent() << "inputs.swap(gInputMessagesLock);\n";
+     << os.Indent() << "inputs.swap(gInputMessages);\n";
   os.PopIndent();
   os << os.Indent() << "}\n"  // waitMany
      << os.Indent() << "for (const auto &input : inputs) {\n";
@@ -606,21 +626,25 @@ static void DefineDatabaseThread(OutputStream &os) {
      << os.Indent() << "input->Apply(gDatabase);\n";
   os.PopIndent();
   os << os.Indent() << "}\n"  // for
-     << os.Indent() << "inputs.clear();\n"
-     << os.Indent() << "if (gDatabaseLog.HasAnyMessages()) {\n";
-  os.PushIndent();
-  os << os.Indent() << "auto output = std::make_shared<flatbuffers::grpc::Message<OutputMessage>>(gDatabaseLog.Build());\n"
-     << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
-     << os.Indent() << "for (auto output = gFirstOutbox; outbox;) {\n";
-  os.PushIndent();
-  os << os.Indent() << "std::unique_lock<std::mutex> outbox_locker(outbox->messages_lock);\n"
-     << os.Indent() << "outbox->messages.push_back(output);\n"
-     << os.Indent() << "outbox->messages_sem.signal();\n"
-     << os.Indent() << "output = outbox->next;\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n";  // for
-  os.PopIndent();
-  os << os.Indent() << "}\n";  // HasAnyMessages
+     << os.Indent() << "inputs.clear();\n";
+
+  if (PublishesAnyMessages(messages)) {
+    os << os.Indent() << "if (gDatabaseLog.HasAnyMessages()) {\n";
+    os.PushIndent();
+    os << os.Indent() << "auto output = std::make_shared<flatbuffers::grpc::Message<OutputMessage>>(gDatabaseLog.Build());\n"
+       << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
+       << os.Indent() << "for (auto output = gFirstOutbox; outbox;) {\n";
+    os.PushIndent();
+    os << os.Indent() << "std::unique_lock<std::mutex> outbox_locker(outbox->messages_lock);\n"
+       << os.Indent() << "outbox->messages.push_back(output);\n"
+       << os.Indent() << "outbox->messages_sem.signal();\n"
+       << os.Indent() << "output = outbox->next;\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n";  // for
+    os.PopIndent();
+    os << os.Indent() << "}\n";  // HasAnyMessages
+  }
+
   os.PopIndent();
   os << os.Indent() << "}\n";  // while true
   os.PopIndent();
@@ -632,7 +656,6 @@ static void DefineDatabaseThread(OutputStream &os) {
 // Emits C++ code for the given program to `os`.
 void GenerateServiceCode(const Program &program, OutputStream &os) {
   os << "/* Auto-generated file */\n\n"
-     << "#pragma once\n\n"
      << "#include <algorithm>\n"
      << "#include <cstdlib>\n"
      << "#include <cstdio>\n"
@@ -644,7 +667,7 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
      << "#include <sstream>\n"
      << "#include <string>\n"
      << "#include <vector>\n\n"
-     << "#include <drlojekyll/Runtime/Runtime.h>\n\n";
+     << "#include <drlojekyll/Runtime/StdRuntime.h>\n\n";
 
   const auto module = program.ParsedModule();
   const auto db_name = module.DatabaseName();
@@ -700,13 +723,15 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
 
   // Define the query methods out-of-line.
   DefineQueryMethods(queries, os);
-  DefineOutboxes(os);
+  if (PublishesAnyMessages(messages)) {
+    DefineOutboxes(os);
+  }
   DefinePublishMethod(messages, os);
-  DefineSubscribeMethod(os);
+  DefineSubscribeMethod(messages, os);
 
   os << "\n\n";
 
-  DefineDatabaseThread(os);
+  DefineDatabaseThread(messages, os);
 
   if (!ns_name.empty()) {
     os << "}  // namespace " << ns_name << "\n\n";
@@ -717,7 +742,7 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
 
   // Make some vectors reasonably big to avoid allocations at runtime, and start
   // the database thread.
-  os << os.Indent() << "gInputMessages.reserve(128);\n"
+  os << os.Indent() << ns_name_prefix << "gInputMessages.reserve(128);\n"
      << os.Indent() << "std::thread db_thread(" << ns_name_prefix << "DatabaseWriterThread);\n\n";
   // Default argument values.
   os << os.Indent() << "std::string host = \"localhost\";\n"
