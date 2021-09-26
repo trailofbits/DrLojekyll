@@ -756,7 +756,7 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
 
   // Make a vector of arguments with a bit of fudge space.
      << os.Indent() << "std::vector<const char *> args;\n"
-     << os.Indent() << "for (auto i = 0; i < argc; ++i) {\n";
+     << os.Indent() << "for (auto i = 1; i < argc; ++i) {\n";
   os.PushIndent();
   os << os.Indent() << "args.push_back(argv[i]);\n";
 
