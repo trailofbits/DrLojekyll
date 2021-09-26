@@ -9,22 +9,37 @@ function(compile_datalog)
   
   # Allow the caller to change the path of the Dr. Lojekyll compiler that
   # we will use.
-  if(NOT DR_DRLOJEKYLL_CC)
-    find_package(DrLojekyll CONFIG REQUIRED)
-    set(DR_DRLOJEKYLL_CC DrLojekyll::drlojekyll)
-    if (DrLojekyll::drlojekyll-NOTFOUND)
+  if(TARGET drlojekyll)
+    message(STATUS "DrLojekyll: Using internal drlojekyll compiler")
+    set(DR_DRLOJEKYLL_CC drlojekyll)
+
+  else()
+    find_package(DrLojekyll CONFIG QUIET)
+    if(TARGET DrLojekyll::drlojekyll)
+      set(DR_DRLOJEKYLL_CC DrLojekyll::drlojekyll)
+      message(STATUS "DrLojekyll: Using local compiler from DrLojekyll installation")
+
+    else()
       find_program(DR_DRLOJEKYLL_CC drlojekyll REQUIRED)
+      if(NOT DR_DRLOJEKYLL_CC)
+        message(FATAL_ERROR "DrLojekyll: No valid drlojekyll compiler found")
+      endif()
+
+      message(STATUS "DrLojekyll: Using drlojekyll compiler found from the PATH env variable")
     endif()
   endif()
   
   # Allow the caller to change the path of the Dr. Lojekyll runtime that
   # we will use.
-  if(NOT DR_DRLOJEKYLL_RT)
+  if(TARGET Runtime)
+    set(DR_DRLOJEKYLL_RT DrLojekyll::Runtime)
+
+  else()
     find_package(DrLojekyll CONFIG REQUIRED)
     set(DR_DRLOJEKYLL_RT DrLojekyll::Runtime)
   endif()
 
-  set(dr_args ${DR_DRLOJEKYLL_CC})
+  set(dr_args "${DR_DRLOJEKYLL_CC}")
   
   # Database name. This influences file names. Otherwise the database name
   # is `datalog`. Database names can also be defined in the Datalog code itself.
