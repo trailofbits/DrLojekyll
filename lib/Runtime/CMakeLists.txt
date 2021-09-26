@@ -29,6 +29,8 @@ set(Runtime_SRCS
 set(Runtime_PRIV_DEPS
 )
 
+find_package(concurrentqueue REQUIRED)
+
 set(Runtime_DEPS
   flatbuffers
   concurrentqueue
