@@ -127,8 +127,10 @@ static void DeclareServiceMethods(const std::vector<ParsedQuery> &queries,
 
 static void DefineQuery(ParsedQuery query, OutputStream &os) {
   ParsedDeclaration decl(query);
+  os << os.Indent() << "auto status = grpc::StatusCode::NOT_FOUND;\n"
+     << os.Indent() << "if (auto params = request->GetRoot()) {\n";
+  os.PushIndent();
   os << os.Indent() << "std::shared_lock<std::shared_mutex> locker(gDatabaseLock);\n"
-     << os.Indent() << "auto status = grpc::StatusCode::NOT_FOUND;\n"
      << os.Indent() << "const auto num_generated = gDatabase." << query.Name()
      << "_" << decl.BindingPattern();
 
@@ -136,7 +138,7 @@ static void DefineQuery(ParsedQuery query, OutputStream &os) {
   auto has_free_params = false;
   for (ParsedParameter param : decl.Parameters()) {
     if (param.Binding() == ParameterBinding::kBound) {
-      os << sep << "request->" << param.Name() << "()";
+      os << sep << "params->" << param.Name() << "()";
       sep = ", ";
     } else if (param.Binding() == ParameterBinding::kFree) {
       has_free_params = true;
@@ -199,7 +201,9 @@ static void DefineQuery(ParsedQuery query, OutputStream &os) {
   os.PopIndent();  // End of lambda to query callback.
   os << os.Indent() << "});\n";
 
-  os << os.Indent() << "return grpc::Status(status, kQuery_"
+  os.PopIndent();
+  os << os.Indent() << "}\n\n"  // GetRoot
+     << os.Indent() << "return grpc::Status(status, kQuery_"
      << query.Name() << "_" << query.Arity()
      << ");\n";
 }
@@ -666,6 +670,7 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
      << "#include <shared_mutex>\n"
      << "#include <sstream>\n"
      << "#include <string>\n"
+     << "#include <thread>\n"
      << "#include <vector>\n\n"
      << "#include <drlojekyll/Runtime/StdRuntime.h>\n\n";
 
