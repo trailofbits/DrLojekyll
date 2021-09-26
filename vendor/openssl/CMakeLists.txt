@@ -60,8 +60,8 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     message(FATAL_ERROR "Unsupported target processor")
   endif()
 
-  set(libcrypto_path "${install_destination}/lib/libcrypto.a")
-  set(libssl_path "${install_destination}/lib/libssl.a")
+  set(libcrypto_path "${install_destination}/usr/local/lib/libcrypto.a")
+  set(libssl_path "${install_destination}/usr/local/lib/libssl.a")
 
   ExternalProject_Add(thirdparty_openssl_builder
     DOWNLOAD_DIR

@@ -774,7 +774,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     };
 
     os << os.Indent() << "if (" << Table(os, region.Table())
-       << ".TryChangeStateFrom";
+       << ".TryChangeTupleFrom";
 
     print_state_enum(region.FromState());
     os << "To";

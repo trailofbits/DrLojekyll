@@ -72,7 +72,16 @@ foreach(disabled_option ${disabled_option_list})
   set("${disabled_option}" false CACHE BOOL "Forced gRPC setting" FORCE)
 endforeach()
 
+# The abseil library, imported by gRPC, uses BUILD_TESTING to enable its
+# tests, instead of a dedicated ABSEIL_BUILD_TESTING option. This causes
+# their tests to get enabled when CMake/CTest is used. Force it to off
+# while we include the external folder to work around this issue.
+set(grpc_orig_build_testing "${BUILD_TESTING}")
+set("BUILD_TESTING" false CACHE BOOL "Forced gRPC setting" FORCE)
+
 add_subdirectory(src EXCLUDE_FROM_ALL)
+
+set("BUILD_TESTING" "${grpc_orig_build_testing}" CACHE BOOL "Forced gRPC setting" FORCE)
 
 foreach(library_target ${library_target_list})
   if(TARGET "${library_target}")
