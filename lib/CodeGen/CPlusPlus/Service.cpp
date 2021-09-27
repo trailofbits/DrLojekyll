@@ -19,15 +19,6 @@ namespace hyde {
 namespace cxx {
 namespace {
 
-static bool PublishesAnyMessages(const std::vector<ParsedMessage> &messages) {
-  for (ParsedMessage message : messages) {
-    if (message.IsPublished()) {
-      return true;
-    }
-  }
-  return false;
-}
-
 // Determines if all parameteres to a declaration are `bound`-attributed.
 static bool AllParametersAreBound(ParsedDeclaration decl) {
   auto all_bound = true;
@@ -47,6 +38,7 @@ static void DefineOutboxes(OutputStream &os) {
   os.PushIndent();
   os << os.Indent() << "Outbox **prev_next{nullptr};\n"
      << os.Indent() << "Outbox *next{nullptr};\n"
+     << os.Indent() << "std::string name;\n"
      << os.Indent() << "moodycamel::LightweightSemaphore messages_sem;\n"
      << os.Indent() << "std::mutex messages_lock;\n"
      << os.Indent() << "std::vector<std::shared_ptr<flatbuffers::grpc::Message<OutputMessage>>> messages;\n\n"
@@ -120,7 +112,7 @@ static void DeclareServiceMethods(const std::vector<ParsedQuery> &queries,
      << os.Indent() << "::grpc::Status Subscribe(\n";
   os.PushIndent();
   os << os.Indent() << "::grpc::ServerContext *context,\n"
-     << os.Indent() << "const flatbuffers::grpc::Message<Empty> *request,\n"
+     << os.Indent() << "const flatbuffers::grpc::Message<Client> *request,\n"
      << os.Indent() << "::grpc::ServerWriter<flatbuffers::grpc::Message<OutputMessage>> *writer) final;\n";
   os.PopIndent();
 }
@@ -242,57 +234,73 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
   os << "\n\n::grpc::Status DatalogService::Subscribe(\n";
   os.PushIndent();
   os << os.Indent() << "::grpc::ServerContext *context,\n"
-     << os.Indent() << "const flatbuffers::grpc::Message<Empty> *request,\n"
+     << os.Indent() << "const flatbuffers::grpc::Message<Client> *request,\n"
      << os.Indent() << "::grpc::ServerWriter<flatbuffers::grpc::Message<OutputMessage>> *writer) {\n\n";
 
-  if (PublishesAnyMessages(messages)) {
-    os << os.Indent() << "alignas(64) Outbox outbox;\n"
-       << os.Indent() << "alignas(64) std::vector<std::shared_ptr<flatbuffers::grpc::Message<OutputMessage>>> messages;\n"
-       << os.Indent() << "messages.reserve(4u);\n\n"
-       << os.Indent() << "{\n";
-    os.PushIndent();
-    os << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
-       << os.Indent() << "outbox.next = gFirstOutbox;\n"
-       << os.Indent() << "outbox.prev_next = &gFirstOutbox;\n"
-       << os.Indent() << "if (gFirstOutbox) {\n";
-    os.PushIndent();
-    os << os.Indent() << "gFirstOutbox->prev_next = &(outbox.next);\n";
-    os.PopIndent();
-    os << os.Indent() << "}\n";  // gFirstOutbox
-    os.PopIndent();
-    os << os.Indent() << "}\n\n";  // Link it in.
+  os << os.Indent() << "const auto client = request->GetRoot();\n"
+     << os.Indent() << "if (!client) {\n";
+  os.PushIndent();
+  os << os.Indent() << "return grpc::Status::CANCELLED;\n";
+  os.PopIndent();
 
-    // Busy loop.
-    os << os.Indent() << "for (auto failed = false; !failed && !context->IsCancelled(); ) {\n";
-    os.PushIndent();
-    os << os.Indent() << "if (outbox.messages_sem.waitMany(4)) {\n";
-    os.PushIndent();
-    os << os.Indent() << "std::unique_lock<std::mutex> locker(outbox.messages_lock);\n"
-       << os.Indent() << "messages.swap(outbox.messages);\n";
-    os.PopIndent();
-    os << os.Indent() << "}\n\n"  // waitMany
-       << os.Indent() << "for (const auto &message : messages) {\n";
-    os.PushIndent();
-    os << os.Indent() << "if (!writer->Write(*message)) {\n";
-    os.PushIndent();
-    os << os.Indent() << "failed = true;\n"
-       << os.Indent() << "break;\n";
-    os.PopIndent();
-    os << os.Indent() << "}\n";  // Write
-    os.PopIndent();
-    os << os.Indent() << "}\n\n"  // for
-       << os.Indent() << "messages.clear();\n";
-    os.PopIndent();
-    os << os.Indent() << "}\n\n";  // busy loop.
+  os << os.Indent() << "}\n\n"
+     << os.Indent() << "alignas(64) Outbox outbox;\n"
+     << os.Indent() << "if (auto client_name = client->name()) {\n";
+  os.PushIndent();
+  os << os.Indent() << "outbox.name = client_name->str();\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n\n"
+     << os.Indent() << "if (gLog) {\n";
+  os.PushIndent();
+  os << os.Indent() << "std::cerr << \"Client '\" << outbox.name << \"' connected\" << std::endl;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n\n"
+     << os.Indent() << "alignas(64) std::vector<std::shared_ptr<flatbuffers::grpc::Message<OutputMessage>>> messages;\n"
+     << os.Indent() << "messages.reserve(4u);\n\n"
+     << os.Indent() << "{\n";
+  os.PushIndent();
+  os << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
+     << os.Indent() << "outbox.next = gFirstOutbox;\n"
+     << os.Indent() << "outbox.prev_next = &gFirstOutbox;\n"
+     << os.Indent() << "if (gFirstOutbox) {\n";
+  os.PushIndent();
+  os << os.Indent() << "gFirstOutbox->prev_next = &(outbox.next);\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n";  // gFirstOutbox
+  os.PopIndent();
+  os << os.Indent() << "}\n\n";  // Link it in.
 
-    // Unlink the stack-allocated `outbox`.
-    os << os.Indent() << "{\n";
-    os.PushIndent();
-    os << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
-       << os.Indent() << "*(outbox.prev_next) = outbox.next;\n";
-    os.PopIndent();
-    os << os.Indent() << "}\n";  // End of unlink.
-  }
+  // Busy loop.
+  os << os.Indent() << "for (auto failed = false; !failed && !context->IsCancelled(); ) {\n";
+  os.PushIndent();
+  os << os.Indent() << "if (outbox.messages_sem.waitMany(4)) {\n";
+  os.PushIndent();
+  os << os.Indent() << "std::unique_lock<std::mutex> locker(outbox.messages_lock);\n"
+     << os.Indent() << "messages.swap(outbox.messages);\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n\n"  // waitMany
+     << os.Indent() << "for (const auto &message : messages) {\n";
+  os.PushIndent();
+  os << os.Indent() << "if (!writer->Write(*message)) {\n";
+  os.PushIndent();
+  os << os.Indent() << "failed = true;\n"
+     << os.Indent() << "break;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n";  // Write
+  os.PopIndent();
+  os << os.Indent() << "}\n\n"  // for
+     << os.Indent() << "messages.clear();\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n\n";  // busy loop.
+
+  // Unlink the stack-allocated `outbox`.
+  os << os.Indent() << "{\n";
+  os.PushIndent();
+  os << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
+     << os.Indent() << "*(outbox.prev_next) = outbox.next;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n";  // End of unlink.
+
   os << os.Indent() << "return grpc::Status::OK;\n";
   os.PopIndent();
   os << "}";  // End of Subscribe.
@@ -314,14 +322,6 @@ static void DefinePublishMethod(const std::vector<ParsedMessage> &messages,
 
   os << os.Indent() << "}\n\n"
      << os.Indent() << "auto input_msg = std::make_unique<DatabaseInputMessageType>(gStorage);\n";
-
-  bool has_differential = false;
-  for (ParsedMessage message : messages) {
-    if (message.IsReceived() && message.IsDifferential()) {
-      has_differential = true;
-      break;
-    }
-  }
 
   auto do_message = [&] (ParsedMessage message, const char *vector,
                          const char *method_prefix) {
@@ -349,19 +349,33 @@ static void DefinePublishMethod(const std::vector<ParsedMessage> &messages,
     os << os.Indent() << "}\n";  // vector pointer.
   };
 
-  // Handle added messages.
-  os << os.Indent() << "if (auto added = req_msg->added()) {\n";
-  os.PushIndent();
+  auto has_added = false;
+  auto has_removed = false;
   for (ParsedMessage message : messages) {
     if (message.IsReceived()) {
-      do_message(message, "added", "produce_");
+      has_added = true;
+      if (message.IsDifferential()) {
+        has_removed = true;
+        break;
+      }
     }
   }
-  os.PopIndent();
-  os << os.Indent() << "}\n";  // added
+
+  // Handle added messages.
+  if (has_added) {
+    os << os.Indent() << "if (auto added = req_msg->added()) {\n";
+    os.PushIndent();
+    for (ParsedMessage message : messages) {
+      if (message.IsReceived()) {
+        do_message(message, "added", "produce_");
+      }
+    }
+    os.PopIndent();
+    os << os.Indent() << "}\n";  // added
+  }
 
   // Handle removed messages.
-  if (has_differential) {
+  if (has_removed) {
     os << os.Indent() << "if (auto removed = req_msg->removed()) {\n";
     os.PushIndent();
     for (ParsedMessage message : messages) {
@@ -370,12 +384,18 @@ static void DefinePublishMethod(const std::vector<ParsedMessage> &messages,
       }
     }
     os.PopIndent();
-    os << os.Indent() << "}\n";  // added
+    os << os.Indent() << "}\n";  // removed
   }
 
-  os << os.Indent() << "if (input_msg->Size()) {\n";
+  os << os.Indent() << "if (auto size = input_msg->Size()) {\n";
   os.PushIndent();
-  os << os.Indent() << "std::unique_lock<std::mutex> locker(gInputMessagesLock);\n"
+  os << os.Indent() << "if (gLog) {\n";
+  os.PushIndent();
+  os << os.Indent() << "std::cerr << \"Received \" << size << \" messages\" << std::endl;\n";
+  os.PopIndent();
+
+  os << os.Indent() << "}\n\n"
+     << os.Indent() << "std::unique_lock<std::mutex> locker(gInputMessagesLock);\n"
      << os.Indent() << "gInputMessages.push_back(std::move(input_msg));\n"
      << os.Indent() << "gInputMessagesSemaphore.signal();\n";
   os.PopIndent();
@@ -392,22 +412,19 @@ static void DefinePublishMethod(const std::vector<ParsedMessage> &messages,
 // are held in `std::vector`s.
 static void DefineDatabaseLogBuild(const std::vector<ParsedMessage> &messages,
                                    OutputStream &os) {
-
-  auto has_differential = false;
+  auto has_added = false;
+  auto has_removed = false;
   for (ParsedMessage message : messages) {
-    if (message.IsPublished() && message.IsDifferential()) {
-      has_differential = true;
+    if (message.IsPublished()) {
+      has_added = true;
+      if (message.IsDifferential()) {
+        has_removed = true;
+        break;
+      }
     }
   }
 
   os << os.Indent() << "flatbuffers::grpc::Message<OutputMessage> Build(void) {\n";
-  os.PushIndent();
-  os << os.Indent() << "flatbuffers::Offset<AddedOutputMessage> added_offset;\n";
-  if (has_differential) {
-    os << os.Indent() << "flatbuffers::Offset<RemovedOutputMessage> removed_offset;\n";
-  }
-
-  os << os.Indent() << "if (has_added) {\n";
   os.PushIndent();
 
   auto do_message = [&os] (ParsedMessage message, const char *suffix) {
@@ -429,23 +446,33 @@ static void DefineDatabaseLogBuild(const std::vector<ParsedMessage> &messages,
     os << os.Indent() << "}\n";
   };
 
-  for (ParsedMessage message : messages) {
-    if (message.IsPublished()) {
-      do_message(message, "_added");
+  if (has_added) {
+    os << os.Indent() << "flatbuffers::Offset<AddedOutputMessage> added_offset;\n";
+    if (has_removed) {
+      os << os.Indent() << "flatbuffers::Offset<RemovedOutputMessage> removed_offset;\n";
     }
-  }
-  os << os.Indent() << "added_offset = CreateAddedOutputMessage(mb";
-  for (ParsedMessage message : messages) {
-    if (message.IsPublished()) {
-      os << ", " << message.Name() << "_" << message.Arity() << "_added_offset";
+
+    os << os.Indent() << "if (has_added) {\n";
+    os.PushIndent();
+
+    for (ParsedMessage message : messages) {
+      if (message.IsPublished()) {
+        do_message(message, "_added");
+      }
     }
+    os << os.Indent() << "added_offset = CreateAddedOutputMessage(mb";
+    for (ParsedMessage message : messages) {
+      if (message.IsPublished()) {
+        os << ", " << message.Name() << "_" << message.Arity() << "_added_offset";
+      }
+    }
+    os << ");\n";
+
+    os.PopIndent();
+    os << os.Indent() << "}\n";  // has_added
   }
-  os << ");\n";
 
-  os.PopIndent();
-  os << os.Indent() << "}\n";  // has_added
-
-  if (has_differential) {
+  if (has_removed) {
     os << os.Indent() << "if (has_removed) {\n";
     os.PushIndent();
     for (ParsedMessage message : messages) {
@@ -466,11 +493,14 @@ static void DefineDatabaseLogBuild(const std::vector<ParsedMessage> &messages,
   }
 
   os << os.Indent() << "has_added = false;\n";
-  if (has_differential) {
+  if (has_removed) {
     os << os.Indent() << "has_removed = false;\n";
   }
-  os << os.Indent() << "mb.Finish(CreateOutputMessage(mb, added_offset";
-  if (has_differential) {
+  os << os.Indent() << "mb.Finish(CreateOutputMessage(mb";
+  if (has_added) {
+    os << ", added_offset";
+  }
+  if (has_removed) {
     os << ", removed_offset";
   }
   os << "));\n"
@@ -485,10 +515,6 @@ static void DefineDatabaseLogBuild(const std::vector<ParsedMessage> &messages,
 static void DefineDatabaseLog(ParsedModule module,
                               const std::vector<ParsedMessage> &messages,
                               OutputStream &os) {
-  if (!PublishesAnyMessages(messages)) {
-    os << "using FlatBufferMessageBuilder = DatabaseLog;\n\n";
-    return;
-  }
 
   os << "class FlatBufferMessageBuilder final {\n";
   os.PushIndent();
@@ -624,30 +650,46 @@ static void DefineDatabaseThread(const std::vector<ParsedMessage> &messages,
      << os.Indent() << "inputs.swap(gInputMessages);\n";
   os.PopIndent();
   os << os.Indent() << "}\n"  // waitMany
+     << os.Indent() << "uint64_t total_num_applied = 0u;\n"
      << os.Indent() << "for (const auto &input : inputs) {\n";
   os.PushIndent();
-  os << os.Indent() << "std::unique_lock<std::shared_mutex> locker(gDatabaseLock);\n"
+  os << os.Indent() << "total_num_applied += input->Size();\n"
+     << os.Indent() << "if (gLog) {\n";
+  os.PushIndent();
+  os << os.Indent() << "std::cerr << \"Applying \" << input->Size() << \" messages to the database\" << std::endl;\n";
+  os.PopIndent();
+
+  os << os.Indent() << "}\n\n"
+     << os.Indent() << "std::unique_lock<std::shared_mutex> locker(gDatabaseLock);\n"
      << os.Indent() << "input->Apply(gDatabase);\n";
   os.PopIndent();
   os << os.Indent() << "}\n"  // for
-     << os.Indent() << "inputs.clear();\n";
+     << os.Indent() << "inputs.clear();\n"
+     << os.Indent() << "if (gLog) {\n";
+  os.PushIndent();
+  os << os.Indent() << "std::cerr << \"Applied \" << total_num_applied << \" messages to the database\" << std::endl;\n";
+  os.PopIndent();
 
-  if (PublishesAnyMessages(messages)) {
-    os << os.Indent() << "if (gDatabaseLog.HasAnyMessages()) {\n";
-    os.PushIndent();
-    os << os.Indent() << "auto output = std::make_shared<flatbuffers::grpc::Message<OutputMessage>>(gDatabaseLog.Build());\n"
-       << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
-       << os.Indent() << "for (auto output = gFirstOutbox; outbox;) {\n";
-    os.PushIndent();
-    os << os.Indent() << "std::unique_lock<std::mutex> outbox_locker(outbox->messages_lock);\n"
-       << os.Indent() << "outbox->messages.push_back(output);\n"
-       << os.Indent() << "outbox->messages_sem.signal();\n"
-       << os.Indent() << "output = outbox->next;\n";
-    os.PopIndent();
-    os << os.Indent() << "}\n";  // for
-    os.PopIndent();
-    os << os.Indent() << "}\n";  // HasAnyMessages
-  }
+  os << os.Indent() << "}\n\n"
+     << os.Indent() << "if (gDatabaseLog.HasAnyMessages()) {\n";
+  os.PushIndent();
+  os << os.Indent() << "auto output = std::make_shared<flatbuffers::grpc::Message<OutputMessage>>(gDatabaseLog.Build());\n"
+     << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
+     << os.Indent() << "for (auto outbox = gFirstOutbox; outbox;) {\n";
+  os.PushIndent();
+  os << os.Indent() << "if (gLog) {\n";
+  os.PushIndent();
+  os << os.Indent() << "  std::cerr << \"Sending updates to client '\" << outbox->name << \"'\" << std::endl;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n\n"
+     << os.Indent() << "std::unique_lock<std::mutex> outbox_locker(outbox->messages_lock);\n"
+     << os.Indent() << "outbox->messages.push_back(output);\n"
+     << os.Indent() << "outbox->messages_sem.signal();\n"
+     << os.Indent() << "outbox = outbox->next;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n";  // for
+  os.PopIndent();
+  os << os.Indent() << "}\n";  // HasAnyMessages
 
   os.PopIndent();
   os << os.Indent() << "}\n";  // while true
@@ -693,8 +735,8 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
      << "#include \"" << file_name << "_generated.h\"\n"
      << "#include \"" << file_name << ".grpc.fb.h\"\n"
      << "#include \"" << file_name << ".interface.h\"\n"
-     << "#include \"" << file_name << ".db.h\"\n\n";
-//     << "DEFINE_string(host, \"localhost\", \"Server host name\");\n";
+     << "#include \"" << file_name << ".db.h\"\n\n"
+     << "static bool gLog = false;\n\n";
 
   auto queries = Queries(module);
   auto messages = Messages(module);
@@ -729,9 +771,7 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
 
   // Define the query methods out-of-line.
   DefineQueryMethods(queries, os);
-  if (PublishesAnyMessages(messages)) {
-    DefineOutboxes(os);
-  }
+  DefineOutboxes(os);
   DefinePublishMethod(messages, os);
   DefineSubscribeMethod(messages, os);
 
@@ -752,7 +792,7 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
      << os.Indent() << "std::thread db_thread(" << ns_name_prefix << "DatabaseWriterThread);\n\n";
   // Default argument values.
   os << os.Indent() << "std::string host = \"localhost\";\n"
-     << os.Indent() << "unsigned port = 50052u;\n"
+     << os.Indent() << "unsigned port = 50051u;\n"
 
   // Make a vector of arguments with a bit of fudge space.
      << os.Indent() << "std::vector<const char *> args;\n"
@@ -768,12 +808,12 @@ void GenerateServiceCode(const Program &program, OutputStream &os) {
      << os.Indent() << "for (auto i = 0ul; i < args.size() - 1ul; ) {\n";
   os.PushIndent();
   os << os.Indent() << "const auto arg = args[i++];\n"
-     << os.Indent() << "const auto val = args[i++];\n"
-     << os.Indent() << "     if (!strcmp(arg, \"--host\")) host = val;\n"
-     << os.Indent() << "else if (!strcmp(arg, \"--port\")) port = static_cast<unsigned>(atol(val));\n"
+     << os.Indent() << "     if (!strcmp(arg, \"--host\")) host = args[i++];\n"
+     << os.Indent() << "else if (!strcmp(arg, \"--port\")) port = static_cast<unsigned>(atol(args[i++]));\n"
+     << os.Indent() << "else if (!strcmp(arg, \"--log\")) gLog = true;\n"
      << os.Indent() << "else {\n";
   os.PushIndent();
-  os << os.Indent() << "std::cerr << \"Unrecognized option: \" << arg << ' ' << val << std::endl;\n"
+  os << os.Indent() << "std::cerr << \"Unrecognized option: \" << arg << std::endl;\n"
      << os.Indent() << "return EXIT_FAILURE;\n";
   os.PopIndent();
   os << os.Indent() << "}\n";

@@ -83,6 +83,7 @@ static void GenerateFlatBufferOutput(const Parser &dr_parser,
                                      const std::string &schema) {
 
   flatbuffers::IDLOptions opts;
+  opts.generate_all = true;
   opts.cpp_static_reflection = true;
   opts.cpp_std = "C++17";
   opts.lang_to_generate = flatbuffers::IDLOptions::kCpp |
@@ -106,7 +107,7 @@ static void GenerateFlatBufferOutput(const Parser &dr_parser,
                source_file_name.c_str());
 
   if (gCxxOutDir) {
-    auto out_dir = std::filesystem::path(gCxxOutDir).generic_string() + "/";
+    auto out_dir = std::filesystem::path(std::string(gCxxOutDir) + "/").lexically_normal().generic_string();
     parser.opts.lang = flatbuffers::IDLOptions::kCpp;
     auto ret1 = flatbuffers::GenerateCPP(parser, out_dir.c_str(),
                                          gDatabaseName);
@@ -116,13 +117,31 @@ static void GenerateFlatBufferOutput(const Parser &dr_parser,
     assert(ret2);
     (void) ret1; (void) ret2;
   }
+
   if (gPyOutDir) {
-    auto out_dir = std::filesystem::path(gPyOutDir).generic_string() + "/";
+    auto out_dir = std::filesystem::path(std::string(gPyOutDir) + "/").lexically_normal();
+    auto out_dir_str = out_dir.generic_string();
+
+    // The Python codegen for FlatBuffer gRPC stuff needs to execute in the
+    // target working directory.
+    const auto current_dir = std::filesystem::current_path();
+    std::filesystem::current_path(out_dir);
+
+    // If `#database` is manually specified, then this'll introduce a Python
+    // module.
+    if (gHasDatabaseName) {
+      std::filesystem::create_directories(gDatabaseName);
+    }
+
     parser.opts.lang = flatbuffers::IDLOptions::kPython;
-    auto ret1 = flatbuffers::GeneratePython(parser, out_dir.c_str(),
+    parser.opts.generate_object_based_api = true;
+    auto ret1 = flatbuffers::GeneratePython(parser, out_dir_str.c_str(),
                                             gDatabaseName);
-    auto ret2 = flatbuffers::GeneratePythonGRPC(parser, out_dir.c_str(),
+
+    auto ret2 = flatbuffers::GeneratePythonGRPC(parser, out_dir_str.c_str(),
                                                 gDatabaseName);
+
+    std::filesystem::current_path(current_dir);
     assert(ret1);
     assert(ret2);
     (void) ret1; (void) ret2;
@@ -167,15 +186,27 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
       hyde::cxx::GenerateDatabaseCode(*program_opt, db_fs.os);
 
       hyde::FileStream interface_fs(
-           display_manager,
-           (dir / (gDatabaseName + ".interface.h")).generic_string());
-       hyde::cxx::GenerateInterfaceCode(*program_opt, interface_fs.os);
+          display_manager,
+          (dir / (gDatabaseName + ".interface.h")).generic_string());
+      hyde::cxx::GenerateInterfaceCode(*program_opt, interface_fs.os);
 
-       hyde::FileStream service_fs(
-           display_manager,
-           (dir / (gDatabaseName + ".cpp")).generic_string());
+      hyde::FileStream service_fs(
+          display_manager,
+          (dir / (gDatabaseName + ".cpp")).generic_string());
 
-       hyde::cxx::GenerateServiceCode(*program_opt, service_fs.os);
+      hyde::cxx::GenerateServiceCode(*program_opt, service_fs.os);
+    }
+
+    if (gPyOutDir) {
+      std::filesystem::path dir = gPyOutDir;
+      if (gHasDatabaseName) {
+        dir /= gDatabaseName;
+      }
+
+      hyde::FileStream interface_fs(
+          display_manager,
+          (dir / "__init__.py").generic_string());
+      hyde::python::GenerateInterfaceCode(*program_opt, interface_fs.os);
     }
 
 //        if (gPyCodeStream) {

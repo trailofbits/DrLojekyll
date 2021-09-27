@@ -138,9 +138,19 @@ static void DeclareMessages(ParsedModule module,
                             const std::vector<ParsedMessage> &messages,
                             OutputStream &os) {
 
+  bool any_outputs = false;
+  bool any_differential_outputs = false;
+  bool any_inputs = false;
+  bool any_differential_inputs = false;
 
   // Declare each message as a structure.
   for (ParsedMessage message : messages) {
+    if (message.IsReceived()) {
+      any_inputs = true;
+    } else if (message.IsPublished()) {
+      any_outputs = true;
+    }
+
     ParsedDeclaration decl(message);
 
     auto params = decl.Parameters();
@@ -165,53 +175,52 @@ static void DeclareMessages(ParsedModule module,
     os << os.Indent() << "}\n\n";
   }
 
-
-  // Create a table representing lists of input messages that can be
-  // received and added.
-  os << os.Indent() << "table AddedInputMessage {\n";
-  os.PushIndent();
-  bool any_differential = false;
-  for (ParsedMessage message : messages) {
-    if (message.IsReceived()) {
-      os << os.Indent() << message.Name() << "_" << message.Arity()
-         << ":[Message_" << message.Name() << "_" << message.Arity()
-         << "];\n";
-
-      if (message.IsDifferential()) {
-        any_differential = true;
-      }
-    }
-  }
-  os.PopIndent();
-  os << "}\n\n";
-
-  // Create a table representing lists of input messages that can be
-  // received and removed.
-  if (any_differential) {
-    os << os.Indent() << "table RemovedInputMessage {\n";
+  if (any_inputs) {
+    // Create a table representing lists of input messages that can be
+    // received and added.
+    os << os.Indent() << "table AddedInputMessage {\n";
     os.PushIndent();
     for (ParsedMessage message : messages) {
-      if (message.IsReceived() && message.IsDifferential()) {
+      if (message.IsReceived()) {
         os << os.Indent() << message.Name() << "_" << message.Arity()
            << ":[Message_" << message.Name() << "_" << message.Arity()
            << "];\n";
+
+        if (message.IsDifferential()) {
+          any_differential_inputs = true;
+        }
       }
     }
     os.PopIndent();
     os << "}\n\n";
+
+    // Create a table representing lists of input messages that can be
+    // received and removed.
+    if (any_differential_inputs) {
+      os << os.Indent() << "table RemovedInputMessage {\n";
+      os.PushIndent();
+      for (ParsedMessage message : messages) {
+        if (message.IsReceived() && message.IsDifferential()) {
+          os << os.Indent() << message.Name() << "_" << message.Arity()
+             << ":[Message_" << message.Name() << "_" << message.Arity()
+             << "];\n";
+        }
+      }
+      os.PopIndent();
+      os << "}\n\n";
+    }
   }
 
   os << os.Indent() << "table InputMessage {\n";
-  os.PushIndent();
-  os << os.Indent() << "added:AddedInputMessage;\n";
-  if (any_differential) {
-    os << os.Indent() << "removed:RemovedInputMessage;\n";
+  if (any_inputs) {
+    os.PushIndent();
+    os << os.Indent() << "added:AddedInputMessage;\n";
+    if (any_differential_inputs) {
+      os << os.Indent() << "removed:RemovedInputMessage;\n";
+    }
+    os.PopIndent();
   }
-  os.PopIndent();
   os << os.Indent() << "}\n\n";
-
-
-  any_differential = false;
 
   // Create a table representing lists of output messages that can be
   // sent and were added.
@@ -225,7 +234,7 @@ static void DeclareMessages(ParsedModule module,
          << "];\n";
 
       if (message.IsDifferential()) {
-        any_differential = true;
+        any_differential_outputs = true;
       }
     }
   }
@@ -234,7 +243,7 @@ static void DeclareMessages(ParsedModule module,
 
   // Create a table representing lists of input messages that can be
   // sent and were removed.
-  if (any_differential) {
+  if (any_differential_outputs) {
     os << os.Indent() << "table RemovedOutputMessage {\n";
     os.PushIndent();
     for (ParsedMessage message : messages) {
@@ -251,12 +260,14 @@ static void DeclareMessages(ParsedModule module,
   // Create a table representing lists of output messages that can be
   // published.
   os << os.Indent() << "table OutputMessage {\n";
-  os.PushIndent();
-  os << os.Indent() << "added:AddedOutputMessage;\n";
-  if (any_differential) {
-    os << os.Indent() << "removed:RemovedOutputMessage;\n";
+  if (any_outputs) {
+    os.PushIndent();
+    os << os.Indent() << "added:AddedOutputMessage;\n";
+    if (any_differential_outputs) {
+      os << os.Indent() << "removed:RemovedOutputMessage;\n";
+    }
+    os.PopIndent();
   }
-  os.PopIndent();
   os << os.Indent() << "}\n\n";
 }
 
@@ -313,10 +324,10 @@ static void DeclareService(Program program, ParsedModule module,
                            const std::vector<ParsedQuery> &queries,
                            OutputStream &os) {
 
-  os << os.Indent() << "table Request {\n";
+  os << os.Indent() << "table Client {\n";
   os.PushIndent();
 
-  os << os.Indent() << "client_name:string;\n";
+  os << os.Indent() << "name:string;\n";
 
   // Declare a service.
   os.PopIndent();
@@ -349,7 +360,7 @@ static void DeclareService(Program program, ParsedModule module,
 
   // Apply an input message to the database, producing an output message.
   os << os.Indent() << "Publish(InputMessage):Empty;\n"
-     << os.Indent() << "Subscribe(Empty):OutputMessage (streaming: \"server\");\n";
+     << os.Indent() << "Subscribe(Client):OutputMessage (streaming: \"server\");\n";
 
   os.PopIndent();
   os << os.Indent() << "}\n\n";

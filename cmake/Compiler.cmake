@@ -1,9 +1,9 @@
 # Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
 function(compile_datalog)
-  set(one_val_args LIBRARY_NAME SERVICE_NAME DATABASE_NAME CXX_OUTPUT_DIR PY_OUTPUT_DIR
-                   DOT_OUTPUT_FILE DR_OUTPUT_FILE IR_OUTPUT_FILE DRLOJEKYLL_CC
-                   DRLOJEKYLL_RT)
+  set(one_val_args LIBRARY_NAME SERVICE_NAME DATABASE_NAME CXX_OUTPUT_DIR
+                   PY_OUTPUT_DIR DOT_OUTPUT_FILE DR_OUTPUT_FILE IR_OUTPUT_FILE
+                   DRLOJEKYLL_CC DRLOJEKYLL_RT WORKING_DIRECTORY)
   set(multi_val_args SOURCES)
   cmake_parse_arguments(DR "" "${one_val_args}" "${multi_val_args}" ${ARGN})
   
@@ -48,9 +48,12 @@ function(compile_datalog)
   else()
     message(FATAL_ERROR "DATABASE_NAME parameter of compile_datalog is required")
   endif()
+  
+  if(NOT DR_WORKING_DIRECTORY)
+    set(DR_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+  endif()
 
   # Output directory in which C++ code is placed.
-  set(dr_cxx_output_files)
   if(DR_CXX_OUTPUT_DIR)
     list(APPEND dr_args -cpp-out "${DR_CXX_OUTPUT_DIR}")
     
@@ -61,11 +64,23 @@ function(compile_datalog)
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}_generated.h"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.grpc.fb.h"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.grpc.fb.cc")
+  else()
+    set(dr_cxx_output_files "")
   endif()
 
   # Output directory in which Python code is placed.
   if(DR_PY_OUTPUT_DIR)
     list(APPEND dr_args -py-out "${DR_PY_OUTPUT_DIR}")
+    
+    set(dr_py_output_files
+      "${DR_PY_OUTPUT_DIR}/${DR_DATABASE_NAME}/__init__.py"
+      "${DR_PY_OUTPUT_DIR}/${DR_DATABASE_NAME}/${DR_DATABASE_NAME}_grpc_db.py"
+      "${DR_PY_OUTPUT_DIR}/${DR_DATABASE_NAME}/InputMessage.py"
+      "${DR_PY_OUTPUT_DIR}/${DR_DATABASE_NAME}/OutputMessage.py"
+      "${DR_PY_OUTPUT_DIR}/${DR_DATABASE_NAME}/Client.py")
+
+  else()
+    set(dr_py_output_files "")
   endif()
 
   # Debug output of the parsed representation as a single Dr. Lojekyll
@@ -92,9 +107,10 @@ function(compile_datalog)
   list(APPEND dr_args ${DR_SOURCES})
   
   add_custom_command(
-    OUTPUT ${dr_cxx_output_files}
+    OUTPUT ${dr_cxx_output_files} ${dr_py_output_files}
     COMMAND ${dr_args}
-    COMMENT "Compiling Datalog code"
+    COMMENT "Compiling ${DATABASE_NAME} datalog code"
+    WORKING_DIRECTORY "${DR_WORKING_DIRECTORY}"
     DEPENDS ${DR_DRLOJEKYLL_CC}
             ${DR_SOURCES})
   
