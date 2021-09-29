@@ -1,5 +1,8 @@
 # Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
+find_package(GTest REQUIRED)
+include(GoogleTest)
+
 compile_datalog(
   DATABASE_NAME database
   LIBRARY_NAME mini_disassembler

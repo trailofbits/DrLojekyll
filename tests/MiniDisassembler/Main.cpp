@@ -70,13 +70,13 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   db.instruction_1(std::move(instructions));
 
   dump(db);
-  CHECK_EQ(NumFunctionInstructions(db, 9), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 10), 1u);
-  CHECK_EQ(NumFunctionInstructions(db, 11), 1u);
-  CHECK_EQ(NumFunctionInstructions(db, 12), 1u);
-  CHECK_EQ(NumFunctionInstructions(db, 13), 1u);
-  CHECK_EQ(NumFunctionInstructions(db, 14), 1u);
-  CHECK_EQ(NumFunctionInstructions(db, 15), 1u);
+  ASSERT_EQ(NumFunctionInstructions(db, 9), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 10), 1u);
+  ASSERT_EQ(NumFunctionInstructions(db, 11), 1u);
+  ASSERT_EQ(NumFunctionInstructions(db, 12), 1u);
+  ASSERT_EQ(NumFunctionInstructions(db, 13), 1u);
+  ASSERT_EQ(NumFunctionInstructions(db, 14), 1u);
+  ASSERT_EQ(NumFunctionInstructions(db, 15), 1u);
 
   // Now we add the fall-through edges, and 10 is the only instruction with
   // no predecessor, so its the function head.
@@ -90,13 +90,13 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   db.raw_transfer_3(std::move(transfers));
 
   dump(db);
-  CHECK_EQ(NumFunctionInstructions(db, 9), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 10), 6u);
-  CHECK_EQ(NumFunctionInstructions(db, 11), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 12), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 13), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 14), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 15), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 9), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 10), 6u);
+  ASSERT_EQ(NumFunctionInstructions(db, 11), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 12), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 13), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 14), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 15), 0u);
 
 
   // Now add the instruction 9. It will show up as a function head, because
@@ -107,13 +107,13 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   db.instruction_1(std::move(instructions2));
 
   dump(db);
-  CHECK_EQ(NumFunctionInstructions(db, 9), 1u);
-  CHECK_EQ(NumFunctionInstructions(db, 10), 6u);
-  CHECK_EQ(NumFunctionInstructions(db, 11), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 12), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 13), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 14), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 15), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 9), 1u);
+  ASSERT_EQ(NumFunctionInstructions(db, 10), 6u);
+  ASSERT_EQ(NumFunctionInstructions(db, 11), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 12), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 13), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 14), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 15), 0u);
 
 
   // Now add a fall-through between 9 and 10. 10 now has a successor, so it's
@@ -124,13 +124,13 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   db.raw_transfer_3(std::move(transfers2));
 
   dump(db);
-  CHECK_EQ(NumFunctionInstructions(db, 9), 7u);
-  CHECK_EQ(NumFunctionInstructions(db, 10), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 11), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 12), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 13), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 14), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 15), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 9), 7u);
+  ASSERT_EQ(NumFunctionInstructions(db, 10), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 11), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 12), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 13), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 14), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 15), 0u);
 
 
   // Now add a function call between 10 and 14. That makes 14 look like
@@ -141,12 +141,12 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   db.raw_transfer_3(std::move(transfers3));
 
   dump(db);
-  CHECK_EQ(NumFunctionInstructions(db, 9), 5u);
-  CHECK_EQ(NumFunctionInstructions(db, 10), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 11), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 12), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 13), 0u);
-  CHECK_EQ(NumFunctionInstructions(db, 14), 2u);
-  CHECK_EQ(NumFunctionInstructions(db, 15), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 9), 5u);
+  ASSERT_EQ(NumFunctionInstructions(db, 10), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 11), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 12), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 13), 0u);
+  ASSERT_EQ(NumFunctionInstructions(db, 14), 2u);
+  ASSERT_EQ(NumFunctionInstructions(db, 15), 0u);
 }
 
