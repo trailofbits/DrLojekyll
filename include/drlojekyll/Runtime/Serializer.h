@@ -15,6 +15,7 @@
 
 #include "Endian.h"
 #include "Int.h"
+#include "Reference.h"
 #include "Util.h"
 
 namespace hyde {
@@ -1420,6 +1421,26 @@ struct Serializer<Reader, Writer, uint128_t> {
 };
 #endif  // HYDE_RT_MISSING_INT128
 
+template <typename Reader, typename Writer, typename DataT>
+struct Serializer<Reader, Writer, InternRef<DataT>> {
+ public:
+  using RefT = InternRef<DataT>;
+
+  HYDE_RT_INLINE
+  static uint8_t *Write(Writer &writer, RefT ref) {
+    return Serializer<Reader, Writer, DataT>::Write(writer, *(ref.ref));
+  }
+
+  HYDE_RT_INLINE
+  static void Read(Reader &reader, RefT) {
+    abort();
+  }
+};
+
+template <typename Reader, typename Writer, typename DataT>
+struct Serializer<Reader, Writer, const InternRef<DataT> &>
+    : public Serializer<Reader, Writer, InternRef<DataT>> {};
+
 template <typename T>
 static constexpr bool kCanReadWriteUnsafely<T *> = true;
 
@@ -1563,7 +1584,7 @@ struct IndexedSerializer {
       const auto &elem = std::get<kIndex>(data);
       using ElemT =
           std::remove_const_t<std::remove_reference_t<decltype(elem)>>;
-      auto ret =Serializer<Reader, Writer, ElemT>::Write(writer, elem);
+      auto ret = Serializer<Reader, Writer, ElemT>::Write(writer, elem);
       if constexpr ((kIndex + 1u) < kMaxIndex) {
         IndexedSerializer<NullReader, Writer, Val, kIndex + 1u,
                           kMaxIndex>::Write(writer, data);

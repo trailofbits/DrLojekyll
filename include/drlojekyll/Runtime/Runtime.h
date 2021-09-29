@@ -17,6 +17,7 @@
 #include "Column.h"
 #include "Index.h"
 #include "Int.h"
+#include "Reference.h"
 #include "Table.h"
 #include "Util.h"
 
@@ -115,9 +116,6 @@ enum class TupleState : uint8_t {
   kPresent,
   kUnknown,
 };
-
-template <typename StorageT, typename... Columns>
-class Set;
 
 template <typename StorageT, typename... Columns>
 class Vector;

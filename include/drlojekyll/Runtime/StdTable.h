@@ -76,7 +76,7 @@ HYDE_RT_ALWAYS_INLINE static bool TryChangeTupleToPresent(
 }
 
 // Try to change the state of a tuple which should already be present.
-HYDE_RT_ALWAYS_INLINE static bool ChangeTuple(TupleState *state,
+HYDE_RT_ALWAYS_INLINE static bool ChangeState(TupleState *state,
                                               TupleState from_state,
                                               TupleState to_state) noexcept {
   const auto curr_state = *state;
@@ -163,8 +163,9 @@ class StdTable
   using Parent::Parent;
 
   template <typename... Ts>
-  TupleState GetState(Ts&&... cols) const noexcept {
-    const TupleType tuple(std::forward<Ts>(cols)...);
+  HYDE_RT_NEVER_INLINE
+  TupleState GetState(Ts... cols) const noexcept {
+    const TupleType tuple(std::move(cols)...);
     const uint64_t hash = this->HashTuple(tuple);
     if (RecordType *record = FindRecord(tuple, hash); record) {
       return std::get<kStateIndex>(*record);
@@ -174,11 +175,12 @@ class StdTable
   }
 
   template <typename... Ts>
-  bool TryChangeTupleFromPresentToUnknown(Ts&&... cols) const noexcept {
-    const TupleType tuple(std::forward<Ts>(cols)...);
+  HYDE_RT_NEVER_INLINE
+  bool TryChangeTupleFromPresentToUnknown(Ts... cols) const noexcept {
+    const TupleType tuple(std::move(cols)...);
     const auto hash = this->HashTuple(tuple);
     if (const auto record = FindRecord(tuple, hash); record) {
-      return ChangeTuple(&std::get<kStateIndex>(*record), TupleState::kPresent,
+      return ChangeState(&std::get<kStateIndex>(*record), TupleState::kPresent,
                          TupleState::kUnknown);
     } else {
       return false;
@@ -186,11 +188,12 @@ class StdTable
   }
 
   template <typename... Ts>
-  bool TryChangeTupleFromUnknownToAbsent(Ts&&... cols) const noexcept {
-    const TupleType tuple(std::forward<Ts>(cols)...);
+  HYDE_RT_NEVER_INLINE
+  bool TryChangeTupleFromUnknownToAbsent(Ts... cols) const noexcept {
+    const TupleType tuple(std::move(cols)...);
     const auto hash = this->HashTuple(tuple);
     if (const auto record = FindRecord(tuple, hash); record) {
-      return ChangeTuple(&std::get<kStateIndex>(*record), TupleState::kUnknown,
+      return ChangeState(&std::get<kStateIndex>(*record), TupleState::kUnknown,
                          TupleState::kAbsent);
     } else {
       return false;
@@ -198,8 +201,9 @@ class StdTable
   }
 
   template <typename... Ts>
-  bool TryChangeTupleFromAbsentToPresent(Ts&&... cols) noexcept {
-    TupleType tuple(std::forward<Ts>(cols)...);
+  HYDE_RT_NEVER_INLINE
+  bool TryChangeTupleFromAbsentToPresent(Ts... cols) noexcept {
+    TupleType tuple(std::move(cols)...);
     const auto hash = this->HashTuple(tuple);
     if (const auto record = FindRecord(tuple, hash); record) {
       return TryChangeTupleToPresent(&std::get<kStateIndex>(*record),
@@ -213,8 +217,9 @@ class StdTable
   }
 
   template <typename... Ts>
-  bool TryChangeTupleFromAbsentOrUnknownToPresent(Ts&&... cols) noexcept {
-    TupleType tuple(std::forward<Ts>(cols)...);
+  HYDE_RT_NEVER_INLINE
+  bool TryChangeTupleFromAbsentOrUnknownToPresent(Ts... cols) noexcept {
+    TupleType tuple(std::move(cols)...);
     const auto hash = this->HashTuple(tuple);
     if (const auto record = FindRecord(tuple, hash); record) {
       return TryChangeTupleToPresent(&std::get<kStateIndex>(*record),

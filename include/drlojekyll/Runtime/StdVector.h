@@ -4,9 +4,8 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <deque>
-#include <functional>
 #include <tuple>
+#include <deque>
 
 #include <drlojekyll/Runtime/Runtime.h>
 
@@ -15,10 +14,57 @@ namespace rt {
 
 class StdStorage;
 
+template <typename ElemType, typename ParamType>
+struct InternType;
+
+
+template <typename ElemType>
+struct InternType<ElemType, ElemType> {
+  static inline ElemType Intern(StdStorage &storage, ElemType &&val) {
+    return std::forward<ElemType>(val);
+  }
+};
+
+#define DR_MAKE_CASTED_INTERN_TYPE(to_type, from_type) \
+    template <> \
+    struct InternType<to_type, from_type> { \
+      static inline to_type Intern(StdStorage &storage, from_type val) { \
+        return static_cast<to_type>(val); \
+      } \
+    };
+
+DR_MAKE_CASTED_INTERN_TYPE(uint8_t, int)
+DR_MAKE_CASTED_INTERN_TYPE(uint16_t, int)
+DR_MAKE_CASTED_INTERN_TYPE(uint32_t, int)
+DR_MAKE_CASTED_INTERN_TYPE(uint64_t, int)
+DR_MAKE_CASTED_INTERN_TYPE(int8_t, int)
+DR_MAKE_CASTED_INTERN_TYPE(int16_t, int)
+DR_MAKE_CASTED_INTERN_TYPE(int64_t, int)
+
+#undef DR_MAKE_CASTED_INTERN_TYPE
+
+template <typename ValType>
+struct InternType<InternRef<ValType>, ValType> {
+  static inline InternRef<ValType> Intern(StdStorage &storage,
+                                          ValType val) {
+    return storage.Intern(std::move(val));
+  }
+};
+
+template <typename ValType>
+struct InternType<InternRef<ValType>, ValType &&> {
+  static inline InternRef<ValType> Intern(StdStorage &storage,
+                                          ValType &&val) {
+    return storage.Intern(std::forward<ValType>(val));
+  }
+};
+
 template <typename... ElemTypes>
 class StdVector {
  private:
   using SelfType = StdVector<ElemTypes...>;
+
+  StdStorage &storage;
 
   StdVector(const SelfType &) = delete;
   SelfType &operator=(const SelfType &) = delete;
@@ -29,14 +75,21 @@ class StdVector {
  public:
   using Self = StdVector<ElemTypes...>;
 
-  StdVector(void) = default;
+  explicit StdVector(StdStorage &storage_)
+      : storage(storage_) {}
+
   StdVector(SelfType &&that) noexcept
-      : entries(std::move(that.entries)) {}
+      : storage(that.storage),
+        entries(std::move(that.entries)) {}
 
   SelfType &operator=(SelfType &&) noexcept = default;
 
-  HYDE_RT_ALWAYS_INLINE void Add(ElemTypes... elems) noexcept {
-    entries.emplace_back(std::move(elems)...);
+  template <typename... ParamTypes>
+  HYDE_RT_ALWAYS_INLINE void Add(ParamTypes... params) noexcept {
+    entries.emplace_back(
+        std::move(
+            InternType<ElemTypes, ParamTypes>::Intern(
+                storage, std::move(params)))...);
   }
 
   HYDE_RT_ALWAYS_INLINE size_t Size(void) const noexcept {
@@ -80,8 +133,8 @@ class Vector<StdStorage, ElemTypes...>
       : BaseType(std::move(that_)) {}
 
   HYDE_RT_ALWAYS_INLINE
-  explicit Vector(StdStorage &, unsigned)
-      : BaseType() {}
+  explicit Vector(StdStorage &storage_, unsigned)
+      : BaseType(storage_) {}
 
  private:
   Vector(const SelfType &) = delete;

@@ -615,7 +615,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os.PushIndent();
 
     os << os.Indent() << "DumpStats();\n"
-       << os.Indent() << "if constexpr (false) {\n";
+       << os.Indent() << "if constexpr (true) {\n";
     os.PushIndent();
     os << os.Indent() << "fprintf(stderr, \"";
 
@@ -1725,7 +1725,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << os.Indent() << "}\n\n"
      << os.Indent() << "void DumpStats(void) const {\n";
   os.PushIndent();
-  os << os.Indent() << "if constexpr (true) {\n";
+  os << os.Indent() << "if constexpr (false) {\n";
   os.PushIndent();
   os << os.Indent() << "return;  /* change to false to enable */\n";
   os.PopIndent();
