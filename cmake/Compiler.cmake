@@ -124,13 +124,11 @@ function(compile_datalog)
     add_custom_target(${DR_LIBRARY_NAME}-files DEPENDS
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.db.h"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}_generated.h")
-    add_library(${DR_LIBRARY_NAME} INTERFACE)
-    
-    target_link_libraries(${DR_LIBRARY_NAME} INTERFACE
-      ${DR_DRLOJEKYLL_RT}
-      ${DR_LIBRARY_NAME}-files)
       
+    add_library(${DR_LIBRARY_NAME} INTERFACE)
+    target_link_libraries(${DR_LIBRARY_NAME} INTERFACE ${DR_DRLOJEKYLL_RT})
     target_include_directories(${DR_LIBRARY_NAME} INTERFACE "${DR_CXX_OUTPUT_DIR}")
+    add_dependencies(${DR_LIBRARY_NAME} ${DR_LIBRARY_NAME}-files)
   
   endif()
   

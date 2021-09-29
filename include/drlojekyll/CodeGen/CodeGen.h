@@ -18,7 +18,7 @@ std::vector<ParsedInline> Inlines(ParsedModule module, Language lang);
 namespace cxx {
 
 // Emits C++ RPC code for the given program to `os`.
-void GenerateServiceCode(const Program &module, OutputStream &os);
+void GenerateServerCode(const Program &module, OutputStream &os);
 
 // Emits C++ code for the given program to `os`.
 void GenerateDatabaseCode(const Program &module, OutputStream &os);

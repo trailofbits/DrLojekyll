@@ -194,7 +194,7 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
           display_manager,
           (dir / (gDatabaseName + ".cpp")).generic_string());
 
-      hyde::cxx::GenerateServiceCode(*program_opt, service_fs.os);
+      hyde::cxx::GenerateServerCode(*program_opt, service_fs.os);
     }
 
     if (gPyOutDir) {

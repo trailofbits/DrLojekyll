@@ -700,7 +700,7 @@ static void DefineDatabaseThread(const std::vector<ParsedMessage> &messages,
 }  // namespace
 
 // Emits C++ code for the given program to `os`.
-void GenerateServiceCode(const Program &program, OutputStream &os) {
+void GenerateServerCode(const Program &program, OutputStream &os) {
   os << "/* Auto-generated file */\n\n"
      << "#include <algorithm>\n"
      << "#include <cstdlib>\n"

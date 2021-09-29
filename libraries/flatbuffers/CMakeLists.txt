@@ -55,6 +55,8 @@ endif()
 
 add_library(flatc_internals
   patches/disable_logger.cpp
+  patches/idl_gen_python.cpp
+  patches/idl_parser.cpp
 )
 
 target_link_libraries(flatc_internals PRIVATE
