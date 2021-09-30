@@ -20,6 +20,10 @@ namespace cxx {
 // Emits C++ RPC code for the given program to `os`.
 void GenerateServerCode(const Program &module, OutputStream &os);
 
+// Emits C++ RPC code for the given program to `header_os` and `impl_os`.
+void GenerateClientCode(const Program &module, OutputStream &header_os,
+                        OutputStream &impl_os);
+
 // Emits C++ code for the given program to `os`.
 void GenerateDatabaseCode(const Program &module, OutputStream &os);
 

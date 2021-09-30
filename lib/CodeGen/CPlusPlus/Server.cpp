@@ -9,8 +9,6 @@
 #include <drlojekyll/Parse/ModuleIterator.h>
 
 #include <algorithm>
-#include <sstream>
-#include <unordered_set>
 #include <vector>
 
 #include "Util.h"

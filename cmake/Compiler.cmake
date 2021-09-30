@@ -58,7 +58,9 @@ function(compile_datalog)
     list(APPEND dr_args -cpp-out "${DR_CXX_OUTPUT_DIR}")
     
     set(dr_cxx_output_files
-      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.cpp"
+      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.server.cpp"
+      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.cpp"
+      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.h"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.interface.h"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.db.h"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}_generated.h"
@@ -150,13 +152,24 @@ function(compile_datalog)
     endif()
     
     add_executable(${DR_SERVICE_NAME}
-      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.cpp"
+      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.server.cpp"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.grpc.fb.cc")
     
     target_include_directories(${DR_SERVICE_NAME} INTERFACE "${DR_CXX_OUTPUT_DIR}")
     
     target_link_libraries(${DR_SERVICE_NAME} PRIVATE
       ${DR_DRLOJEKYLL_RT}
+      gRPC::grpc++
+      flatbuffers)
+      
+    add_library(${DR_SERVICE_NAME}-client STATIC
+      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.cpp"
+      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.h"
+      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.grpc.fb.cc")
+    
+    target_include_directories(${DR_SERVICE_NAME}-client PUBLIC "${DR_CXX_OUTPUT_DIR}")
+    
+    target_link_libraries(${DR_SERVICE_NAME}-client PUBLIC
       gRPC::grpc++
       flatbuffers)
   endif()

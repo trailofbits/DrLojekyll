@@ -190,11 +190,22 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
           (dir / (gDatabaseName + ".interface.h")).generic_string());
       hyde::cxx::GenerateInterfaceCode(*program_opt, interface_fs.os);
 
-      hyde::FileStream service_fs(
+      hyde::FileStream server_fs(
           display_manager,
-          (dir / (gDatabaseName + ".cpp")).generic_string());
+          (dir / (gDatabaseName + ".server.cpp")).generic_string());
 
-      hyde::cxx::GenerateServerCode(*program_opt, service_fs.os);
+      hyde::cxx::GenerateServerCode(*program_opt, server_fs.os);
+
+      hyde::FileStream client_h_fs(
+          display_manager,
+          (dir / (gDatabaseName + ".client.h")).generic_string());
+
+      hyde::FileStream client_cpp_fs(
+          display_manager,
+          (dir / (gDatabaseName + ".client.cpp")).generic_string());
+
+      hyde::cxx::GenerateClientCode(*program_opt, client_h_fs.os,
+                                    client_cpp_fs.os);
     }
 
     if (gPyOutDir) {
