@@ -629,6 +629,7 @@ static void BuildTopDownChecker(ProgramImpl *impl, Context &context,
             const auto table_add = BuildChangeTuple(
                 impl, table, recursive_call_if_changed, view_cols,
                 TupleState::kAbsent, TupleState::kPresent);
+
             recursive_call_if_changed->body.Emplace(recursive_call_if_changed,
                                                     table_add);
 

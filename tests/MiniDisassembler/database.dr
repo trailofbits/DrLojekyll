@@ -1,7 +1,7 @@
 ; This example shows how to implement a recursive disassembler with Dr. Lojekyll
 
-#constant u8 FALL_THROUGH 0.
-#constant u8 CALL 1.
+#constant u8 FALL_THROUGH ```c++ 0```.
+#constant u8 CALL ```c++ 1```.
 
 #message instruction(u64 EA).
 #message raw_transfer(u64 FromEA, u64 ToEA, u8 TransferKind).

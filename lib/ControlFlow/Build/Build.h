@@ -387,7 +387,7 @@ static bool BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
       scan->out_cols.AddUse(table_col);
     }
     
-    // NOTE(pag): This enableslater-stage "recordization" of the IR, because
+    // NOTE(pag): This enables later-stage "recordization" of the IR, because
     //            the relationship back to a more recently pulled tuple is more
     //            clear in descendents. However, it also prevents this variable
     //            from being replaced by `in_var`, which we know has the same value. 

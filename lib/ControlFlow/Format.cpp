@@ -932,7 +932,8 @@ OutputStream &operator<<(OutputStream &os, Program program) {
       default:
         if (auto const_val = var.Value()) {
           if (const_val->IsTag()) {
-            os << " = " << QueryTag::From(*const_val).Value();
+            os << " = " << QueryTag::From(*const_val).Value()
+               << " ; Optimization tag";
 
           } else if (auto lit = const_val->Literal(); lit) {
             os << " = " << *lit;

@@ -548,6 +548,9 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
           }
 
         } else if (Lexeme::kLiteralCode == lexeme) {
+          alloc_const->lang = Language::kUnknown;
+          alloc_const->can_overide = true;
+
           const auto code_id = tok.CodeId();
           if (!context->string_pool.TryReadCode(code_id, &code) ||
               !fixup_code()) {
@@ -560,6 +563,9 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
           }
 
         } else if (Lexeme::kLiteralString == lexeme) {
+          alloc_const->lang = Language::kUnknown;
+          alloc_const->can_overide = true;
+
           switch (alloc_const->type.UnderlyingKind()) {
             case TypeKind::kBytes:
               alloc_const->lang = Language::kUnknown;
@@ -591,7 +597,11 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
 
         // Named number; basically like an enumerator.
         } else if (Lexeme::kLiteralNumber == lexeme) {
+          alloc_const->lang = Language::kUnknown;
+          alloc_const->can_overide = true;
+
           switch (alloc_const->type.UnderlyingKind()) {
+            case TypeKind::kInvalid:
             case TypeKind::kBytes:
             case TypeKind::kBoolean:
               context->error_log.Append(scope_range, tok_range)
@@ -602,7 +612,6 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
               continue;
 
             default:
-              alloc_const->lang = Language::kUnknown;
               context->display_manager.TryReadData(tok_range, &code);
               break;
           }
@@ -610,6 +619,9 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
         // Named Boolean; a bit weird, but maybe people want `yes` and `no`.
         } else if (Lexeme::kLiteralTrue == lexeme ||
                    Lexeme::kLiteralFalse == lexeme) {
+          alloc_const->lang = Language::kUnknown;
+          alloc_const->can_overide = true;
+
           switch (alloc_const->type.UnderlyingKind()) {
             default:
               context->error_log.Append(scope_range, tok_range)
@@ -621,7 +633,6 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
               continue;
 
             case TypeKind::kBoolean:
-              alloc_const->lang = Language::kUnknown;
               context->display_manager.TryReadData(tok_range, &code);
               break;
           }
@@ -707,7 +718,6 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
 
   alloc_const->code.insert(alloc_const->code.end(), code.begin(), code.end());
 
-
   // Chain it in to the list of constants with the same name. They might
   // target different languages.
   auto &const_ptr = context->foreign_constants[alloc_const->name.IdentifierId()];
@@ -716,86 +726,14 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
   }
   const_ptr = alloc_const;
 
-//  std::vector<bool> has_definition(kNumLanguages);
-//  std::vector<bool> can_override(kNumLanguages);
-//  for (auto cp = const_ptr; cp; cp = const_ptr->next_with_same_name) {
-//    const auto i = static_cast<unsigned>(cp->lang);
-//    if (!has_definition[i]) {
-//      has_definition[i] = true;
-//      can_override[i] = cp->can_overide;
-//
-//    } else if (can_override[i]) {
-//
-//    } else {
-//
-//    }
-//  }
-
-#if 0
-
-  if (const_ptr) {
-    for (ParsedForeignConstantImpl *prev_const = const_ptr; prev_const;
-         prev_const = prev_const->next_with_same_name) {
-
-      has_definition[static_cast<unsigned>(prev_const->lang)] = true;
-
-      if (prev_const->lang != alloc_const->lang) {
-        continue;
-
-      // We're overriding a previous language-agnostic version of the
-      // constant with a language-specific version.
-      } else if (prev_const->can_overide) {
-        prev_const->lang = alloc_const->lang;
-        prev_const->range = alloc_const->range;
-        prev_const->code = alloc_const->code;
-        prev_const->name = alloc_const->name;
-        prev_const->unique = alloc_const->unique;
-        prev_const->type = alloc_const->type;
-        prev_const->can_overide = alloc_const->can_overide;
-        return;
-
-      } else {
-        auto err = context->error_log.Append(scope_range, tok_range);
-        err << "Can't override pre-existing foreign constant";
-
-        err.Note(prev_const->range) << "Conflicting previous constant is here";
-        return;
-      }
-    }
+  // Link the constant into its type.
+  auto &constants =
+      type->info[static_cast<unsigned>(alloc_const->lang)].constants;
+  if (!constants) {
+    constants.reset(new UseList<ParsedForeignConstantImpl>(type));
   }
 
-  auto added_def = false;
-  for (auto i = 0u; i < kNumLanguages; ++i) {
-    if (has_definition[i]) {
-      continue;
-    }
-
-    const auto lang = static_cast<Language>(i);
-    if (lang == alloc_const->lang || alloc_const->lang == Language::kUnknown) {
-      auto &info = type->info[i];
-
-      module->root_module->id_to_foreign_constant.emplace(
-          alloc_const->name.IdentifierId(), alloc_const);
-
-      info.constants->AddUse(alloc_const);
-
-      assert(alloc_const->type.IsValid());
-      assert(alloc_const->parent != nullptr);
-      assert(alloc_const->lang == lang);
-      alloc_const->lang = lang;
-      if (lang == Language::kUnknown) {
-        alloc_const->can_overide = false;
-      }
-
-      alloc_const->next_with_same_name = const_ptr;
-      const_ptr = alloc_const;
-      added_def = true;
-    }
-  }
-
-  (void) added_def;
-  assert(added_def);
-#endif
+  constants->AddUse(alloc_const);
 }
 
 }  // namespace hyde

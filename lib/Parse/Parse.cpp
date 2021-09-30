@@ -398,10 +398,18 @@ ParsedLiteral::Spelling(Language lang) const noexcept {
   if (IsConstant()) {
     const auto &info = impl->foreign_type->info[static_cast<unsigned>(lang)];
     const auto id = impl->literal.IdentifierId();
+    ParsedForeignConstantImpl *backup = nullptr;
     for (ParsedForeignConstantImpl * const const_ptr : *(info.constants)) {
-      if (const_ptr->lang == lang && const_ptr->name.IdentifierId() == id) {
-        return const_ptr->code;
+      if (const_ptr->name.IdentifierId() == id) {
+        if (const_ptr->lang == lang) {
+          return const_ptr->code;
+        } else if (const_ptr->lang == Language::kUnknown) {
+          backup = const_ptr;
+        }
       }
+    }
+    if (backup) {
+      return backup->code;
     }
     return std::nullopt;
 

@@ -22,6 +22,7 @@
 #include <unordered_map>
 #include <vector>
 
+
 namespace database {
 
 }  // namespace database
@@ -58,8 +59,8 @@ struct IndexDescriptor<10> {
   using ValueColumnOffsets = IdList<>;
 };
 template <>
-struct IndexDescriptor<153> {
-  static constexpr unsigned kId = 153;
+struct IndexDescriptor<148> {
+  static constexpr unsigned kId = 148;
   static constexpr unsigned kTableId = 7;
   static constexpr unsigned kOffset = 1;
   static constexpr unsigned kNumKeyColumns = 1;
@@ -72,8 +73,8 @@ struct IndexDescriptor<153> {
   using ValueColumnOffsets = IdList<0>;
 };
 template <>
-struct IndexDescriptor<169> {
-  static constexpr unsigned kId = 169;
+struct IndexDescriptor<164> {
+  static constexpr unsigned kId = 164;
   static constexpr unsigned kTableId = 7;
   static constexpr unsigned kOffset = 2;
   static constexpr unsigned kNumKeyColumns = 1;
@@ -89,7 +90,7 @@ template <>
 struct TableDescriptor<7> {
   static constexpr bool kHasCoveringIndex = true;
   using ColumnIds = IdList<8, 9>;
-  using IndexIds = IdList<10, 153, 169>;
+  using IndexIds = IdList<10, 148, 164>;
   static constexpr unsigned kFirstIndexId = 10;
   static constexpr unsigned kNumColumns = 2;
 };
@@ -125,8 +126,8 @@ struct IndexDescriptor<14> {
   using ValueColumnOffsets = IdList<>;
 };
 template <>
-struct IndexDescriptor<145> {
-  static constexpr unsigned kId = 145;
+struct IndexDescriptor<140> {
+  static constexpr unsigned kId = 140;
   static constexpr unsigned kTableId = 11;
   static constexpr unsigned kOffset = 1;
   static constexpr unsigned kNumKeyColumns = 1;
@@ -142,7 +143,7 @@ template <>
 struct TableDescriptor<11> {
   static constexpr bool kHasCoveringIndex = true;
   using ColumnIds = IdList<12, 13>;
-  using IndexIds = IdList<14, 145>;
+  using IndexIds = IdList<14, 140>;
   static constexpr unsigned kFirstIndexId = 14;
   static constexpr unsigned kNumColumns = 2;
 };
@@ -248,8 +249,8 @@ struct IndexDescriptor<25> {
   using ValueColumnOffsets = IdList<>;
 };
 template <>
-struct IndexDescriptor<71> {
-  static constexpr unsigned kId = 71;
+struct IndexDescriptor<66> {
+  static constexpr unsigned kId = 66;
   static constexpr unsigned kTableId = 22;
   static constexpr unsigned kOffset = 1;
   static constexpr unsigned kNumKeyColumns = 1;
@@ -265,7 +266,7 @@ template <>
 struct TableDescriptor<22> {
   static constexpr bool kHasCoveringIndex = true;
   using ColumnIds = IdList<23, 24>;
-  using IndexIds = IdList<25, 71>;
+  using IndexIds = IdList<25, 66>;
   static constexpr unsigned kFirstIndexId = 25;
   static constexpr unsigned kNumColumns = 2;
 };
@@ -318,149 +319,163 @@ struct ColumnDescriptor<31> {
   using Type = uint64_t;
 };
 template <>
-struct ColumnDescriptor<32> {
-  static constexpr bool kIsNamed = false;
+struct IndexDescriptor<32> {
   static constexpr unsigned kId = 32;
   static constexpr unsigned kTableId = 29;
-  static constexpr unsigned kOffset = 2;
-  using Type = uint8_t;
-};
-template <>
-struct IndexDescriptor<33> {
-  static constexpr unsigned kId = 33;
-  static constexpr unsigned kTableId = 29;
-  static constexpr unsigned kOffset = 0;
-  static constexpr unsigned kNumKeyColumns = 3;
-  static constexpr unsigned kNumValueColumns = 0;
-  static constexpr bool kCoversAllColumns = true;
-  using Columns = TypeList<KeyColumn<30>, KeyColumn<31>, KeyColumn<32>>;
-  using KeyColumnIds = IdList<30, 31, 32>;
-  using ValueColumnIds = IdList<>;
-  using KeyColumnOffsets = IdList<0, 1, 2>;
-  using ValueColumnOffsets = IdList<>;
-};
-template <>
-struct TableDescriptor<29> {
-  static constexpr bool kHasCoveringIndex = true;
-  using ColumnIds = IdList<30, 31, 32>;
-  using IndexIds = IdList<33>;
-  static constexpr unsigned kFirstIndexId = 33;
-  static constexpr unsigned kNumColumns = 3;
-};
-
-template <>
-struct ColumnDescriptor<35> {
-  static constexpr bool kIsNamed = false;
-  static constexpr unsigned kId = 35;
-  static constexpr unsigned kTableId = 34;
-  static constexpr unsigned kOffset = 0;
-  using Type = uint64_t;
-};
-template <>
-struct IndexDescriptor<36> {
-  static constexpr unsigned kId = 36;
-  static constexpr unsigned kTableId = 34;
-  static constexpr unsigned kOffset = 0;
-  static constexpr unsigned kNumKeyColumns = 1;
-  static constexpr unsigned kNumValueColumns = 0;
-  static constexpr bool kCoversAllColumns = true;
-  using Columns = TypeList<KeyColumn<35>>;
-  using KeyColumnIds = IdList<35>;
-  using ValueColumnIds = IdList<>;
-  using KeyColumnOffsets = IdList<0>;
-  using ValueColumnOffsets = IdList<>;
-};
-template <>
-struct TableDescriptor<34> {
-  static constexpr bool kHasCoveringIndex = true;
-  using ColumnIds = IdList<35>;
-  using IndexIds = IdList<36>;
-  static constexpr unsigned kFirstIndexId = 36;
-  static constexpr unsigned kNumColumns = 1;
-};
-
-template <>
-struct ColumnDescriptor<38> {
-  static constexpr bool kIsNamed = false;
-  static constexpr unsigned kId = 38;
-  static constexpr unsigned kTableId = 37;
-  static constexpr unsigned kOffset = 0;
-  using Type = uint64_t;
-};
-template <>
-struct ColumnDescriptor<39> {
-  static constexpr bool kIsNamed = false;
-  static constexpr unsigned kId = 39;
-  static constexpr unsigned kTableId = 37;
-  static constexpr unsigned kOffset = 1;
-  using Type = uint64_t;
-};
-template <>
-struct IndexDescriptor<40> {
-  static constexpr unsigned kId = 40;
-  static constexpr unsigned kTableId = 37;
   static constexpr unsigned kOffset = 0;
   static constexpr unsigned kNumKeyColumns = 2;
   static constexpr unsigned kNumValueColumns = 0;
   static constexpr bool kCoversAllColumns = true;
-  using Columns = TypeList<KeyColumn<38>, KeyColumn<39>>;
-  using KeyColumnIds = IdList<38, 39>;
+  using Columns = TypeList<KeyColumn<30>, KeyColumn<31>>;
+  using KeyColumnIds = IdList<30, 31>;
   using ValueColumnIds = IdList<>;
   using KeyColumnOffsets = IdList<0, 1>;
   using ValueColumnOffsets = IdList<>;
 };
 template <>
-struct IndexDescriptor<100> {
-  static constexpr unsigned kId = 100;
-  static constexpr unsigned kTableId = 37;
+struct IndexDescriptor<95> {
+  static constexpr unsigned kId = 95;
+  static constexpr unsigned kTableId = 29;
   static constexpr unsigned kOffset = 1;
   static constexpr unsigned kNumKeyColumns = 1;
   static constexpr unsigned kNumValueColumns = 1;
   static constexpr bool kCoversAllColumns = false;
-  using Columns = TypeList<KeyColumn<38>, ValueColumn<39>>;
-  using KeyColumnIds = IdList<38>;
-  using ValueColumnIds = IdList<39>;
+  using Columns = TypeList<KeyColumn<30>, ValueColumn<31>>;
+  using KeyColumnIds = IdList<30>;
+  using ValueColumnIds = IdList<31>;
   using KeyColumnOffsets = IdList<0>;
   using ValueColumnOffsets = IdList<1>;
 };
 template <>
-struct TableDescriptor<37> {
+struct TableDescriptor<29> {
   static constexpr bool kHasCoveringIndex = true;
-  using ColumnIds = IdList<38, 39>;
-  using IndexIds = IdList<40, 100>;
-  static constexpr unsigned kFirstIndexId = 40;
+  using ColumnIds = IdList<30, 31>;
+  using IndexIds = IdList<32, 95>;
+  static constexpr unsigned kFirstIndexId = 32;
   static constexpr unsigned kNumColumns = 2;
 };
 
 template <>
-struct ColumnDescriptor<42> {
+struct ColumnDescriptor<34> {
   static constexpr bool kIsNamed = false;
-  static constexpr unsigned kId = 42;
-  static constexpr unsigned kTableId = 41;
+  static constexpr unsigned kId = 34;
+  static constexpr unsigned kTableId = 33;
   static constexpr unsigned kOffset = 0;
   using Type = uint64_t;
 };
 template <>
-struct IndexDescriptor<43> {
-  static constexpr unsigned kId = 43;
-  static constexpr unsigned kTableId = 41;
+struct IndexDescriptor<35> {
+  static constexpr unsigned kId = 35;
+  static constexpr unsigned kTableId = 33;
   static constexpr unsigned kOffset = 0;
   static constexpr unsigned kNumKeyColumns = 1;
   static constexpr unsigned kNumValueColumns = 0;
   static constexpr bool kCoversAllColumns = true;
-  using Columns = TypeList<KeyColumn<42>>;
-  using KeyColumnIds = IdList<42>;
+  using Columns = TypeList<KeyColumn<34>>;
+  using KeyColumnIds = IdList<34>;
   using ValueColumnIds = IdList<>;
   using KeyColumnOffsets = IdList<0>;
   using ValueColumnOffsets = IdList<>;
 };
 template <>
-struct TableDescriptor<41> {
+struct TableDescriptor<33> {
   static constexpr bool kHasCoveringIndex = true;
-  using ColumnIds = IdList<42>;
-  using IndexIds = IdList<43>;
-  static constexpr unsigned kFirstIndexId = 43;
+  using ColumnIds = IdList<34>;
+  using IndexIds = IdList<35>;
+  static constexpr unsigned kFirstIndexId = 35;
   static constexpr unsigned kNumColumns = 1;
+};
+
+template <>
+struct ColumnDescriptor<37> {
+  static constexpr bool kIsNamed = false;
+  static constexpr unsigned kId = 37;
+  static constexpr unsigned kTableId = 36;
+  static constexpr unsigned kOffset = 0;
+  using Type = uint64_t;
+};
+template <>
+struct IndexDescriptor<38> {
+  static constexpr unsigned kId = 38;
+  static constexpr unsigned kTableId = 36;
+  static constexpr unsigned kOffset = 0;
+  static constexpr unsigned kNumKeyColumns = 1;
+  static constexpr unsigned kNumValueColumns = 0;
+  static constexpr bool kCoversAllColumns = true;
+  using Columns = TypeList<KeyColumn<37>>;
+  using KeyColumnIds = IdList<37>;
+  using ValueColumnIds = IdList<>;
+  using KeyColumnOffsets = IdList<0>;
+  using ValueColumnOffsets = IdList<>;
+};
+template <>
+struct TableDescriptor<36> {
+  static constexpr bool kHasCoveringIndex = true;
+  using ColumnIds = IdList<37>;
+  using IndexIds = IdList<38>;
+  static constexpr unsigned kFirstIndexId = 38;
+  static constexpr unsigned kNumColumns = 1;
+};
+
+template <>
+struct ColumnDescriptor<40> {
+  static constexpr bool kIsNamed = false;
+  static constexpr unsigned kId = 40;
+  static constexpr unsigned kTableId = 39;
+  static constexpr unsigned kOffset = 0;
+  using Type = uint64_t;
+};
+template <>
+struct ColumnDescriptor<41> {
+  static constexpr bool kIsNamed = false;
+  static constexpr unsigned kId = 41;
+  static constexpr unsigned kTableId = 39;
+  static constexpr unsigned kOffset = 1;
+  using Type = uint64_t;
+};
+template <>
+struct ColumnDescriptor<42> {
+  static constexpr bool kIsNamed = false;
+  static constexpr unsigned kId = 42;
+  static constexpr unsigned kTableId = 39;
+  static constexpr unsigned kOffset = 2;
+  using Type = uint64_t;
+};
+template <>
+struct IndexDescriptor<43> {
+  static constexpr unsigned kId = 43;
+  static constexpr unsigned kTableId = 39;
+  static constexpr unsigned kOffset = 0;
+  static constexpr unsigned kNumKeyColumns = 3;
+  static constexpr unsigned kNumValueColumns = 0;
+  static constexpr bool kCoversAllColumns = true;
+  using Columns = TypeList<KeyColumn<40>, KeyColumn<41>, KeyColumn<42>>;
+  using KeyColumnIds = IdList<40, 41, 42>;
+  using ValueColumnIds = IdList<>;
+  using KeyColumnOffsets = IdList<0, 1, 2>;
+  using ValueColumnOffsets = IdList<>;
+};
+template <>
+struct IndexDescriptor<232> {
+  static constexpr unsigned kId = 232;
+  static constexpr unsigned kTableId = 39;
+  static constexpr unsigned kOffset = 1;
+  static constexpr unsigned kNumKeyColumns = 2;
+  static constexpr unsigned kNumValueColumns = 1;
+  static constexpr bool kCoversAllColumns = false;
+  using Columns = TypeList<ValueColumn<40>, KeyColumn<41>, KeyColumn<42>>;
+  using KeyColumnIds = IdList<41, 42>;
+  using ValueColumnIds = IdList<40>;
+  using KeyColumnOffsets = IdList<1, 2>;
+  using ValueColumnOffsets = IdList<0>;
+};
+template <>
+struct TableDescriptor<39> {
+  static constexpr bool kHasCoveringIndex = true;
+  using ColumnIds = IdList<40, 41, 42>;
+  using IndexIds = IdList<43, 232>;
+  static constexpr unsigned kFirstIndexId = 43;
+  static constexpr unsigned kNumColumns = 3;
 };
 
 template <>
@@ -472,86 +487,25 @@ struct ColumnDescriptor<45> {
   using Type = uint64_t;
 };
 template <>
-struct ColumnDescriptor<46> {
-  static constexpr bool kIsNamed = false;
+struct IndexDescriptor<46> {
   static constexpr unsigned kId = 46;
   static constexpr unsigned kTableId = 44;
-  static constexpr unsigned kOffset = 1;
-  using Type = uint64_t;
-};
-template <>
-struct ColumnDescriptor<47> {
-  static constexpr bool kIsNamed = false;
-  static constexpr unsigned kId = 47;
-  static constexpr unsigned kTableId = 44;
-  static constexpr unsigned kOffset = 2;
-  using Type = uint64_t;
-};
-template <>
-struct IndexDescriptor<48> {
-  static constexpr unsigned kId = 48;
-  static constexpr unsigned kTableId = 44;
-  static constexpr unsigned kOffset = 0;
-  static constexpr unsigned kNumKeyColumns = 3;
-  static constexpr unsigned kNumValueColumns = 0;
-  static constexpr bool kCoversAllColumns = true;
-  using Columns = TypeList<KeyColumn<45>, KeyColumn<46>, KeyColumn<47>>;
-  using KeyColumnIds = IdList<45, 46, 47>;
-  using ValueColumnIds = IdList<>;
-  using KeyColumnOffsets = IdList<0, 1, 2>;
-  using ValueColumnOffsets = IdList<>;
-};
-template <>
-struct IndexDescriptor<237> {
-  static constexpr unsigned kId = 237;
-  static constexpr unsigned kTableId = 44;
-  static constexpr unsigned kOffset = 1;
-  static constexpr unsigned kNumKeyColumns = 2;
-  static constexpr unsigned kNumValueColumns = 1;
-  static constexpr bool kCoversAllColumns = false;
-  using Columns = TypeList<ValueColumn<45>, KeyColumn<46>, KeyColumn<47>>;
-  using KeyColumnIds = IdList<46, 47>;
-  using ValueColumnIds = IdList<45>;
-  using KeyColumnOffsets = IdList<1, 2>;
-  using ValueColumnOffsets = IdList<0>;
-};
-template <>
-struct TableDescriptor<44> {
-  static constexpr bool kHasCoveringIndex = true;
-  using ColumnIds = IdList<45, 46, 47>;
-  using IndexIds = IdList<48, 237>;
-  static constexpr unsigned kFirstIndexId = 48;
-  static constexpr unsigned kNumColumns = 3;
-};
-
-template <>
-struct ColumnDescriptor<50> {
-  static constexpr bool kIsNamed = false;
-  static constexpr unsigned kId = 50;
-  static constexpr unsigned kTableId = 49;
-  static constexpr unsigned kOffset = 0;
-  using Type = uint64_t;
-};
-template <>
-struct IndexDescriptor<51> {
-  static constexpr unsigned kId = 51;
-  static constexpr unsigned kTableId = 49;
   static constexpr unsigned kOffset = 0;
   static constexpr unsigned kNumKeyColumns = 1;
   static constexpr unsigned kNumValueColumns = 0;
   static constexpr bool kCoversAllColumns = true;
-  using Columns = TypeList<KeyColumn<50>>;
-  using KeyColumnIds = IdList<50>;
+  using Columns = TypeList<KeyColumn<45>>;
+  using KeyColumnIds = IdList<45>;
   using ValueColumnIds = IdList<>;
   using KeyColumnOffsets = IdList<0>;
   using ValueColumnOffsets = IdList<>;
 };
 template <>
-struct TableDescriptor<49> {
+struct TableDescriptor<44> {
   static constexpr bool kHasCoveringIndex = true;
-  using ColumnIds = IdList<50>;
-  using IndexIds = IdList<51>;
-  static constexpr unsigned kFirstIndexId = 51;
+  using ColumnIds = IdList<45>;
+  using IndexIds = IdList<46>;
+  static constexpr unsigned kFirstIndexId = 46;
   static constexpr unsigned kNumColumns = 1;
 };
 
@@ -580,14 +534,13 @@ class Database {
     ::hyde::rt::Table<StorageT, 22> table_22;
     ::hyde::rt::Table<StorageT, 26> table_26;
     ::hyde::rt::Table<StorageT, 29> table_29;
-    ::hyde::rt::Table<StorageT, 34> table_34;
-    ::hyde::rt::Table<StorageT, 37> table_37;
-    ::hyde::rt::Table<StorageT, 41> table_41;
+    ::hyde::rt::Table<StorageT, 33> table_33;
+    ::hyde::rt::Table<StorageT, 36> table_36;
+    ::hyde::rt::Table<StorageT, 39> table_39;
     ::hyde::rt::Table<StorageT, 44> table_44;
-    ::hyde::rt::Table<StorageT, 49> table_49;
-    uint64_t var_53;
+    uint64_t var_48;
 
-    static constexpr uint8_t var_5 = {0};
+    static constexpr uint8_t var_5 = {1};
     static constexpr uint8_t var_6 = {0};
 
     explicit Database(StorageT &s, LogT &l, FunctorsT &f)
@@ -601,24 +554,23 @@ class Database {
         table_22(s),
         table_26(s),
         table_29(s),
-        table_34(s),
-        table_37(s),
-        table_41(s),
+        table_33(s),
+        table_36(s),
+        table_39(s),
         table_44(s),
-        table_49(s),
-        var_53{0} {
+        var_48{0} {
       init_4_();
     }
 
     template <typename _Generator>
     ::hyde::rt::index_t function_instructions_bf(uint64_t param_0, _Generator _generator) {
       ::hyde::rt::index_t num_generated = 0;
-      ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<169>> scan(storage, table_7, param_0);
+      ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<164>> scan(storage, table_7, param_0);
       for (auto [shadow_param_0, param_1] : scan) {
         if (std::make_tuple(param_0) != std::make_tuple(shadow_param_0)) {
           continue;
         }
-        if (!find_123_(param_0, param_1)) {
+        if (!find_118_(param_0, param_1)) {
           continue;
         }
         num_generated += 1u;
@@ -629,18 +581,18 @@ class Database {
       return num_generated;
     }
 
-    bool raw_transfer_3(::hyde::rt::Vector<StorageT, uint64_t, uint64_t, uint8_t> vec_159) {
-      ::hyde::rt::Vector<StorageT, uint64_t> vec_161(storage, 161u);
-      if (proc_52_(std::move(vec_159), std::move(vec_161))) {
+    bool raw_transfer_3(::hyde::rt::Vector<StorageT, uint64_t, uint64_t, uint8_t> vec_154) {
+      ::hyde::rt::Vector<StorageT, uint64_t> vec_156(storage, 156u);
+      if (proc_47_(std::move(vec_154), std::move(vec_156))) {
       }
       return true;
       assert(false);
       return false;
     }
 
-    bool instruction_1(::hyde::rt::Vector<StorageT, uint64_t> vec_163) {
-      ::hyde::rt::Vector<StorageT, uint64_t, uint64_t, uint8_t> vec_165(storage, 165u);
-      if (proc_52_(std::move(vec_165), std::move(vec_163))) {
+    bool instruction_1(::hyde::rt::Vector<StorageT, uint64_t> vec_158) {
+      ::hyde::rt::Vector<StorageT, uint64_t, uint64_t, uint8_t> vec_160(storage, 160u);
+      if (proc_47_(std::move(vec_160), std::move(vec_158))) {
       }
       return true;
       assert(false);
@@ -657,11 +609,10 @@ class Database {
       _print(22, table_22.Size());
       _print(26, table_26.Size());
       _print(29, table_29.Size());
-      _print(34, table_34.Size());
-      _print(37, table_37.Size());
-      _print(41, table_41.Size());
+      _print(33, table_33.Size());
+      _print(36, table_36.Size());
+      _print(39, table_39.Size());
       _print(44, table_44.Size());
-      _print(49, table_49.Size());
     }
 
     void DumpStats(void) const {
@@ -671,46 +622,45 @@ class Database {
       static FILE *tables = nullptr;
       if (!tables) {
         tables = fopen("/tmp/tables.csv", "w");
-        fprintf(tables, "table 7,table 11,table 15,table 18,table 22,table 26,table 29,table 34,table 37,table 41,table 44,table 49\n");
+        fprintf(tables, "table 7,table 11,table 15,table 18,table 22,table 26,table 29,table 33,table 36,table 39,table 44\n");
       }
-      fprintf(tables, "%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 "\n", table_7.Size(), table_11.Size(), table_15.Size(), table_18.Size(), table_22.Size(), table_26.Size(), table_29.Size(), table_34.Size(), table_37.Size(), table_41.Size(), table_44.Size(), table_49.Size());
+      fprintf(tables, "%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 "\n", table_7.Size(), table_11.Size(), table_15.Size(), table_18.Size(), table_22.Size(), table_26.Size(), table_29.Size(), table_33.Size(), table_36.Size(), table_39.Size(), table_44.Size());
     }
 
     bool init_4_() {
-      ::hyde::rt::Vector<StorageT, uint64_t, uint64_t, uint8_t> vec_167(storage, 167u);
-      ::hyde::rt::Vector<StorageT, uint64_t> vec_168(storage, 168u);
-      if (proc_52_(std::move(vec_167), std::move(vec_168))) {
+      ::hyde::rt::Vector<StorageT, uint64_t, uint64_t, uint8_t> vec_162(storage, 162u);
+      ::hyde::rt::Vector<StorageT, uint64_t> vec_163(storage, 163u);
+      if (proc_47_(std::move(vec_162), std::move(vec_163))) {
       }
       return false;
       assert(false);
       return false;
     }
 
-    bool proc_52_(::hyde::rt::Vector<StorageT, uint64_t, uint64_t, uint8_t> vec_54, ::hyde::rt::Vector<StorageT, uint64_t> vec_85) {
+    bool proc_47_(::hyde::rt::Vector<StorageT, uint64_t, uint64_t, uint8_t> vec_49, ::hyde::rt::Vector<StorageT, uint64_t> vec_80) {
+      ::hyde::rt::Vector<StorageT, uint64_t, uint64_t> vec_58(storage, 58u);
+      ::hyde::rt::Vector<StorageT, uint64_t> vec_61(storage, 61u);
       ::hyde::rt::Vector<StorageT, uint64_t, uint64_t> vec_63(storage, 63u);
-      ::hyde::rt::Vector<StorageT, uint64_t> vec_66(storage, 66u);
-      ::hyde::rt::Vector<StorageT, uint64_t, uint64_t> vec_68(storage, 68u);
-      ::hyde::rt::Vector<StorageT, uint64_t> vec_83(storage, 83u);
-      ::hyde::rt::Vector<StorageT, uint64_t> vec_97(storage, 97u);
-      for (auto [var_56, var_57, var_58] : vec_54) {
-        if (table_29.TryChangeTupleFromAbsentToPresent(var_56, var_57, var_58)) {
-          if (table_49.TryChangeTupleFromAbsentToPresent(var_57)) {
-            if (find_59_(var_57)) {
-              if (table_26.TryChangeTupleFromPresentToUnknown(var_57)) {
-                if (table_18.TryChangeTupleFromPresentToUnknown(var_57, var_57)) {
-                  if (table_7.TryChangeTupleFromPresentToUnknown(var_57, var_57)) {
-                    vec_63.Add(var_57, var_57);
-                  }
+      ::hyde::rt::Vector<StorageT, uint64_t> vec_78(storage, 78u);
+      ::hyde::rt::Vector<StorageT, uint64_t> vec_92(storage, 92u);
+      for (auto [var_51, var_52, var_53] : vec_49) {
+        if (table_44.TryChangeTupleFromAbsentToPresent(var_52)) {
+          if (find_54_(var_52)) {
+            if (table_26.TryChangeTupleFromPresentToUnknown(var_52)) {
+              if (table_18.TryChangeTupleFromPresentToUnknown(var_52, var_52)) {
+                if (table_7.TryChangeTupleFromPresentToUnknown(var_52, var_52)) {
+                  vec_58.Add(var_52, var_52);
+                  printf("Adding var_52=%" PRIu64 " var_52 to vec_58\n", var_52);
                 }
-                {
-                  ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<71>> scan_72(storage, table_22, var_57);
-                  for (auto [var_73, var_74] : scan_72) {
-                    if (std::make_tuple(var_73) == std::make_tuple(var_57)) {
-                      if (find_75_(var_73, var_74)) {
-                        if (find_79_(var_73)) {
-                        } else {
-                          vec_68.Add(var_73, var_74);
-                        }
+              }
+              {
+                ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<66>> scan_67(storage, table_22, var_52);
+                for (auto [var_68, var_69] : scan_67) {
+                  if (std::make_tuple(var_68) == std::make_tuple(var_52)) {
+                    if (find_70_(var_68, var_69)) {
+                      if (find_74_(var_68)) {
+                      } else {
+                        vec_63.Add(var_68, var_69);
                       }
                     }
                   }
@@ -718,75 +668,58 @@ class Database {
               }
             }
           }
-          if (std::make_tuple(var_5) == std::make_tuple(var_58)) {
-            if (table_37.TryChangeTupleFromAbsentToPresent(var_56, var_57)) {
-              vec_83.Add(var_56);
-            }
+        }
+        if (std::make_tuple(var_5) == std::make_tuple(var_53)) {
+          if (table_29.TryChangeTupleFromAbsentToPresent(var_51, var_52)) {
+            vec_78.Add(var_51);
           }
-          if (std::make_tuple(var_6) == std::make_tuple(var_58)) {
-            if (table_11.TryChangeTupleFromAbsentToPresent(var_56, var_57)) {
-              vec_66.Add(var_56);
-            }
+        }
+        if (std::make_tuple(var_6) == std::make_tuple(var_53)) {
+          if (table_11.TryChangeTupleFromAbsentToPresent(var_51, var_52)) {
+            vec_61.Add(var_51);
           }
         }
       }
-      for (auto [var_87] : vec_85) {
-        if (table_34.TryChangeTupleFromAbsentToPresent(var_87)) {
-          if (find_88_(var_87)) {
+      for (auto [var_82] : vec_80) {
+        printf("# var_82=%" PRIu64 "\n", var_82);
+        if (table_33.TryChangeTupleFromAbsentToPresent(var_82)) {
+          printf("\t# var_82=%" PRIu64 "\n", var_82);
+          if (find_83_(var_82)) {
           } else {
-            if (table_26.TryChangeTupleFromAbsentOrUnknownToPresent(var_87)) {
-              if (table_18.TryChangeTupleFromAbsentOrUnknownToPresent(var_87, var_87)) {
-                if (table_7.TryChangeTupleFromAbsentOrUnknownToPresent(var_87, var_87)) {
-                  vec_63.Add(var_87, var_87);
+            if (table_26.TryChangeTupleFromAbsentOrUnknownToPresent(var_82)) {
+              if (table_18.TryChangeTupleFromAbsentOrUnknownToPresent(var_82, var_82)) {
+                if (table_7.TryChangeTupleFromAbsentOrUnknownToPresent(var_82, var_82)) {
+                  vec_58.Add(var_82, var_82);
+                  printf("Adding var_82=%" PRIu64 " var_82 to vec_58\n", var_82);
                 }
               }
               {
-                ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<71>> scan_92(storage, table_22, var_87);
-                for (auto [var_93, var_94] : scan_92) {
-                  if (std::make_tuple(var_93) == std::make_tuple(var_87)) {
-                    if (find_75_(var_93, var_94)) {
-                      vec_68.Add(var_93, var_94);
+                ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<66>> scan_87(storage, table_22, var_82);
+                for (auto [var_88, var_89] : scan_87) {
+                  if (std::make_tuple(var_88) == std::make_tuple(var_82)) {
+                    if (find_70_(var_88, var_89)) {
+                      vec_63.Add(var_88, var_89);
                     }
                   }
                 }
               }
             }
           }
-          vec_83.Add(var_87);
-          vec_97.Add(var_87);
+          vec_78.Add(var_82);
+          vec_92.Add(var_82);
         }
       }
-      vec_54.Clear();
-      vec_85.Clear();
-      std::cerr << "induction_in:63:\n";
-      for (auto [a, b] : vec_63) {
-        std::cerr << "\t" << a << " " << b << "\n";
-      }
-      std::cerr << "\ninduction_pivots:66:\n";
-      for (auto [a] : vec_66) {
-        std::cerr << "\t" << a << "\n";
-      }
-      std::cerr << "\ninduction_in:68:\n";
-      for (auto [a, b] : vec_68) {
-        std::cerr << "\t" << a << " " << b <<"\n";
-      }
-      std::cerr << "\npivots:83:\n";
-      for (auto [a] : vec_83) {
-        std::cerr << "\t" << a << "\n";
-      }
-      std::cerr << "\npivots:97:\n";
-      for (auto [a] : vec_97) {
-        std::cerr << "\t" << a << "\n";
-      }
-      if (flow_267_(std::move(vec_63), std::move(vec_66), std::move(vec_68), std::move(vec_83), std::move(vec_97))) {
+      vec_49.Clear();
+      vec_80.Clear();
+      if (flow_262_(std::move(vec_58), std::move(vec_61), std::move(vec_63), std::move(vec_78), std::move(vec_92))) {
       }
       return false;
       assert(false);
       return false;
     }
 
-    bool find_59_(uint64_t var_60) {
-      switch (table_34.GetState(var_60)) {
+    bool find_54_(uint64_t var_55) {
+      switch (table_33.GetState(var_55)) {
         case ::hyde::rt::TupleState::kAbsent: {
           return false;
           break;
@@ -804,8 +737,8 @@ class Database {
       return false;
     }
 
-    bool find_75_(uint64_t var_76, uint64_t var_77) {
-      switch (table_22.GetState(var_76, var_77)) {
+    bool find_70_(uint64_t var_71, uint64_t var_72) {
+      switch (table_22.GetState(var_71, var_72)) {
         case ::hyde::rt::TupleState::kAbsent: {
           return false;
           break;
@@ -815,9 +748,9 @@ class Database {
           break;
         }
         case ::hyde::rt::TupleState::kUnknown: {
-          if (table_22.TryChangeTupleFromUnknownToAbsent(var_76, var_77)) {
-            if (find_228_(var_76, var_77)) {
-              if (table_22.TryChangeTupleFromAbsentToPresent(var_76, var_77)) {
+          if (table_22.TryChangeTupleFromUnknownToAbsent(var_71, var_72)) {
+            if (find_223_(var_71, var_72)) {
+              if (table_22.TryChangeTupleFromAbsentToPresent(var_71, var_72)) {
                 return true;
               }
             } else {
@@ -827,7 +760,7 @@ class Database {
           break;
         }
       }
-      if (find_75_(var_76, var_77)) {
+      if (find_70_(var_71, var_72)) {
         return true;
       } else {
         return true;
@@ -836,8 +769,8 @@ class Database {
       return false;
     }
 
-    bool find_79_(uint64_t var_80) {
-      switch (table_26.GetState(var_80)) {
+    bool find_74_(uint64_t var_75) {
+      switch (table_26.GetState(var_75)) {
         case ::hyde::rt::TupleState::kAbsent: {
           return false;
           break;
@@ -847,9 +780,9 @@ class Database {
           break;
         }
         case ::hyde::rt::TupleState::kUnknown: {
-          if (table_26.TryChangeTupleFromUnknownToAbsent(var_80)) {
-            if (find_223_(var_80)) {
-              if (table_26.TryChangeTupleFromAbsentToPresent(var_80)) {
+          if (table_26.TryChangeTupleFromUnknownToAbsent(var_75)) {
+            if (find_218_(var_75)) {
+              if (table_26.TryChangeTupleFromAbsentToPresent(var_75)) {
                 return true;
               }
             } else {
@@ -859,7 +792,7 @@ class Database {
           break;
         }
       }
-      if (find_79_(var_80)) {
+      if (find_74_(var_75)) {
         return true;
       } else {
         return true;
@@ -868,8 +801,8 @@ class Database {
       return false;
     }
 
-    bool find_88_(uint64_t var_89) {
-      switch (table_49.GetState(var_89)) {
+    bool find_83_(uint64_t var_84) {
+      switch (table_44.GetState(var_84)) {
         case ::hyde::rt::TupleState::kAbsent: {
           return false;
           break;
@@ -887,8 +820,8 @@ class Database {
       return false;
     }
 
-    bool find_123_(uint64_t var_124, uint64_t var_125) {
-      switch (table_7.GetState(var_124, var_125)) {
+    bool find_118_(uint64_t var_119, uint64_t var_120) {
+      switch (table_7.GetState(var_119, var_120)) {
         case ::hyde::rt::TupleState::kAbsent: {
           return false;
           break;
@@ -898,9 +831,9 @@ class Database {
           break;
         }
         case ::hyde::rt::TupleState::kUnknown: {
-          if (table_7.TryChangeTupleFromUnknownToAbsent(var_124, var_125)) {
-            if (find_172_(var_124, var_125)) {
-              if (table_7.TryChangeTupleFromAbsentToPresent(var_124, var_125)) {
+          if (table_7.TryChangeTupleFromUnknownToAbsent(var_119, var_120)) {
+            if (find_167_(var_119, var_120)) {
+              if (table_7.TryChangeTupleFromAbsentToPresent(var_119, var_120)) {
                 return true;
               }
             } else {
@@ -910,7 +843,7 @@ class Database {
           break;
         }
       }
-      if (find_123_(var_124, var_125)) {
+      if (find_118_(var_119, var_120)) {
         return true;
       } else {
         return true;
@@ -919,9 +852,9 @@ class Database {
       return false;
     }
 
-    bool find_133_(uint64_t var_134, uint64_t var_135) {
-      if (find_75_(var_134, var_135)) {
-        if (find_79_(var_134)) {
+    bool find_128_(uint64_t var_129, uint64_t var_130) {
+      if (find_70_(var_129, var_130)) {
+        if (find_74_(var_129)) {
           return false;
         } else {
           return true;
@@ -929,24 +862,24 @@ class Database {
       } else {
         return false;
       }
+      assert(false);
+      return false;
+    }
+
+    bool find_167_(uint64_t var_168, uint64_t var_169) {
+      if (find_172_(var_168, var_169)) {
+        return true;
+      }
+      if (find_176_(var_168, var_169)) {
+        return true;
+      }
+      return false;
       assert(false);
       return false;
     }
 
     bool find_172_(uint64_t var_173, uint64_t var_174) {
-      if (find_177_(var_173, var_174)) {
-        return true;
-      }
-      if (find_181_(var_173, var_174)) {
-        return true;
-      }
-      return false;
-      assert(false);
-      return false;
-    }
-
-    bool find_177_(uint64_t var_178, uint64_t var_179) {
-      switch (table_18.GetState(var_178, var_179)) {
+      switch (table_18.GetState(var_173, var_174)) {
         case ::hyde::rt::TupleState::kAbsent: {
           return false;
           break;
@@ -956,9 +889,9 @@ class Database {
           break;
         }
         case ::hyde::rt::TupleState::kUnknown: {
-          if (table_18.TryChangeTupleFromUnknownToAbsent(var_178, var_179)) {
-            if (find_191_(var_178, var_179)) {
-              if (table_18.TryChangeTupleFromAbsentToPresent(var_178, var_179)) {
+          if (table_18.TryChangeTupleFromUnknownToAbsent(var_173, var_174)) {
+            if (find_186_(var_173, var_174)) {
+              if (table_18.TryChangeTupleFromAbsentToPresent(var_173, var_174)) {
                 return true;
               }
             } else {
@@ -968,7 +901,7 @@ class Database {
           break;
         }
       }
-      if (find_177_(var_178, var_179)) {
+      if (find_172_(var_173, var_174)) {
         return true;
       } else {
         return true;
@@ -977,8 +910,8 @@ class Database {
       return false;
     }
 
-    bool find_181_(uint64_t var_182, uint64_t var_183) {
-      if (find_133_(var_183, var_182)) {
+    bool find_176_(uint64_t var_177, uint64_t var_178) {
+      if (find_128_(var_178, var_177)) {
         return true;
       } else {
         return false;
@@ -987,10 +920,10 @@ class Database {
       return false;
     }
 
-    bool find_191_(uint64_t var_192, uint64_t var_193) {
+    bool find_186_(uint64_t var_187, uint64_t var_188) {
       // Ensuring downward equality of projection
-      if (std::make_tuple(var_193) == std::make_tuple(var_192)) {
-        if (find_201_(var_192)) {
+      if (std::make_tuple(var_188) == std::make_tuple(var_187)) {
+        if (find_196_(var_187)) {
           return true;
         } else {
           return false;
@@ -1001,8 +934,8 @@ class Database {
       return false;
     }
 
-    bool find_201_(uint64_t var_202) {
-      switch (table_26.GetState(var_202)) {
+    bool find_196_(uint64_t var_197) {
+      switch (table_26.GetState(var_197)) {
         case ::hyde::rt::TupleState::kAbsent: {
           return false;
           break;
@@ -1012,9 +945,9 @@ class Database {
           break;
         }
         case ::hyde::rt::TupleState::kUnknown: {
-          if (table_26.TryChangeTupleFromUnknownToAbsent(var_202)) {
-            if (find_204_(var_202)) {
-              if (table_26.TryChangeTupleFromAbsentToPresent(var_202)) {
+          if (table_26.TryChangeTupleFromUnknownToAbsent(var_197)) {
+            if (find_199_(var_197)) {
+              if (table_26.TryChangeTupleFromAbsentToPresent(var_197)) {
                 return true;
               }
             } else {
@@ -1024,7 +957,7 @@ class Database {
           break;
         }
       }
-      if (find_201_(var_202)) {
+      if (find_196_(var_197)) {
         return true;
       } else {
         return true;
@@ -1033,11 +966,11 @@ class Database {
       return false;
     }
 
-    bool find_204_(uint64_t var_205) {
-      if (find_212_(var_205)) {
+    bool find_199_(uint64_t var_200) {
+      if (find_207_(var_200)) {
         return true;
       }
-      if (find_215_(var_205)) {
+      if (find_210_(var_200)) {
         return true;
       }
       return false;
@@ -1045,8 +978,8 @@ class Database {
       return false;
     }
 
-    bool find_212_(uint64_t var_213) {
-      switch (table_15.GetState(var_213)) {
+    bool find_207_(uint64_t var_208) {
+      switch (table_15.GetState(var_208)) {
         case ::hyde::rt::TupleState::kAbsent: {
           return false;
           break;
@@ -1064,9 +997,23 @@ class Database {
       return false;
     }
 
-    bool find_215_(uint64_t var_216) {
-      if (find_218_(var_216)) {
+    bool find_210_(uint64_t var_211) {
+      if (find_213_(var_211)) {
         return true;
+      } else {
+        return false;
+      }
+      assert(false);
+      return false;
+    }
+
+    bool find_213_(uint64_t var_214) {
+      if (find_54_(var_214)) {
+        if (find_83_(var_214)) {
+          return false;
+        } else {
+          return true;
+        }
       } else {
         return false;
       }
@@ -1075,12 +1022,8 @@ class Database {
     }
 
     bool find_218_(uint64_t var_219) {
-      if (find_59_(var_219)) {
-        if (find_88_(var_219)) {
-          return false;
-        } else {
-          return true;
-        }
+      if (find_199_(var_219)) {
+        return true;
       } else {
         return false;
       }
@@ -1088,8 +1031,8 @@ class Database {
       return false;
     }
 
-    bool find_223_(uint64_t var_224) {
-      if (find_204_(var_224)) {
+    bool find_223_(uint64_t var_224, uint64_t var_225) {
+      if (find_228_(var_225, var_224)) {
         return true;
       } else {
         return false;
@@ -1099,21 +1042,11 @@ class Database {
     }
 
     bool find_228_(uint64_t var_229, uint64_t var_230) {
-      if (find_233_(var_230, var_229)) {
-        return true;
-      } else {
-        return false;
-      }
-      assert(false);
-      return false;
-    }
-
-    bool find_233_(uint64_t var_234, uint64_t var_235) {
       {
-        ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<237>> scan_238(storage, table_44, var_234, var_235);
-        for (auto [var_239, var_240, var_241] : scan_238) {
-          if (std::make_tuple(var_234, var_235) == std::make_tuple(var_240, var_241)) {
-            if (find_242_(var_239, var_240, var_241)) {
+        ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<232>> scan_233(storage, table_39, var_229, var_230);
+        for (auto [var_234, var_235, var_236] : scan_233) {
+          if (std::make_tuple(var_229, var_230) == std::make_tuple(var_235, var_236)) {
+            if (find_237_(var_234, var_235, var_236)) {
               return true;
             }
           }
@@ -1124,8 +1057,8 @@ class Database {
       return false;
     }
 
-    bool find_242_(uint64_t var_243, uint64_t var_244, uint64_t var_245) {
-      switch (table_44.GetState(var_243, var_244, var_245)) {
+    bool find_237_(uint64_t var_238, uint64_t var_239, uint64_t var_240) {
+      switch (table_39.GetState(var_238, var_239, var_240)) {
         case ::hyde::rt::TupleState::kAbsent: {
           return false;
           break;
@@ -1135,9 +1068,9 @@ class Database {
           break;
         }
         case ::hyde::rt::TupleState::kUnknown: {
-          if (table_44.TryChangeTupleFromUnknownToAbsent(var_243, var_244, var_245)) {
-            if (find_247_(var_243, var_244, var_245)) {
-              if (table_44.TryChangeTupleFromAbsentToPresent(var_243, var_244, var_245)) {
+          if (table_39.TryChangeTupleFromUnknownToAbsent(var_238, var_239, var_240)) {
+            if (find_242_(var_238, var_239, var_240)) {
+              if (table_39.TryChangeTupleFromAbsentToPresent(var_238, var_239, var_240)) {
                 return true;
               }
             } else {
@@ -1147,7 +1080,7 @@ class Database {
           break;
         }
       }
-      if (find_242_(var_243, var_244, var_245)) {
+      if (find_237_(var_238, var_239, var_240)) {
         return true;
       } else {
         return true;
@@ -1156,9 +1089,9 @@ class Database {
       return false;
     }
 
-    bool find_247_(uint64_t var_248, uint64_t var_249, uint64_t var_250) {
-      if (find_253_(var_248, var_250)) {
-        if (find_257_(var_249, var_248)) {
+    bool find_242_(uint64_t var_243, uint64_t var_244, uint64_t var_245) {
+      if (find_248_(var_243, var_245)) {
+        if (find_252_(var_244, var_243)) {
           return true;
         } else {
           return false;
@@ -1170,8 +1103,8 @@ class Database {
       return false;
     }
 
-    bool find_253_(uint64_t var_254, uint64_t var_255) {
-      switch (table_11.GetState(var_254, var_255)) {
+    bool find_248_(uint64_t var_249, uint64_t var_250) {
+      switch (table_11.GetState(var_249, var_250)) {
         case ::hyde::rt::TupleState::kAbsent: {
           return false;
           break;
@@ -1189,8 +1122,8 @@ class Database {
       return false;
     }
 
-    bool find_257_(uint64_t var_258, uint64_t var_259) {
-      switch (table_7.GetState(var_258, var_259)) {
+    bool find_252_(uint64_t var_253, uint64_t var_254) {
+      switch (table_7.GetState(var_253, var_254)) {
         case ::hyde::rt::TupleState::kAbsent: {
           return false;
           break;
@@ -1200,9 +1133,9 @@ class Database {
           break;
         }
         case ::hyde::rt::TupleState::kUnknown: {
-          if (table_7.TryChangeTupleFromUnknownToAbsent(var_258, var_259)) {
-            if (find_261_(var_258, var_259)) {
-              if (table_7.TryChangeTupleFromAbsentToPresent(var_258, var_259)) {
+          if (table_7.TryChangeTupleFromUnknownToAbsent(var_253, var_254)) {
+            if (find_256_(var_253, var_254)) {
+              if (table_7.TryChangeTupleFromAbsentToPresent(var_253, var_254)) {
                 return true;
               }
             } else {
@@ -1212,7 +1145,7 @@ class Database {
           break;
         }
       }
-      if (find_123_(var_258, var_259)) {
+      if (find_118_(var_253, var_254)) {
         return true;
       } else {
         return true;
@@ -1221,8 +1154,8 @@ class Database {
       return false;
     }
 
-    bool find_261_(uint64_t var_262, uint64_t var_263) {
-      if (find_172_(var_262, var_263)) {
+    bool find_256_(uint64_t var_257, uint64_t var_258) {
+      if (find_167_(var_257, var_258)) {
         return true;
       } else {
         return false;
@@ -1231,47 +1164,54 @@ class Database {
       return false;
     }
 
-    bool flow_267_(::hyde::rt::Vector<StorageT, uint64_t, uint64_t> vec_63, ::hyde::rt::Vector<StorageT, uint64_t> vec_66, ::hyde::rt::Vector<StorageT, uint64_t, uint64_t> vec_68, ::hyde::rt::Vector<StorageT, uint64_t> vec_83, ::hyde::rt::Vector<StorageT, uint64_t> vec_97) {
+    bool flow_262_(::hyde::rt::Vector<StorageT, uint64_t, uint64_t> vec_58, ::hyde::rt::Vector<StorageT, uint64_t> vec_61, ::hyde::rt::Vector<StorageT, uint64_t, uint64_t> vec_63, ::hyde::rt::Vector<StorageT, uint64_t> vec_78, ::hyde::rt::Vector<StorageT, uint64_t> vec_92) {
+      ::hyde::rt::Vector<StorageT, uint64_t, uint64_t> vec_59(storage, 59u);
+      ::hyde::rt::Vector<StorageT, uint64_t, uint64_t> vec_60(storage, 60u);
+      ::hyde::rt::Vector<StorageT, uint64_t> vec_62(storage, 62u);
       ::hyde::rt::Vector<StorageT, uint64_t, uint64_t> vec_64(storage, 64u);
-      ::hyde::rt::Vector<StorageT, uint64_t, uint64_t> vec_65(storage, 65u);
-      ::hyde::rt::Vector<StorageT, uint64_t> vec_67(storage, 67u);
-      ::hyde::rt::Vector<StorageT, uint64_t, uint64_t> vec_69(storage, 69u);
-      var_53 += 1;
-      vec_83.SortAndUnique();
-      for (auto [var_99] : vec_83) {
-        ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<36>> scan_98_0(storage, table_34, var_99);
-        ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<100>> scan_98_1(storage, table_37, var_99);
-        for (auto [var_102] : scan_98_0) {
-          for (auto [var_101, var_103] : scan_98_1) {
-            if (std::make_tuple(var_99, var_99) == std::make_tuple(var_101, var_102)) {
-              if (table_41.TryChangeTupleFromAbsentToPresent(var_103)) {
-                vec_97.Add(var_103);
+      var_48 += 1;
+      vec_78.SortAndUnique();
+      for (auto [var_94] : vec_78) {
+        printf("var_94 = %" PRIu64 "\n", var_94);
+        ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<35>> scan_93_0(storage, table_33, var_94);
+        ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<95>> scan_93_1(storage, table_29, var_94);
+        for (auto [var_97] : scan_93_0) {
+          for (auto [var_96, var_98] : scan_93_1) {
+            if (std::make_tuple(var_94, var_94) == std::make_tuple(var_96, var_97)) {
+              if (table_36.TryChangeTupleFromAbsentToPresent(var_98)) {
+                vec_92.Add(var_98);
               }
             }
           }
         }
       }
-      vec_83.Clear();
-      vec_97.SortAndUnique();
-      for (auto [var_105] : vec_97) {
-        ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<43>> scan_104_0(storage, table_41, var_105);
-        ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<36>> scan_104_1(storage, table_34, var_105);
-        for (auto [var_107] : scan_104_0) {
-          for (auto [var_106] : scan_104_1) {
-            if (std::make_tuple(var_105, var_105) == std::make_tuple(var_106, var_107)) {
-              if (table_15.TryChangeTupleFromAbsentToPresent(var_107)) {
-                if (table_26.TryChangeTupleFromAbsentOrUnknownToPresent(var_107)) {
-                  if (table_18.TryChangeTupleFromAbsentOrUnknownToPresent(var_107, var_107)) {
-                    if (table_7.TryChangeTupleFromAbsentOrUnknownToPresent(var_107, var_107)) {
-                      vec_63.Add(var_107, var_107);
+      vec_78.Clear();
+      vec_92.SortAndUnique();
+      printf("? vec_92 = %lu\n", vec_92.Size());
+      for (auto [var_100] : vec_92) {
+        printf("var_100=%" PRIu64 "\n", var_100);
+        ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<38>> scan_99_0(storage, table_36, var_100);
+        ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<35>> scan_99_1(storage, table_33, var_100);
+        for (auto [var_102] : scan_99_0) {
+          printf("var_102=%" PRIu64 "\n", var_102);
+          for (auto [var_101] : scan_99_1) {
+            printf("var_101=%" PRIu64 "\n", var_101);
+            if (std::make_tuple(var_100, var_100) == std::make_tuple(var_101, var_102)) {
+              if (table_15.TryChangeTupleFromAbsentToPresent(var_102)) {
+                if (table_26.TryChangeTupleFromAbsentOrUnknownToPresent(var_102)) {
+                  if (table_18.TryChangeTupleFromAbsentOrUnknownToPresent(var_102, var_102)) {
+                    if (table_7.TryChangeTupleFromAbsentOrUnknownToPresent(var_102, var_102)) {
+                      vec_58.Add(var_102, var_102);
+
+                      printf("Adding var_102=%" PRIu64 " var_102 to vec_58\n", var_102);
                     }
                   }
                   {
-                    ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<71>> scan_109(storage, table_22, var_107);
-                    for (auto [var_110, var_111] : scan_109) {
-                      if (std::make_tuple(var_110) == std::make_tuple(var_107)) {
-                        if (find_75_(var_110, var_111)) {
-                          vec_68.Add(var_110, var_111);
+                    ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<66>> scan_104(storage, table_22, var_102);
+                    for (auto [var_105, var_106] : scan_104) {
+                      if (std::make_tuple(var_105) == std::make_tuple(var_102)) {
+                        if (find_70_(var_105, var_106)) {
+                          vec_63.Add(var_105, var_106);
                         }
                       }
                     }
@@ -1282,35 +1222,35 @@ class Database {
           }
         }
       }
-      vec_97.Clear();
+      vec_92.Clear();
       // set 0 depth 1
       // set 0 depth 1
-      for (auto changed_62 = true; changed_62; changed_62 = !!(vec_63.Size() | vec_66.Size() | vec_68.Size())) {
+      for (auto changed_57 = true; changed_57; changed_57 = !!(vec_58.Size() | vec_61.Size() | vec_63.Size())) {
         DumpStats();
         if constexpr (true) {
-          fprintf(stderr, "vec_63 = %" PRIu64 " vec_66 = %" PRIu64 " vec_68 = %" PRIu64 "\n", vec_63.Size(), vec_66.Size(), vec_68.Size());
+          fprintf(stderr, "vec_58 = %" PRIu64 " vec_61 = %" PRIu64 " vec_63 = %" PRIu64 "\n", vec_58.Size(), vec_61.Size(), vec_63.Size());
         }
 
-        vec_64.Clear();
-        vec_63.SortAndUnique();
-        vec_63.Swap(vec_64);
-        for (auto [var_115, var_116] : vec_64) {
-          switch (table_7.GetState(var_115, var_116)) {
+        vec_59.Clear();
+        vec_58.SortAndUnique();
+        vec_58.Swap(vec_59);
+        for (auto [var_110, var_111] : vec_59) {
+          switch (table_7.GetState(var_110, var_111)) {
             case ::hyde::rt::TupleState::kAbsent: break;
             case ::hyde::rt::TupleState::kPresent: {
-              vec_65.Add(var_115, var_116);
-              vec_66.Add(var_116);
+              vec_60.Add(var_110, var_111);
+              vec_61.Add(var_111);
               break;
             }
             case ::hyde::rt::TupleState::kUnknown: {
-              vec_65.Add(var_115, var_116);
+              vec_60.Add(var_110, var_111);
               {
-                ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<145>> scan_146(storage, table_11, var_116);
-                for (auto [var_147, var_148] : scan_146) {
-                  if (std::make_tuple(var_147) == std::make_tuple(var_116)) {
-                    if (table_44.TryChangeTupleFromPresentToUnknown(var_147, var_115, var_148)) {
-                      if (table_22.TryChangeTupleFromPresentToUnknown(var_148, var_115)) {
-                        vec_68.Add(var_148, var_115);
+                ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<140>> scan_141(storage, table_11, var_111);
+                for (auto [var_142, var_143] : scan_141) {
+                  if (std::make_tuple(var_142) == std::make_tuple(var_111)) {
+                    if (table_39.TryChangeTupleFromPresentToUnknown(var_142, var_110, var_143)) {
+                      if (table_22.TryChangeTupleFromPresentToUnknown(var_143, var_110)) {
+                        vec_63.Add(var_143, var_110);
                       }
                     }
                   }
@@ -1320,23 +1260,23 @@ class Database {
             }
           }
         }
-        vec_67.Clear();
-        vec_66.SortAndUnique();
-        vec_66.Swap(vec_67);
-        for (auto [var_152] : vec_67) {
-          ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<145>> scan_151_0(storage, table_11, var_152);
-          ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<153>> scan_151_1(storage, table_7, var_152);
-          for (auto [var_155, var_157] : scan_151_0) {
-            for (auto [var_156, var_154] : scan_151_1) {
-              if (std::make_tuple(var_152, var_152) == std::make_tuple(var_154, var_155)) {
-                switch (table_7.GetState(var_156, var_155)) {
+        vec_62.Clear();
+        vec_61.SortAndUnique();
+        vec_61.Swap(vec_62);
+        for (auto [var_147] : vec_62) {
+          ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<140>> scan_146_0(storage, table_11, var_147);
+          ::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<148>> scan_146_1(storage, table_7, var_147);
+          for (auto [var_150, var_152] : scan_146_0) {
+            for (auto [var_151, var_149] : scan_146_1) {
+              if (std::make_tuple(var_147, var_147) == std::make_tuple(var_149, var_150)) {
+                switch (table_7.GetState(var_151, var_150)) {
                   case ::hyde::rt::TupleState::kAbsent: break;
                   case ::hyde::rt::TupleState::kPresent: {
-                    if (table_44.TryChangeTupleFromAbsentOrUnknownToPresent(var_155, var_156, var_157)) {
-                      if (table_22.TryChangeTupleFromAbsentOrUnknownToPresent(var_157, var_156)) {
-                        if (find_79_(var_157)) {
+                    if (table_39.TryChangeTupleFromAbsentOrUnknownToPresent(var_150, var_151, var_152)) {
+                      if (table_22.TryChangeTupleFromAbsentOrUnknownToPresent(var_152, var_151)) {
+                        if (find_74_(var_152)) {
                         } else {
-                          vec_68.Add(var_157, var_156);
+                          vec_63.Add(var_152, var_151);
                         }
                       }
                     }
@@ -1348,35 +1288,35 @@ class Database {
             }
           }
         }
-        vec_67.Clear();
-        vec_69.Clear();
-        vec_68.SortAndUnique();
-        vec_68.Swap(vec_69);
-        for (auto [var_131, var_132] : vec_69) {
-          if (find_133_(var_131, var_132)) {
-            if (table_7.TryChangeTupleFromAbsentOrUnknownToPresent(var_132, var_131)) {
-              vec_63.Add(var_132, var_131);
+        vec_62.Clear();
+        vec_64.Clear();
+        vec_63.SortAndUnique();
+        vec_63.Swap(vec_64);
+        for (auto [var_126, var_127] : vec_64) {
+          if (find_128_(var_126, var_127)) {
+            if (table_7.TryChangeTupleFromAbsentOrUnknownToPresent(var_127, var_126)) {
+              vec_58.Add(var_127, var_126);
             }
           } else {
-            if (table_7.TryChangeTupleFromPresentToUnknown(var_132, var_131)) {
-              vec_63.Add(var_132, var_131);
+            if (table_7.TryChangeTupleFromPresentToUnknown(var_127, var_126)) {
+              vec_58.Add(var_127, var_126);
             }
           }
         }
       }
       // set 0 depth 1
-      vec_63.Clear();
-      vec_64.Clear();
-      vec_65.SortAndUnique();
-      for (auto [var_121, var_122] : vec_65) {
-        if (find_123_(var_121, var_122)) {
+      vec_58.Clear();
+      vec_59.Clear();
+      vec_60.SortAndUnique();
+      for (auto [var_116, var_117] : vec_60) {
+        if (find_118_(var_116, var_117)) {
         }
       }
-      vec_66.Clear();
-      vec_67.Clear();
-      vec_68.Clear();
-      vec_69.Clear();
-      vec_65.Clear();
+      vec_61.Clear();
+      vec_62.Clear();
+      vec_63.Clear();
+      vec_64.Clear();
+      vec_60.Clear();
       return true;
       assert(false);
       return false;
@@ -1386,9 +1326,6 @@ class Database {
 
 }  // namespace database
 
-#ifndef __DRLOJEKYLL_EPILOGUE_CODE_Database
-#  define __DRLOJEKYLL_EPILOGUE_CODE_Database
-#endif  // __DRLOJEKYLL_EPILOGUE_CODE_Database
 #endif
 
 

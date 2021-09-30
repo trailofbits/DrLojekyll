@@ -151,8 +151,8 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
   auto has_val = false;
   if (val) {
     if (auto lit = val->Literal()) {
-      if (auto spelling = lit->Spelling(Language::kCxx); spelling) {
-        value << *spelling;
+      if (auto spelling_cxx = lit->Spelling(Language::kCxx)) {
+        value << *spelling_cxx;
         has_val = true;
       }
     }

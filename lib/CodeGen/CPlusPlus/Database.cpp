@@ -615,7 +615,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os.PushIndent();
 
     os << os.Indent() << "DumpStats();\n"
-       << os.Indent() << "if constexpr (true) {\n";
+       << os.Indent() << "if constexpr (false) {\n";
     os.PushIndent();
     os << os.Indent() << "fprintf(stderr, \"";
 
