@@ -16,7 +16,7 @@ compile_datalog(
 )
 
 add_executable(mini_disassembler_standalone
-  Main.cpp)
+  Standalone.cpp)
   
 target_link_libraries(mini_disassembler_standalone PUBLIC gtest gtest_main PRIVATE mini_disassembler)
 

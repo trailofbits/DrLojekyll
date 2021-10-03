@@ -250,7 +250,8 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
   os << os.Indent() << "}\n\n"
      << os.Indent() << "if (gLog) {\n";
   os.PushIndent();
-  os << os.Indent() << "std::cerr << \"Client '\" << outbox.name << \"' connected\" << std::endl;\n";
+  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
+     << os.Indent() << "std::cerr << \"Client '\" << outbox.name << \"' connected\" << std::endl;\n";
   os.PopIndent();
   os << os.Indent() << "}\n\n"
      << os.Indent() << "alignas(64) std::vector<std::shared_ptr<flatbuffers::grpc::Message<OutputMessage>>> messages;\n"
@@ -285,7 +286,8 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
   os << os.Indent() << "}\n\n"
      << os.Indent() << "if (gLog) {\n";
   os.PushIndent();
-  os << os.Indent() << "std::cerr << \"Sending \" << messages.size() << \" outputs to client '\" << outbox.name << \"'\" << std::endl;\n";
+  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
+     << os.Indent() << "std::cerr << \"Sending \" << messages.size() << \" outputs to client '\" << outbox.name << \"'\" << std::endl;\n";
   os.PopIndent();
 
   os << os.Indent() << "}\n\n"
@@ -307,12 +309,18 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
   os << os.Indent() << "{\n";
   os.PushIndent();
   os << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
+     << os.Indent() << "if (outbox.next) {\n";
+  os.PushIndent();
+  os << os.Indent() << "outbox.next->prev_next = outbox.prev_next;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n"
      << os.Indent() << "*(outbox.prev_next) = outbox.next;\n";
   os.PopIndent();
   os << os.Indent() << "}\n"  // End of unlink.
      << os.Indent() << "if (gLog) {\n";
   os.PushIndent();
-  os << os.Indent() << "std::cerr << \"Client '\" << outbox.name << \"' disconnected\" << std::endl;\n";
+  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
+     << os.Indent() << "std::cerr << \"Client '\" << outbox.name << \"' disconnected\" << std::endl;\n";
   os.PopIndent();
   os << os.Indent() << "}\n\n"
      << os.Indent() << "return grpc::Status::OK;\n";
@@ -405,7 +413,8 @@ static void DefinePublishMethod(const std::vector<ParsedMessage> &messages,
   os.PushIndent();
   os << os.Indent() << "if (gLog) {\n";
   os.PushIndent();
-  os << os.Indent() << "std::cerr << \"Received \" << size << \" messages\" << std::endl;\n";
+  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
+     << os.Indent() << "std::cerr << \"Received \" << size << \" messages\" << std::endl;\n";
   os.PopIndent();
 
   os << os.Indent() << "}\n\n"
@@ -675,7 +684,8 @@ static void DefineDatabaseThread(const std::vector<ParsedMessage> &messages,
   os << os.Indent() << "total_num_applied += input->Size();\n"
      << os.Indent() << "if (gLog) {\n";
   os.PushIndent();
-  os << os.Indent() << "std::cerr << \"Applying \" << input->Size() << \" messages to the database\" << std::endl;\n";
+  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
+     << os.Indent() << "std::cerr << \"Applying \" << input->Size() << \" messages to the database\" << std::endl;\n";
   os.PopIndent();
 
   os << os.Indent() << "}\n\n"
@@ -686,7 +696,8 @@ static void DefineDatabaseThread(const std::vector<ParsedMessage> &messages,
      << os.Indent() << "inputs.clear();\n"
      << os.Indent() << "if (gLog) {\n";
   os.PushIndent();
-  os << os.Indent() << "std::cerr << \"Applied \" << total_num_applied << \" messages to the database\" << std::endl;\n";
+  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
+     << os.Indent() << "std::cerr << \"Applied \" << total_num_applied << \" messages to the database\" << std::endl;\n";
   os.PopIndent();
 
   os << os.Indent() << "}\n\n"
@@ -696,7 +707,8 @@ static void DefineDatabaseThread(const std::vector<ParsedMessage> &messages,
   os.PushIndent();
   os << os.Indent() << "if (gLog) {\n";
   os.PushIndent();
-  os << os.Indent() << "std::cerr << \"Sending updates to client subscriber '\" << outbox->name << \"'\" << std::endl;\n";
+  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
+     << os.Indent() << "std::cerr << \"Sending updates to client subscriber '\" << outbox->name << \"'\" << std::endl;\n";
   os.PopIndent();
   os << os.Indent() << "}\n\n"
      << os.Indent() << "std::unique_lock<std::mutex> outbox_locker(outbox->messages_lock);\n"
@@ -751,7 +763,8 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
      << "#include \"" << file_name << ".grpc.fb.h\"\n"
      << "#include \"" << file_name << ".interface.h\"\n"
      << "#include \"" << file_name << ".db.h\"\n\n"
-     << "static bool gLog = false;\n\n";
+     << "static bool gLog = false;\n"
+     << "static std::mutex gLogLock;\n\n";
 
   auto queries = Queries(module);
   auto messages = Messages(module);

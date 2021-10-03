@@ -30,7 +30,7 @@ class BackendConnection {
 
   // Send data to the backend.
   bool Publish(const grpc::internal::RpcMethod &method,
-               grpc_slice data) const;
+               const grpc_slice &data) const;
 
  public:
   ~BackendConnection(void);

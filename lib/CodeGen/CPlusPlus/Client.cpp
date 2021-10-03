@@ -466,8 +466,7 @@ void GenerateClientImpl(Program program, ParsedModule module,
   os << os.Indent() << "if (messages.HasAnyMessages()) {\n";
   os.PushIndent();
   os << os.Indent() << "auto message = messages.Build();\n"
-     << os.Indent() << "auto buff = message.BorrowSlice();\n"
-     << os.Indent() << "return this->hyde::rt::BackendConnection::Publish(method_Publish, buff);\n";
+     << os.Indent() << "return this->hyde::rt::BackendConnection::Publish(method_Publish, message.BorrowSlice());\n";
   os.PopIndent();  // if
   os << os.Indent() << "}\n"
      << os.Indent() << "return false;\n";

@@ -13,6 +13,9 @@ namespace rt {
 template <typename T>
 class BackendResult {
  private:
+  template <typename>
+  friend class BackendResultStreamIterator;
+
   grpc_slice message;
 
   inline BackendResult(grpc_slice message_)

@@ -35,13 +35,15 @@ class BackendResultStreamIterator {
   std::shared_ptr<BackendResultStreamImpl> impl;
   grpc_slice message;
 
-  BackendResultStreamIterator(void) = delete;
   BackendResultStreamIterator(
       const BackendResultStreamIterator<Response> &) = delete;
   BackendResultStreamIterator<Response> &operator=(
       const BackendResultStreamIterator<Response> &) = delete;
 
  public:
+
+  BackendResultStreamIterator(void)
+      : message(grpc_empty_slice()) {}
 
   BackendResultStreamIterator(
       BackendResultStreamIterator<Response> &&that) noexcept
@@ -61,11 +63,13 @@ class BackendResultStreamIterator {
 
   ~BackendResultStreamIterator(void) {
     grpc_slice_unref(message);
+    message = grpc_empty_slice();
   }
 
   // Implicit construction from an opaque stream.
   BackendResultStreamIterator(
-      const std::shared_ptr<BackendResultStreamImpl> &impl_) {
+      const std::shared_ptr<BackendResultStreamImpl> &impl_)
+    : message(grpc_empty_slice()) {
     if (internal::NextOpaque(*impl_, message)) {
       assert(flatbuffers::Verifier(
           GRPC_SLICE_START_PTR(message),
@@ -79,18 +83,8 @@ class BackendResultStreamIterator {
         GRPC_SLICE_START_PTR(message)));
   }
 
-  inline Response &operator*(void) noexcept {
-    return *(flatbuffers::GetMutableRoot<Response>(
-        GRPC_SLICE_START_PTR(message)));
-  }
-
   inline const Response *operator->(void) const noexcept {
     return flatbuffers::GetRoot<Response>(
-        GRPC_SLICE_START_PTR(message));
-  }
-
-  inline Response *operator->(void) noexcept {
-    return flatbuffers::GetMutableRoot<Response>(
         GRPC_SLICE_START_PTR(message));
   }
 
