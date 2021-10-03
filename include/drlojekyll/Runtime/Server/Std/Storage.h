@@ -5,7 +5,7 @@
 #include <memory>
 #include <unordered_set>
 
-#include <drlojekyll/Runtime/Runtime.h>
+#include <drlojekyll/Runtime/Server/Runtime.h>
 
 namespace hyde {
 namespace rt {

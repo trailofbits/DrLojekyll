@@ -1578,7 +1578,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << "/* Auto-generated file */\n\n"
      << "#pragma once\n\n"
-     << "#include <drlojekyll/Runtime/Runtime.h>\n\n"
+     << "#include <drlojekyll/Runtime/Server/Runtime.h>\n\n"
      << "#ifndef __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n"
      << "#  define __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n";
   const auto module = program.ParsedModule();

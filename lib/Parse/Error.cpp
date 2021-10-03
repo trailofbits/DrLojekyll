@@ -368,6 +368,7 @@ void Error::Render(std::ostream &os,
         if (print_line) {
           ss << '\n';
           BeginColor(ss, color_scheme.line_color);
+          assert(line_num != 4294967295u);
           ss << std::setfill(' ') << std::setw(8) << line_num << " | ";
           print_line = false;
           ++line_num;

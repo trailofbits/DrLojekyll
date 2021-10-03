@@ -264,19 +264,31 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
   os.PushIndent();
   os << os.Indent() << "gFirstOutbox->prev_next = &(outbox.next);\n";
   os.PopIndent();
-  os << os.Indent() << "}\n";  // gFirstOutbox
+  os << os.Indent() << "}\n"  // gFirstOutbox
+     << os.Indent() << "gFirstOutbox = &outbox;\n";
   os.PopIndent();
   os << os.Indent() << "}\n\n";  // Link it in.
 
   // Busy loop.
   os << os.Indent() << "for (auto failed = false; !failed && !context->IsCancelled(); ) {\n";
   os.PushIndent();
-  os << os.Indent() << "if (outbox.messages_sem.waitMany(4)) {\n";
+  os << os.Indent() << "if (outbox.messages_sem.wait()) {\n";
   os.PushIndent();
   os << os.Indent() << "std::unique_lock<std::mutex> locker(outbox.messages_lock);\n"
      << os.Indent() << "messages.swap(outbox.messages);\n";
   os.PopIndent();
-  os << os.Indent() << "}\n\n"  // waitMany
+  os << os.Indent() << "}\n\n"  // wait
+     << os.Indent() << "if (messages.empty()) {\n";
+  os.PushIndent();
+  os << os.Indent() << "continue;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n\n"
+     << os.Indent() << "if (gLog) {\n";
+  os.PushIndent();
+  os << os.Indent() << "std::cerr << \"Sending \" << messages.size() << \" outputs to client '\" << outbox.name << \"'\" << std::endl;\n";
+  os.PopIndent();
+
+  os << os.Indent() << "}\n\n"
      << os.Indent() << "for (const auto &message : messages) {\n";
   os.PushIndent();
   os << os.Indent() << "if (!writer->Write(*message)) {\n";
@@ -297,9 +309,13 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
   os << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
      << os.Indent() << "*(outbox.prev_next) = outbox.next;\n";
   os.PopIndent();
-  os << os.Indent() << "}\n";  // End of unlink.
-
-  os << os.Indent() << "return grpc::Status::OK;\n";
+  os << os.Indent() << "}\n"  // End of unlink.
+     << os.Indent() << "if (gLog) {\n";
+  os.PushIndent();
+  os << os.Indent() << "std::cerr << \"Client '\" << outbox.name << \"' disconnected\" << std::endl;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n\n"
+     << os.Indent() << "return grpc::Status::OK;\n";
   os.PopIndent();
   os << "}";  // End of Subscribe.
 }
@@ -404,7 +420,7 @@ static void DefinePublishMethod(const std::vector<ParsedMessage> &messages,
   os << os.Indent() << "}";
 }
 
-// Define the `Build` method of the `FlatBufferMessageBuilder` class, which
+// Define the `Build` method of the `PublishedMessageBuilder` class, which
 // goes and packages up all messages into flatbuffer vectors and into
 // added/removed messages. Normally, the offsets to the messages-to-be-published
 // are held in `std::vector`s.
@@ -426,15 +442,15 @@ static void DefineDatabaseLogBuild(const std::vector<ParsedMessage> &messages,
   os.PushIndent();
 
   auto do_message = [&os] (ParsedMessage message, const char *suffix) {
-    os << os.Indent() << "flatbuffers::Offset<Message_"
-       << message.Name() << "_" << message.Arity() << "> "
-       << message.Name() << "_" << message.Arity() << "_added_offset;\n"
+    os << os.Indent() << "flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<Message_"
+       << message.Name() << "_" << message.Arity() << ">>> "
+       << message.Name() << "_" << message.Arity() << suffix << "_offset;\n"
        << os.Indent() << "if (!" << message.Name() << "_"
        << message.Arity() << suffix << ".empty()) {\n";
     os.PushIndent();
 
     os << os.Indent() << "" << message.Name() << "_"
-       << message.Arity() << suffix << "_offset = flatbuffers::CreateVector<Message_"
+       << message.Arity() << suffix << "_offset = mb.CreateVector<Message_"
        << message.Name() << "_" << message.Arity() << ">("
        << message.Name() << "_" << message.Arity() << suffix << ".data(), "
        << message.Name() << "_" << message.Arity() << suffix << ".size());\n"
@@ -507,14 +523,14 @@ static void DefineDatabaseLogBuild(const std::vector<ParsedMessage> &messages,
   os << os.Indent() << "}";
 }
 
-// Define the `FlatBufferMessageBuilder` class, which has one method per
+// Define the `PublishedMessageBuilder` class, which has one method per
 // published message. The role of this message builder is to accumulate
 // messages into a flatbuffer to be published to all connected clients.
 static void DefineDatabaseLog(ParsedModule module,
                               const std::vector<ParsedMessage> &messages,
                               OutputStream &os) {
 
-  os << "class FlatBufferMessageBuilder final {\n";
+  os << "class PublishedMessageBuilder final {\n";
   os.PushIndent();
   os << os.Indent() << "private:\n";
   os.PushIndent();
@@ -642,12 +658,17 @@ static void DefineDatabaseThread(const std::vector<ParsedMessage> &messages,
      << os.Indent() << "inputs.reserve(128);\n"
      << os.Indent() << "while (true) {\n";
   os.PushIndent();
-  os << os.Indent() << "if (gInputMessagesSemaphore.waitMany(4)) {\n";
+  os << os.Indent() << "if (gInputMessagesSemaphore.wait()) {\n";
   os.PushIndent();
   os << os.Indent() << "std::unique_lock<std::mutex> locker(gInputMessagesLock);\n"
      << os.Indent() << "inputs.swap(gInputMessages);\n";
   os.PopIndent();
-  os << os.Indent() << "}\n"  // waitMany
+  os << os.Indent() << "}\n"  // wait
+     << os.Indent() << "if (inputs.empty()) {\n";
+  os.PushIndent();
+  os << os.Indent() << "continue;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n\n"
      << os.Indent() << "uint64_t total_num_applied = 0u;\n"
      << os.Indent() << "for (const auto &input : inputs) {\n";
   os.PushIndent();
@@ -669,15 +690,13 @@ static void DefineDatabaseThread(const std::vector<ParsedMessage> &messages,
   os.PopIndent();
 
   os << os.Indent() << "}\n\n"
-     << os.Indent() << "if (gDatabaseLog.HasAnyMessages()) {\n";
-  os.PushIndent();
-  os << os.Indent() << "auto output = std::make_shared<flatbuffers::grpc::Message<OutputMessage>>(gDatabaseLog.Build());\n"
+     << os.Indent() << "auto output = std::make_shared<flatbuffers::grpc::Message<OutputMessage>>(gDatabaseLog.Build());\n"
      << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
      << os.Indent() << "for (auto outbox = gFirstOutbox; outbox;) {\n";
   os.PushIndent();
   os << os.Indent() << "if (gLog) {\n";
   os.PushIndent();
-  os << os.Indent() << "  std::cerr << \"Sending updates to client '\" << outbox->name << \"'\" << std::endl;\n";
+  os << os.Indent() << "std::cerr << \"Sending updates to client subscriber '\" << outbox->name << \"'\" << std::endl;\n";
   os.PopIndent();
   os << os.Indent() << "}\n\n"
      << os.Indent() << "std::unique_lock<std::mutex> outbox_locker(outbox->messages_lock);\n"
@@ -686,8 +705,6 @@ static void DefineDatabaseThread(const std::vector<ParsedMessage> &messages,
      << os.Indent() << "outbox = outbox->next;\n";
   os.PopIndent();
   os << os.Indent() << "}\n";  // for
-  os.PopIndent();
-  os << os.Indent() << "}\n";  // HasAnyMessages
 
   os.PopIndent();
   os << os.Indent() << "}\n";  // while true
@@ -712,7 +729,7 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
      << "#include <string>\n"
      << "#include <thread>\n"
      << "#include <vector>\n\n"
-     << "#include <drlojekyll/Runtime/StdRuntime.h>\n\n";
+     << "#include <drlojekyll/Runtime/Server/Std/Runtime.h>\n\n";
 
   const auto module = program.ParsedModule();
   const auto db_name = module.DatabaseName();
@@ -760,11 +777,11 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
      << "static std::vector<std::unique_ptr<DatabaseInputMessageType>> gInputMessages;\n"
      << "static std::mutex gInputMessagesLock;\n"
      << "static moodycamel::LightweightSemaphore gInputMessagesSemaphore;\n"
-     << "static FlatBufferMessageBuilder gDatabaseLog;\n"
+     << "static PublishedMessageBuilder gDatabaseLog;\n"
      << "static DatabaseStorageType gStorage;\n"
      << "static std::shared_mutex gDatabaseLock;\n"
      << "static DatabaseFunctors gFunctors;\n"
-     << "static Database<DatabaseStorageType, FlatBufferMessageBuilder> gDatabase(\n"
+     << "static Database<DatabaseStorageType, PublishedMessageBuilder> gDatabase(\n"
      << "    gStorage, gDatabaseLog, gFunctors);\n";
 
   // Define the query methods out-of-line.

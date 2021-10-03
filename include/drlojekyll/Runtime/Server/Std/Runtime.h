@@ -7,10 +7,10 @@
 #include <tuple>
 #include <vector>
 
-#include <drlojekyll/Runtime/Runtime.h>
-#include <drlojekyll/Runtime/StdTable.h>
-#include <drlojekyll/Runtime/StdScan.h>
-#include <drlojekyll/Runtime/StdVector.h>
+#include <drlojekyll/Runtime/Server/Runtime.h>
+#include <drlojekyll/Runtime/Server/Std/Table.h>
+#include <drlojekyll/Runtime/Server/Std/Scan.h>
+#include <drlojekyll/Runtime/Server/Std/Vector.h>
 
 namespace hyde {
 namespace rt {

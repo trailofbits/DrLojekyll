@@ -2,7 +2,7 @@
 
 #include <gtest/gtest.h>
 
-#include <drlojekyll/Runtime/StdRuntime.h>
+#include <drlojekyll/Runtime/Server/Std/Runtime.h>
 #include <algorithm>
 #include <vector>
 #include <iomanip>

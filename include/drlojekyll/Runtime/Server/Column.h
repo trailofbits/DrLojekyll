@@ -3,6 +3,7 @@
 #pragma once
 
 #include "Serializer.h"
+#include "Util.h"
 
 namespace hyde {
 namespace rt {

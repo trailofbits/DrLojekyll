@@ -19,20 +19,6 @@ namespace hyde {
 namespace flat {
 namespace {
 
-template <typename T>
-static const char *TableOrStruct(T range) {
-  for (auto val : range) {
-    switch (val.Type().UnderlyingKind()) {
-      case TypeKind::kBytes:
-      case TypeKind::kForeignType:
-        return "table";
-      default:
-        break;
-    }
-  }
-  return "struct";
-}
-
 static void DeclareType(ParsedModule module, TypeLoc type,
                         OutputStream &os) {
   switch (type.UnderlyingKind()) {
@@ -70,7 +56,7 @@ static void DeclareType(ParsedModule module, TypeLoc type,
 //                         OutputStream &os) {
 //
 //  auto cols = table.Columns();
-//  os << os.Indent() << TableOrStruct(cols) << " Table" << table.Id() << " {\n";
+//  os << os.Indent() << "table Table" << table.Id() << " {\n";
 //  os.PushIndent();
 //
 //  for (DataColumn col : cols) {
@@ -153,9 +139,7 @@ static void DeclareMessages(ParsedModule module,
 
     ParsedDeclaration decl(message);
 
-    auto params = decl.Parameters();
-
-    os << os.Indent() << TableOrStruct(params) << ' ';
+    os << os.Indent() << "table ";
     if (message.IsReceived()) {
       os << "Message_";
     } else {

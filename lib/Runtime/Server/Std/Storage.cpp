@@ -1,6 +1,6 @@
 // Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
-#include <drlojekyll/Runtime/StdStorage.h>
+#include <drlojekyll/Runtime/Server/Std/Storage.h>
 
 namespace hyde {
 namespace rt {
