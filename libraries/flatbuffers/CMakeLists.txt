@@ -53,9 +53,13 @@ if(NOT library_root)
   message(FATAL_ERROR "Failed to locate the flatbuffers library root")
 endif()
 
-set(replacement_file_list
+
+set(removed_file_list
   # Removed, because there is no matching file under "${CMAKE_CURRENT_SOURCE_DIR}/patches"
   flatc_main.cpp
+)
+
+set(replacement_file_list
 
   # Added, because it does not exist in the original target
   disable_logger.cpp
@@ -137,13 +141,17 @@ foreach(property_name ${property_name_list})
   elseif(property_name STREQUAL "SOURCES")
     foreach(source_file_path ${property_value})
       get_filename_component(source_file_name "${source_file_path}" NAME)
-      if("${source_file_name}" IN_LIST replacement_file_list)
+      if("${source_file_name}" IN_LIST removed_file_list)
         continue()
       endif()
-
-      target_sources(flatc_internals "${property_scope}"
-        "${library_root}/${source_file_path}"
-      )
+      if("${source_file_name}" IN_LIST replacement_file_list)
+        target_sources(flatc_internals "${property_scope}"
+          "${CMAKE_CURRENT_SOURCE_DIR}/patches/${source_file_name}")
+      else()
+        target_sources(flatc_internals "${property_scope}"
+          "${library_root}/${source_file_path}"
+        )
+      endif()
     endforeach()
   endif()
 endforeach()
