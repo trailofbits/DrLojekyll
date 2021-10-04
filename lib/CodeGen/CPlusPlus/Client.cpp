@@ -31,8 +31,8 @@ static bool AllParametersAreBound(ParsedDeclaration decl) {
 // goes and packages up all messages into flatbuffer vectors and into
 // added/removed messages. Normally, the offsets to the messages-to-be-published
 // are held in `std::vector`s.
-static void DefineDatabaseLogBuild(const std::vector<ParsedMessage> &messages,
-                                   OutputStream &os) {
+static void DefineBuilderBuilder(const std::vector<ParsedMessage> &messages,
+                                 OutputStream &os) {
   auto has_added = false;
   auto has_removed = false;
   for (ParsedMessage message : messages) {
@@ -133,9 +133,9 @@ static void DefineDatabaseLogBuild(const std::vector<ParsedMessage> &messages,
 // Define the `DatalogMessageBuilder` class, which has one method per
 // received message. The role of this message builder is to accumulate
 // messages into a flatbuffer to be sent to the backend.
-static void DefineDatabaseLog(ParsedModule module,
-                              const std::vector<ParsedMessage> &messages,
-                              OutputStream &os) {
+static void DefineMessageBuilder(ParsedModule module,
+                                 const std::vector<ParsedMessage> &messages,
+                                 OutputStream &os) {
 
   os << "class DatalogMessageBuilder final {\n";
   os.PushIndent();
@@ -188,7 +188,7 @@ static void DefineDatabaseLog(ParsedModule module,
   os.PopIndent();
   os << os.Indent() << "}\n\n";
 
-  DefineDatabaseLogBuild(messages, os);
+  DefineBuilderBuilder(messages, os);
 
   // Define the message logging function for each message.
   for (ParsedMessage message : messages) {
@@ -262,6 +262,38 @@ static void DefineDatabaseLog(ParsedModule module,
   os << "\n};\n\n";
 }
 
+//// Define the `DatalogMessageVisitor` class, which has one method per
+//// received message. The role of this message visitor is to call methods for
+//// each received message.
+//static void DefineMessageVisitor(ParsedModule module,
+//                                 const std::vector<ParsedMessage> &messages,
+//                                 OutputStream &os) {
+//
+//  os << "class DatalogMessageVisitor final {\n";
+//  os.PushIndent();
+//  os << os.Indent() << "public:\n";
+//  os.PushIndent();
+//
+//  // Create vectors for holding offsets.
+//  bool has_differential = false;
+//  for (ParsedMessage message : messages) {
+//    if (!message.IsPublished()) {
+//      continue;
+//    }
+//
+//    ParsedDeclaration decl(message);
+//
+//    os << os.Indent() << "inline void " << decl.Name() << "_" << decl.Arity()
+//       << "(std::shared_ptr<Message_" << decl.Name() << "_"
+//       << decl.Arity() << ">";
+//
+//    if (message.IsDifferential()) {
+//      os << ", bool added";
+//    }
+//    os << ") {}\n";
+//  }
+//}
+
 static void DeclareQuery(ParsedModule module, ParsedQuery query,
                          OutputStream &os, const char *prefix) {
   ParsedDeclaration decl(query);
@@ -319,7 +351,7 @@ void GenerateClientHeader(Program program, ParsedModule module,
   }
 
   // Declare the message builder, which accumulates messages for publication.
-  DefineDatabaseLog(module, messages, os);
+  DefineMessageBuilder(module, messages, os);
 
   // Declare the client interface to the database.
   os << "class DatalogClientImpl;\n"

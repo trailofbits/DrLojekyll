@@ -6,8 +6,10 @@
 
 #include "database.client.h"  // Auto-generated.
 
-template <typename DB, typename Updates>
-void dump(DB &db, Updates &updates, bool wait=true) {
+template <typename DB>
+void dump(DB &db,
+          ::hyde::rt::BackendResultStream<database::OutputMessage> &updates,
+          bool wait=true) {
   if (wait) {
 
     // Pluck one update off of what the server published.
