@@ -78,7 +78,7 @@ static void DeclareQuery(ParsedQuery query, OutputStream &os, bool out_of_line) 
     os << os.Indent() << "flatbuffers::grpc::Message<"
        << query.Name() << "_" << query.Arity() << "> *response";
   } else {
-    os << os.Indent() << "::grpc::ServerWriter< flatbuffers::grpc::Message<"
+    os << os.Indent() << "::grpc::ServerWriter<flatbuffers::grpc::Message<"
        << query.Name() << "_" << query.Arity() << ">> *writer";
   }
 
@@ -135,39 +135,39 @@ static void DefineQuery(ParsedQuery query, OutputStream &os) {
     }
   }
 
-  os << sep;
-  sep = "[=, &status] (";
-  for (ParsedParameter param : decl.Parameters()) {
-    os << sep << "auto p" << param.Index();
-    sep = ", ";
-  }
-  os << ") -> bool {\n";
-  os.PushIndent();
-
-  os << os.Indent() << "flatbuffers::grpc::MessageBuilder mb;\n";
-
-  // TODO(pag): Eventually create flatbuffer offsets for non-trivial
-  //            types.
-//  for (ParsedParameter param : decl.Parameters()) {
-//    switch (param.Type().UnderlyingKind()) {
-//
-//    }
-//  }
-
-  os << os.Indent() << "mb.Finish(Create" << query.Name() << "_"
-     << decl.Arity() << "(mb";
-
-  for (ParsedParameter param : decl.Parameters()) {
-    os << ", p" << param.Index();
-  }
-
-  os << "));\n"
-     << os.Indent() << "auto message = mb.ReleaseMessage<"
-     << query.Name() << "_" << decl.Arity() << ">();\n";
-
-  // If there are free parameters, then we're doing server-to-client streaming
-  // using `writer`.
   if (has_free_params) {
+    os << sep;
+    sep = "[=, &status] (";
+    for (ParsedParameter param : decl.Parameters()) {
+      os << sep << "auto p" << param.Index();
+      sep = ", ";
+    }
+    os << ") -> bool {\n";
+    os.PushIndent();
+
+    os << os.Indent() << "flatbuffers::grpc::MessageBuilder mb;\n";
+
+    // TODO(pag): Eventually create flatbuffer offsets for non-trivial
+    //            types.
+  //  for (ParsedParameter param : decl.Parameters()) {
+  //    switch (param.Type().UnderlyingKind()) {
+  //
+  //    }
+  //  }
+
+    os << os.Indent() << "mb.Finish(Create" << query.Name() << "_"
+       << decl.Arity() << "(mb";
+
+    for (ParsedParameter param : decl.Parameters()) {
+      os << ", p" << param.Index();
+    }
+
+    os << "));\n"
+       << os.Indent() << "auto message = mb.ReleaseMessage<"
+       << query.Name() << "_" << decl.Arity() << ">();\n";
+
+    // If there are free parameters, then we're doing server-to-client streaming
+    // using `writer`.
     os << os.Indent() << "if (!writer->Write(message)) {\n";
     os.PushIndent();
     os << os.Indent() << "status = grpc::StatusCode::CANCELLED;\n"
@@ -180,16 +180,23 @@ static void DefineQuery(ParsedQuery query, OutputStream &os) {
     os.PopIndent();
     os << os.Indent() << "}\n";
 
+
+    os.PopIndent();  // End of lambda to query callback.
+    os << os.Indent() << "});\n";
+
   // If there are not any free parameters, then we're sending back a message
   // to the client using `response`.
   } else {
-    os << os.Indent() << "status = grpc::Status::OK;\n"
-       << os.Indent() << "*response = std::move(message);\n"
-       << os.Indent() << "return true;\n";
+    os << ");\n"
+       << "if (num_generated) {\n";
+    os.PushIndent();
+    os << os.Indent() << "flatbuffers::grpc::Message<" <<  query.Name() << "_"
+        << decl.Arity() << "> message(request->BorrowSlice(), true);\n"
+        << "*response = std::move(message);\n"
+        << "status = grpc::StatusCode::OK;\n";
+    os.PopIndent();
+    os << os.Indent() << "}\n";
   }
-
-  os.PopIndent();  // End of lambda to query callback.
-  os << os.Indent() << "});\n";
 
   os.PopIndent();
   os << os.Indent() << "}\n\n"  // GetRoot

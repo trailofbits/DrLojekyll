@@ -6,7 +6,7 @@
 #message instruction(u64 EA).
 #message raw_transfer(u64 FromEA, u64 ToEA, u8 TransferKind).
 
-#local function(ToEA)
+#query function(bound u64 ToEA)
 
     ; The target of a function call is an instruction.
     : raw_transfer(FromEA, ToEA, CALL)

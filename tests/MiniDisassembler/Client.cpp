@@ -66,6 +66,13 @@ TEST(MiniDisassembler, ServerConnectionWorks) {
   db.Publish(builder);
 
   dump(db, updates);
+  assert(!db.function_b(9));
+  assert(db.function_b(10));
+  assert(db.function_b(11));
+  assert(db.function_b(12));
+  assert(db.function_b(13));
+  assert(db.function_b(14));
+  assert(db.function_b(15));
   ASSERT_EQ(NumFunctionInstructions(db, 9), 0u);
   ASSERT_EQ(NumFunctionInstructions(db, 10), 1u);
   ASSERT_EQ(NumFunctionInstructions(db, 11), 1u);
@@ -84,6 +91,13 @@ TEST(MiniDisassembler, ServerConnectionWorks) {
   db.Publish(builder);
 
   dump(db, updates);
+  assert(!db.function_b(9));
+  assert(db.function_b(10));
+  assert(!db.function_b(11));
+  assert(!db.function_b(12));
+  assert(!db.function_b(13));
+  assert(!db.function_b(14));
+  assert(!db.function_b(15));
   ASSERT_EQ(NumFunctionInstructions(db, 9), 0u);
   ASSERT_EQ(NumFunctionInstructions(db, 10), 6u);
   ASSERT_EQ(NumFunctionInstructions(db, 11), 0u);
@@ -99,6 +113,13 @@ TEST(MiniDisassembler, ServerConnectionWorks) {
   db.Publish(builder);
 
   dump(db, updates);
+  assert(db.function_b(9));
+  assert(db.function_b(10));
+  assert(!db.function_b(11));
+  assert(!db.function_b(12));
+  assert(!db.function_b(13));
+  assert(!db.function_b(14));
+  assert(!db.function_b(15));
   ASSERT_EQ(NumFunctionInstructions(db, 9), 1u);
   ASSERT_EQ(NumFunctionInstructions(db, 10), 6u);
   ASSERT_EQ(NumFunctionInstructions(db, 11), 0u);
@@ -114,6 +135,13 @@ TEST(MiniDisassembler, ServerConnectionWorks) {
   db.Publish(builder);
 
   dump(db, updates);
+  assert(db.function_b(9));
+  assert(!db.function_b(10));
+  assert(!db.function_b(11));
+  assert(!db.function_b(12));
+  assert(!db.function_b(13));
+  assert(!db.function_b(14));
+  assert(!db.function_b(15));
   ASSERT_EQ(NumFunctionInstructions(db, 9), 7u);
   ASSERT_EQ(NumFunctionInstructions(db, 10), 0u);
   ASSERT_EQ(NumFunctionInstructions(db, 11), 0u);
@@ -129,6 +157,13 @@ TEST(MiniDisassembler, ServerConnectionWorks) {
   db.Publish(builder);
 
   dump(db, updates);
+  assert(db.function_b(9));
+  assert(!db.function_b(10));
+  assert(!db.function_b(11));
+  assert(!db.function_b(12));
+  assert(!db.function_b(13));
+  assert(db.function_b(14));
+  assert(!db.function_b(15));
   ASSERT_EQ(NumFunctionInstructions(db, 9), 5u);
   ASSERT_EQ(NumFunctionInstructions(db, 10), 0u);
   ASSERT_EQ(NumFunctionInstructions(db, 11), 0u);

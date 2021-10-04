@@ -449,7 +449,12 @@ void GenerateClientImpl(Program program, ParsedModule module,
        << query.Name() << "_" << decl.Arity() << ">();\n";
 
     if (AllParametersAreBound(decl)) {
-      //os << os.Indent() << "::grpc::internal::BlockingUnaryCall(channel_.get(), rpcmethod_Publish_, context, request, response);"
+      os << os.Indent() << "return this->CallResult<"
+         << decl.Name() << "_" << decl.Arity()
+         << ">(method_Query_"
+         << decl.Name() << "_" << decl.BindingPattern()
+         << ", message.BorrowSlice());\n";
+
     } else {
       os << os.Indent() << "return ::hyde::rt::BackendResultStream<"
          << decl.Name() << "_" << decl.Arity()

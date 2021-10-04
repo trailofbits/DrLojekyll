@@ -10,9 +10,13 @@
 namespace hyde {
 namespace rt {
 
+class BackendConnection;
+
 template <typename T>
 class BackendResult {
  private:
+  friend class BackendConnection;
+
   template <typename>
   friend class BackendResultStreamIterator;
 
@@ -52,32 +56,14 @@ class BackendResult {
     return this->operator=(std::move(copy));
   }
 
-  inline operator bool(void) const noexcept {
-    return GRPC_SLICE_LENGTH(message);
-  }
-
-  inline operator T *(void) noexcept {
-    return GRPC_SLICE_LENGTH(message) ?
-           flatbuffers::GetMutableRoot<T>(GRPC_SLICE_START_PTR(message)) :
-           nullptr;
-  }
-
-  inline operator const T *(void) noexcept {
+  inline operator const T *(void) const noexcept {
     return GRPC_SLICE_LENGTH(message) ?
            flatbuffers::GetRoot<T>(GRPC_SLICE_START_PTR(message)) :
            nullptr;
   }
 
-  inline T *operator->(void) noexcept {
-    return flatbuffers::GetMutableRoot<T>(GRPC_SLICE_START_PTR(message));
-  }
-
   inline const T *operator->(void) const noexcept {
     return flatbuffers::GetRoot<T>(GRPC_SLICE_START_PTR(message));
-  }
-
-  inline T &operator*(void) noexcept {
-    return *flatbuffers::GetMutableRoot<T>(GRPC_SLICE_START_PTR(message));
   }
 
   inline const T &operator*(void) const noexcept {

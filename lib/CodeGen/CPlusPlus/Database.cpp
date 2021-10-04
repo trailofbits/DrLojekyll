@@ -1556,18 +1556,11 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     os << os.Indent() << "return num_generated;\n";
     os.PopIndent();
     os << os.Indent() << "}\n";
-
-  } else {
-    os << os.Indent() << "return num_generated;\n";
   }
 
   os.PopIndent();
-  os << os.Indent() << "}\n";
-
-  if (num_free_params) {
-    os << os.Indent() << "return num_generated;\n";
-  }
-
+  os << os.Indent() << "}\n"
+     << os.Indent() << "return num_generated;\n";
   os.PopIndent();
   os << os.Indent() << "}\n\n";
 }

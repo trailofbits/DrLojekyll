@@ -8,6 +8,8 @@
 #include <string>
 #include <memory>
 
+#include "Result.h"
+
 namespace hyde {
 namespace rt {
 
@@ -31,6 +33,18 @@ class BackendConnection {
   // Send data to the backend.
   bool Publish(const grpc::internal::RpcMethod &method,
                const grpc_slice &data) const;
+
+  // Invoke an RPC that returns a single value.
+  void Call(const grpc::internal::RpcMethod &method,
+            const grpc_slice &data, grpc_slice &output_data) const;
+
+  template <typename T>
+  inline BackendResult<T> CallResult(const grpc::internal::RpcMethod &method,
+                                     const grpc_slice &data) const {
+    BackendResult<T> ret;
+    Call(method, data, ret.message);
+    return ret;
+  }
 
  public:
   ~BackendConnection(void);

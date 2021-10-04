@@ -52,5 +52,20 @@ bool BackendConnection::Publish(const grpc::internal::RpcMethod &method,
   return status.error_code() == grpc::StatusCode::OK;
 }
 
+// Invoke an RPC that returns a single value.
+void BackendConnection::Call(
+    const grpc::internal::RpcMethod &method,
+    const grpc_slice &data, grpc_slice &ret_data) const {
+  grpc::ClientContext context;
+  grpc::Status status =
+      ::grpc::internal::BlockingUnaryCall<grpc_slice, grpc_slice>(
+          impl->channel.get(), method, &context, data, &ret_data);
+
+  if (status.error_code() != grpc::StatusCode::OK) {
+    grpc_slice_unref(ret_data);
+    ret_data = grpc_empty_slice();
+  }
+}
+
 }  // namespace rt
 }  // namespace hyde
