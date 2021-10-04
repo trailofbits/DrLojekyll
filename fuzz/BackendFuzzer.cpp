@@ -247,7 +247,21 @@ static void Shuffle(RandomIt first, RandomIt last, URBG &g) {
 }
 
 template <class T, class URBG>
-static std::vector<T> Shuffled(hyde::NodeRange<T> c, URBG &g) {
+static std::vector<T> Shuffled(hyde::DefinedNodeRange<T> c, URBG &g) {
+
+  // Note: we should preallocate the vector for the appropriate size, but
+  // NodeRange doesn't implement everything needed to make `std::distance` or
+  // similar work.
+  std::vector<T> v;
+  for (auto t : c) {
+    v.push_back(t);
+  }
+  shuffle(v.begin(), v.end(), g);
+  return v;
+}
+
+template <class T, class URBG>
+static std::vector<T> Shuffled(hyde::UsedNodeRange<T> c, URBG &g) {
 
   // Note: we should preallocate the vector for the appropriate size, but
   // NodeRange doesn't implement everything needed to make `std::distance` or
@@ -277,55 +291,60 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module,
   std::stringstream stream;
   hyde::OutputStream os(cxt.display_manager, stream);
 
+  // We emit all the components of the submodule as individual strings into a
+  // vector that we finally shuffle once at the end.  This will result in a
+  // greater degree of shuffling than shuffling and emitting each
+  // subcomponent type sequentially.
+  std::vector<std::string> strings;
+  auto AddStringForDecl = [&cxt, &strings](hyde::ParsedDeclaration decl) {
+    if (decl.IsFirstDeclaration()) {
+      for (auto redecl : decl.UniqueRedeclarations()) {
+        std::stringstream stream;
+        hyde::OutputStream out(cxt.display_manager, stream);
+        out << decl;
+        strings.push_back(stream.str());
+      }
+    }
+  };
+
   module = module.RootModule();
 
   for (auto type : Shuffled(module.ForeignTypes(), gen)) {
     os << type << "\n";
   }
 
-  std::set<hyde::ParsedDeclaration> seen;
+  for (auto cv : Shuffled(module.ForeignConstants(), gen)) {
+    os << cv << "\n";
+  }
 
   // NOTE(brad): We do _not_ shuffle the submodules, since the order they are
   //             iterated in is designed to respect interdependencies between
   //             them.
   //
-  // TODO(pag): Add special support for ordering declarations with `mutable`-
-  //            attributed parameters. These induce a partial order that must
-  //            be satisfied, where the referenced merge functor must be
-  //            declared prior to the mutable use.
+  // NOTE(pag): We have to print out functors first, at they may be used in
+  //            `mutable`-attributed parameters of exports/locals.
+  for (auto sub_module : hyde::ParsedModuleIterator(module)) {
+    for (auto decl : sub_module.Functors()) {
+      AddStringForDecl(decl);
+    }
+
+    Shuffle(strings.begin(), strings.end(), gen);
+
+    for (auto str : strings) {
+      os << str << "\n";
+    }
+
+    strings.clear();
+  }
+
   for (auto sub_module : hyde::ParsedModuleIterator(module)) {
 
-    // We emit all the components of the submodule as individual strings into a
-    // vector that we finally shuffle once at the end.  This will result in a
-    // greater degree of shuffling than shuffling and emitting each
-    // subcomponent type sequentially.
-    std::vector<std::string> strings;
-    auto AddStringForDecl = [&cxt, &seen,
-                             &strings](hyde::ParsedDeclaration decl) {
-      if (seen.count(decl)) {
-        return;
-      }
-      seen.insert(decl);
-      std::stringstream stream;
-      hyde::OutputStream out(cxt.display_manager, stream);
-      out << decl;
-      strings.push_back(stream.str());
-    };
-
     for (auto decl : sub_module.Queries()) {
-      for (auto redecl : decl.Redeclarations()) {
-        AddStringForDecl(redecl);
-      }
+      AddStringForDecl(decl);
     }
 
     for (auto decl : sub_module.Messages()) {
       AddStringForDecl(decl);
-    }
-
-    for (auto decl : sub_module.Functors()) {
-      for (auto redecl : decl.Redeclarations()) {
-        AddStringForDecl(redecl);
-      }
     }
 
     for (auto decl : sub_module.Exports()) {
@@ -343,6 +362,8 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module,
     for (auto str : strings) {
       os << str << "\n";
     }
+
+    strings.clear();
   }
 
   // Note: not shuffling submodules, again like before
@@ -355,9 +376,6 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module,
 
     std::vector<hyde::ParsedClause> all_clauses;
     for (auto clause : sub_module.Clauses()) {
-      all_clauses.push_back(clause);
-    }
-    for (auto clause : sub_module.DeletionClauses()) {
       all_clauses.push_back(clause);
     }
     Shuffle(all_clauses.begin(), all_clauses.end(), gen);
@@ -530,8 +548,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   }
   assert_error_log_empty("successful query compilation");
 
-  const auto program_opt =
-      hyde::Program::Build(*query_opt, hyde::IRFormat::kIterative);
+  const auto program_opt = hyde::Program::Build(*query_opt);
   if (!program_opt) {
 
     // Bail out early if program compilation failed.  Expected to be rare!

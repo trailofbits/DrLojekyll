@@ -182,12 +182,12 @@ bool NeedsInductionOutputVector(QueryView view);
 
 template <typename Cols, typename IfPresent, typename IfAbsent,
           typename IfUnknown>
-static CHECKSTATE *
+static CHECKTUPLE *
 BuildTopDownCheckerStateCheck(ProgramImpl *impl, REGION *parent, TABLE *table,
                               Cols &&cols, IfPresent if_present_cb,
                               IfAbsent if_absent_cb, IfUnknown if_unknown_cb) {
 
-  const auto check = impl->operation_regions.CreateDerived<CHECKSTATE>(parent);
+  const auto check = impl->operation_regions.CreateDerived<CHECKTUPLE>(parent);
   for (auto col : cols) {
     const auto var = check->VariableFor(impl, col);
     check->col_values.AddUse(var);
@@ -215,11 +215,11 @@ BuildTopDownCheckerStateCheck(ProgramImpl *impl, REGION *parent, TABLE *table,
 
 // Change the state of some relation.
 template <typename Cols>
-static CHANGESTATE *
-BuildChangeState(ProgramImpl *impl, TABLE *table, REGION *parent, Cols &&cols,
+static CHANGETUPLE *
+BuildChangeTuple(ProgramImpl *impl, TABLE *table, REGION *parent, Cols &&cols,
                  TupleState from_state, TupleState to_state) {
 
-  const auto state_change = impl->operation_regions.CreateDerived<CHANGESTATE>(
+  const auto state_change = impl->operation_regions.CreateDerived<CHANGETUPLE>(
       parent, from_state, to_state);
 
   state_change->table.Emplace(state_change, table);
@@ -231,14 +231,14 @@ BuildChangeState(ProgramImpl *impl, TABLE *table, REGION *parent, Cols &&cols,
   return state_change;
 }
 
-template <typename Cols, typename AfterChangeState>
-static CHANGESTATE *BuildTopDownTryMarkAbsent(ProgramImpl *impl, TABLE *table,
+template <typename Cols, typename AfterChangeTuple>
+static CHANGETUPLE *BuildTopDownTryMarkAbsent(ProgramImpl *impl, TABLE *table,
                                               REGION *parent, Cols &&cols,
-                                              AfterChangeState with_par_node) {
+                                              AfterChangeTuple with_par_node) {
 
   // Change the tuple's state to mark it as deleted so that we can't use it
   // as its own base case.
-  const auto table_remove = BuildChangeState(
+  const auto table_remove = BuildChangeTuple(
       impl, table, parent, cols, TupleState::kUnknown, TupleState::kAbsent);
 
   // Now that we've established the base case (marking the tuple absent), we
@@ -257,14 +257,14 @@ static CHANGESTATE *BuildTopDownTryMarkAbsent(ProgramImpl *impl, TABLE *table,
   return table_remove;
 }
 
-template <typename Cols, typename AfterChangeState>
-static CHANGESTATE *
+template <typename Cols, typename AfterChangeTuple>
+static CHANGETUPLE *
 BuildBottomUpTryMarkUnknown(ProgramImpl *impl, TABLE *table, REGION *parent,
-                            Cols &&cols, AfterChangeState with_par_node) {
+                            Cols &&cols, AfterChangeTuple with_par_node) {
 
   // Change the tuple's state to mark it as deleted so that we can't use it
   // as its own base case.
-  const auto table_remove = BuildChangeState(
+  const auto table_remove = BuildChangeTuple(
       impl, table, parent, cols, TupleState::kPresent, TupleState::kUnknown);
 
   // Now that we've established the base case (marking the tuple absent), we
@@ -382,12 +382,16 @@ static bool BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
       VAR *in_var = scan->in_vars[j++];
       cmp->lhs_vars.AddUse(in_var);
       cmp->rhs_vars.AddUse(out_var);
-      cmp->col_id_to_var[view_col.Id()] = in_var;
 
     } else {
       scan->out_cols.AddUse(table_col);
-      cmp->col_id_to_var[view_col.Id()] = out_var;
     }
+    
+    // NOTE(pag): This enables later-stage "recordization" of the IR, because
+    //            the relationship back to a more recently pulled tuple is more
+    //            clear in descendents. However, it also prevents this variable
+    //            from being replaced by `in_var`, which we know has the same value. 
+    cmp->col_id_to_var[view_col.Id()] = out_var;
   }
 
   // Mutable in place so that `cb` can observe an updates set of available
@@ -525,6 +529,10 @@ void BuildInitProcedure(ProgramImpl *impl, Context &context, Query query);
 // Build the entry data flow procedures.
 PROC *BuildEntryProcedure(ProgramImpl *impl, Context &context, Query query);
 
+// Fix the `containing_procedure` and region `parent` pointers. Useful to find
+// bugs as well.
+void FixupContainingProcedure(ProgramImpl *impl);
+
 // Builds an I/O procedure, which goes and invokes the entry data flow
 // procedure.
 void BuildIOProcedure(ProgramImpl *impl, Query query, QueryIO io,
@@ -655,12 +663,6 @@ InTryInsert(ProgramImpl *impl, Context &context, QueryView view, OP *parent,
 std::tuple<OP *, TABLE *, TABLE *>
 InTryMarkUnknown(ProgramImpl *impl, Context &context, QueryView view,
                  OP *parent, TABLE *already_removed);
-
-// Build a bottom-up tuple remover, which marks tuples as being in the
-// UNKNOWN state (for later top-down checking).
-PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
-                                 QueryView from_view, QueryView to_view,
-                                 TABLE *already_checked = nullptr);
 
 void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
                                  QueryView view, OP *parent,

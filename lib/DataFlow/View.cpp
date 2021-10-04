@@ -12,10 +12,10 @@
 
 namespace hyde {
 
-Node<QueryView>::~Node(void) {}
+QueryViewImpl::~QueryViewImpl(void) {}
 
-Node<QueryView>::Node(void)
-    : Def<Node<QueryView>>(this),
+QueryViewImpl::QueryViewImpl(void)
+    : Def<QueryViewImpl>(this),
       User(this),
       columns(this),
       input_columns(this),
@@ -28,7 +28,7 @@ Node<QueryView>::Node(void)
          reinterpret_cast<uintptr_t>(this));
 }
 
-const char *Node<QuerySelect>::KindName(void) const noexcept {
+const char *QuerySelectImpl::KindName(void) const noexcept {
   if (relation) {
     return "PUSH";
   } else if (auto s = stream.get(); s) {
@@ -45,15 +45,15 @@ const char *Node<QuerySelect>::KindName(void) const noexcept {
   }
 }
 
-const char *Node<QueryTuple>::KindName(void) const noexcept {
+const char *QueryTupleImpl::KindName(void) const noexcept {
   return "TUPLE";
 }
 
-const char *Node<QueryKVIndex>::KindName(void) const noexcept {
+const char *QueryKVIndexImpl::KindName(void) const noexcept {
   return "KVINDEX";
 }
 
-const char *Node<QueryJoin>::KindName(void) const noexcept {
+const char *QueryJoinImpl::KindName(void) const noexcept {
   if (num_pivots) {
     return "JOIN";
   } else {
@@ -61,7 +61,7 @@ const char *Node<QueryJoin>::KindName(void) const noexcept {
   }
 }
 
-const char *Node<QueryMap>::KindName(void) const noexcept {
+const char *QueryMapImpl::KindName(void) const noexcept {
   if (num_free_params) {
     if (functor.IsPure()) {
       return "MAP";
@@ -77,19 +77,19 @@ const char *Node<QueryMap>::KindName(void) const noexcept {
   }
 }
 
-const char *Node<QueryAggregate>::KindName(void) const noexcept {
+const char *QueryAggregateImpl::KindName(void) const noexcept {
   return "AGGREGATE";
 }
 
-const char *Node<QueryMerge>::KindName(void) const noexcept {
+const char *QueryMergeImpl::KindName(void) const noexcept {
   return "UNION";
 }
 
-const char *Node<QueryCompare>::KindName(void) const noexcept {
+const char *QueryCompareImpl::KindName(void) const noexcept {
   return "COMPARE";
 }
 
-const char *Node<QueryNegate>::KindName(void) const noexcept {
+const char *QueryNegateImpl::KindName(void) const noexcept {
   if (is_never) {
     return "AND-NEVER";
   } else {
@@ -97,7 +97,7 @@ const char *Node<QueryNegate>::KindName(void) const noexcept {
   }
 }
 
-const char *Node<QueryInsert>::KindName(void) const noexcept {
+const char *QueryInsertImpl::KindName(void) const noexcept {
   if (declaration.Kind() == DeclarationKind::kQuery) {
     return "MATERIALIZE";
 
@@ -113,48 +113,48 @@ const char *Node<QueryInsert>::KindName(void) const noexcept {
   }
 }
 
-Node<QuerySelect> *Node<QueryView>::AsSelect(void) noexcept {
+QuerySelectImpl *QueryViewImpl::AsSelect(void) noexcept {
   return nullptr;
 }
 
-Node<QueryTuple> *Node<QueryView>::AsTuple(void) noexcept {
+QueryTupleImpl *QueryViewImpl::AsTuple(void) noexcept {
   return nullptr;
 }
 
-Node<QueryKVIndex> *Node<QueryView>::AsKVIndex(void) noexcept {
+QueryKVIndexImpl *QueryViewImpl::AsKVIndex(void) noexcept {
   return nullptr;
 }
 
-Node<QueryJoin> *Node<QueryView>::AsJoin(void) noexcept {
+QueryJoinImpl *QueryViewImpl::AsJoin(void) noexcept {
   return nullptr;
 }
 
-Node<QueryMap> *Node<QueryView>::AsMap(void) noexcept {
+QueryMapImpl *QueryViewImpl::AsMap(void) noexcept {
   return nullptr;
 }
 
-Node<QueryAggregate> *Node<QueryView>::AsAggregate(void) noexcept {
+QueryAggregateImpl *QueryViewImpl::AsAggregate(void) noexcept {
   return nullptr;
 }
 
-Node<QueryMerge> *Node<QueryView>::AsMerge(void) noexcept {
+QueryMergeImpl *QueryViewImpl::AsMerge(void) noexcept {
   return nullptr;
 }
 
-Node<QueryNegate> *Node<QueryView>::AsNegate(void) noexcept {
+QueryNegateImpl *QueryViewImpl::AsNegate(void) noexcept {
   return nullptr;
 }
 
-Node<QueryCompare> *Node<QueryView>::AsCompare(void) noexcept {
+QueryCompareImpl *QueryViewImpl::AsCompare(void) noexcept {
   return nullptr;
 }
 
-Node<QueryInsert> *Node<QueryView>::AsInsert(void) noexcept {
+QueryInsertImpl *QueryViewImpl::AsInsert(void) noexcept {
   return nullptr;
 }
 
 // Useful for communicating low-level debug info back to the formatter.
-OutputStream &Node<QueryView>::DebugString(OutputStream &ss) noexcept {
+OutputStream &QueryViewImpl::DebugString(OutputStream &ss) noexcept {
   if (!group_ids.empty()) {
     auto sep = "group-ids(";
     for (auto group_id : group_ids) {
@@ -200,13 +200,13 @@ OutputStream &Node<QueryView>::DebugString(OutputStream &ss) noexcept {
 // Return a number that can be used to help sort this node. The idea here
 // is that we often want to try to merge together two different instances
 // of the same underlying node when we can.
-uint64_t Node<QueryView>::Sort(void) noexcept {
+uint64_t QueryViewImpl::Sort(void) noexcept {
   return Hash();
 }
 
 // Is this view directly being used? This does not check columns, but does
 // check conditions.
-bool Node<QueryView>::IsUsedDirectly(void) const noexcept {
+bool QueryViewImpl::IsUsedDirectly(void) const noexcept {
 
   // If this view sets a condition, and there is at least one user of the
   // condition, then assume we're used.
@@ -217,7 +217,7 @@ bool Node<QueryView>::IsUsedDirectly(void) const noexcept {
     return true;
   }
 
-  if (this->Def<Node<QueryView>>::IsUsed()) {
+  if (this->Def<QueryViewImpl>::IsUsed()) {
     if (is_dead) {
 #ifndef NDEBUG
       ForEachUse<VIEW>([](VIEW *user_view, VIEW *) {
@@ -237,13 +237,13 @@ bool Node<QueryView>::IsUsedDirectly(void) const noexcept {
 // Returns `true` if this view is being used. This is defined in terms of
 // whether or not the view is used in a merge, or whether or not any of its
 // columns are used.
-bool Node<QueryView>::IsUsed(void) const noexcept {
+bool QueryViewImpl::IsUsed(void) const noexcept {
   if (IsUsedDirectly()) {
     return true;
   }
 
   for (auto col : columns) {
-    if (col->Def<Node<QueryColumn>>::IsUsed()) {
+    if (col->Def<QueryColumnImpl>::IsUsed()) {
       if (is_dead) {
 #ifndef NDEBUG
         col->ForEachUse<VIEW>(
@@ -260,7 +260,7 @@ bool Node<QueryView>::IsUsed(void) const noexcept {
 
 // Invoked any time time that any of the columns used by this view are
 // modified.
-void Node<QueryView>::Update(uint64_t next_timestamp) {
+void QueryViewImpl::Update(uint64_t next_timestamp) {
   if (is_canonical) {
     is_canonical = false;
     for (auto col : columns) {
@@ -286,7 +286,7 @@ void Node<QueryView>::Update(uint64_t next_timestamp) {
 }
 
 // Sort the `positive_conditions` and `negative_conditions`.
-void Node<QueryView>::OrderConditions(void) {
+void QueryViewImpl::OrderConditions(void) {
   auto cb = [](COND *cond) { return cond->setters.Empty(); };
 
   positive_conditions.RemoveIf(cb);
@@ -299,10 +299,10 @@ void Node<QueryView>::OrderConditions(void) {
 // Record the mapping between `in_col` and `out_col` into `this->in_to_out`,
 // do constant propagation, and possibly to replacements. Sets
 // `is_canonical = false;` if anything is changed or should be changed.
-Node<QueryView>::Discoveries
-Node<QueryView>::CanonicalizeColumn(const OptimizationContext &, COL *in_col,
+QueryViewImpl::Discoveries
+QueryViewImpl::CanonicalizeColumn(const OptimizationContext &, COL *in_col,
                                     COL *out_col, bool is_attached,
-                                    Node<QueryView>::Discoveries has) {
+                                    QueryViewImpl::Discoveries has) {
   auto [it, added] = in_to_out.emplace(in_col, out_col);
 
   const auto in_col_is_constant = in_col->IsConstantOrConstantRef();
@@ -348,7 +348,7 @@ Node<QueryView>::CanonicalizeColumn(const OptimizationContext &, COL *in_col,
 // Canonicalizes an input/output column pair. Returns `true` in the first
 // element if non-local changes are made, and `true` in the second element
 // if the column pair can be removed.
-std::pair<bool, bool> Node<QueryView>::CanonicalizeColumnPair(
+std::pair<bool, bool> QueryViewImpl::CanonicalizeColumnPair(
     COL *in_col, COL *out_col, const OptimizationContext &opt) noexcept {
 
   const auto out_col_is_constref = out_col->IsConstantRef();
@@ -380,13 +380,13 @@ std::pair<bool, bool> Node<QueryView>::CanonicalizeColumnPair(
 }
 
 // Put this view into a canonical form.
-bool Node<QueryView>::Canonicalize(QueryImpl *, const OptimizationContext &,
+bool QueryViewImpl::Canonicalize(QueryImpl *, const OptimizationContext &,
                                    const ErrorLog &) {
   is_canonical = true;
   return false;
 }
 
-unsigned Node<QueryView>::Depth(void) noexcept {
+unsigned QueryViewImpl::Depth(void) noexcept {
   if (depth) {
     return depth;
   }
@@ -406,7 +406,7 @@ unsigned Node<QueryView>::Depth(void) noexcept {
   return depth;
 }
 
-unsigned Node<QueryView>::EstimateDepth(const UseList<COL> &cols,
+unsigned QueryViewImpl::EstimateDepth(const UseList<COL> &cols,
                                         unsigned depth) {
   for (const auto input_col : cols) {
     const auto input_depth = input_col->view->depth;
@@ -417,7 +417,7 @@ unsigned Node<QueryView>::EstimateDepth(const UseList<COL> &cols,
   return depth;
 }
 
-unsigned Node<QueryView>::EstimateDepth(const UseList<COND> &conds,
+unsigned QueryViewImpl::EstimateDepth(const UseList<COND> &conds,
                                         unsigned depth) {
   auto cond_depth = 2u;
   auto has_conds = false;
@@ -430,7 +430,7 @@ unsigned Node<QueryView>::EstimateDepth(const UseList<COND> &conds,
   return has_conds ? std::max(depth, cond_depth + 1u) : depth;
 }
 
-unsigned Node<QueryView>::GetDepth(const UseList<COL> &cols, unsigned depth) {
+unsigned QueryViewImpl::GetDepth(const UseList<COL> &cols, unsigned depth) {
   for (const auto input_col : cols) {
     const auto input_depth = input_col->view->Depth();
     if (input_depth >= depth) {
@@ -440,7 +440,7 @@ unsigned Node<QueryView>::GetDepth(const UseList<COL> &cols, unsigned depth) {
   return depth;
 }
 
-unsigned Node<QueryView>::GetDepth(const UseList<COND> &conds, unsigned depth) {
+unsigned QueryViewImpl::GetDepth(const UseList<COND> &conds, unsigned depth) {
   for (const auto cond : conds) {
     auto cond_depth = QueryCondition(cond).Depth();
     if (cond_depth >= depth) {
@@ -451,7 +451,7 @@ unsigned Node<QueryView>::GetDepth(const UseList<COND> &conds, unsigned depth) {
 }
 
 // Return the number of uses of this view.
-unsigned Node<QueryView>::NumUses(void) const noexcept {
+unsigned QueryViewImpl::NumUses(void) const noexcept {
   std::vector<VIEW *> users;
   users.reserve(columns.Size() * 2);
 
@@ -468,7 +468,7 @@ unsigned Node<QueryView>::NumUses(void) const noexcept {
 static const std::hash<const char *> kCStrHasher;
 
 // Initializer for an updated hash value.
-uint64_t Node<QueryView>::HashInit(void) const noexcept {
+uint64_t QueryViewImpl::HashInit(void) const noexcept {
   uint64_t init_hash = kCStrHasher(this->KindName());
   init_hash <<= 1u;
   init_hash |= can_receive_deletions;
@@ -495,7 +495,7 @@ uint64_t Node<QueryView>::HashInit(void) const noexcept {
 // decide: among those candidates, which nodes /should/ be merged. We decide
 // this by looking up the dataflow graph (to some limited depth) and creating
 // a rough hash of how this node gets used.
-uint64_t Node<QueryView>::UpHash(unsigned depth) const noexcept {
+uint64_t QueryViewImpl::UpHash(unsigned depth) const noexcept {
 
   auto up_hash = HashInit();
 
@@ -516,7 +516,7 @@ uint64_t Node<QueryView>::UpHash(unsigned depth) const noexcept {
 }
 
 // Converts this node to be unconditional, it doesn't affect set conditions.
-void Node<QueryView>::DropTestedConditions(void) {
+void QueryViewImpl::DropTestedConditions(void) {
   const auto is_this_view = [this](VIEW *v) { return v == this; };
 
 #ifndef NDEBUG
@@ -550,7 +550,7 @@ void Node<QueryView>::DropTestedConditions(void) {
 }
 
 // Converts this node to not set any conditions.
-void Node<QueryView>::DropSetConditions(void) {
+void QueryViewImpl::DropSetConditions(void) {
   auto cond = sets_condition.get();
   if (!cond) {
     return;
@@ -579,7 +579,7 @@ void Node<QueryView>::DropSetConditions(void) {
 // Prepare to delete this node. This tries to drop all dependencies and
 // unlink this node from the dataflow graph. It returns `true` if successful
 // and `false` if it has already been performed.
-bool Node<QueryView>::PrepareToDelete(void) {
+bool QueryViewImpl::PrepareToDelete(void) {
   if (is_dead) {
     return false;
   }
@@ -645,7 +645,7 @@ bool Node<QueryView>::PrepareToDelete(void) {
 }
 
 // Copy all positive and negative conditions from `this` into `that`.
-void Node<QueryView>::CopyTestedConditionsTo(Node<QueryView> *that) {
+void QueryViewImpl::CopyTestedConditionsTo(QueryViewImpl *that) {
   assert(this != that);
 
 #ifndef NDEBUG
@@ -687,13 +687,13 @@ void Node<QueryView>::CopyTestedConditionsTo(Node<QueryView> *that) {
 }
 
 // Transfer all positive and negative conditions from `this` into `that`.
-void Node<QueryView>::TransferTestedConditionsTo(Node<QueryView> *that) {
+void QueryViewImpl::TransferTestedConditionsTo(QueryViewImpl *that) {
   this->CopyTestedConditionsTo(that);
   this->DropTestedConditions();
 }
 
 // If `sets_condition` is non-null, then transfer the setter to `that`.
-void Node<QueryView>::TransferSetConditionTo(Node<QueryView> *that) {
+void QueryViewImpl::TransferSetConditionTo(QueryViewImpl *that) {
   assert(this != that);
 
   COND *const cond = sets_condition.get();
@@ -779,7 +779,7 @@ void Node<QueryView>::TransferSetConditionTo(Node<QueryView> *that) {
 }
 
 // Copy the group IDs and the receive/produce deletions from `this` to `that`.
-void Node<QueryView>::CopyDifferentialAndGroupIdsTo(Node<QueryView> *that) {
+void QueryViewImpl::CopyDifferentialAndGroupIdsTo(QueryViewImpl *that) {
 
   // Maintain the set of group IDs, to prevent over-merging.
   that->group_ids.insert(that->group_ids.end(), group_ids.begin(),
@@ -797,7 +797,7 @@ void Node<QueryView>::CopyDifferentialAndGroupIdsTo(Node<QueryView> *that) {
 
 // Replace all uses of `this` with `that`. The semantic here is that `this`
 // remains valid and used.
-void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
+void QueryViewImpl::SubstituteAllUsesWith(QueryViewImpl *that) {
   if (is_used_by_negation) {
     that->is_used_by_negation = true;
     is_used_by_negation = false;
@@ -852,7 +852,7 @@ void Node<QueryView>::SubstituteAllUsesWith(Node<QueryView> *that) {
 
 // Replace all uses of `this` with `that`. The semantic here is that `this`
 // is completely subsumed/replaced by `that`.
-void Node<QueryView>::ReplaceAllUsesWith(Node<QueryView> *that) {
+void QueryViewImpl::ReplaceAllUsesWith(QueryViewImpl *that) {
   SubstituteAllUsesWith(that);  // Will do `TransferSetConditionsTo`.
   TransferTestedConditionsTo(that);
   PrepareToDelete();
@@ -860,7 +860,7 @@ void Node<QueryView>::ReplaceAllUsesWith(Node<QueryView> *that) {
 
 // Does this view introduce a control dependency? If a node introduces a
 // control dependency then it generally needs to be kept around.
-bool Node<QueryView>::IntroducesControlDependency(void) const noexcept {
+bool QueryViewImpl::IntroducesControlDependency(void) const noexcept {
 //  if (this->AsMap()) {
 //    return true;
 //  }
@@ -872,7 +872,7 @@ bool Node<QueryView>::IntroducesControlDependency(void) const noexcept {
 }
 
 // Returns `true` if all output columns are used.
-bool Node<QueryView>::AllColumnsAreUsed(void) const noexcept {
+bool QueryViewImpl::AllColumnsAreUsed(void) const noexcept {
   if (IsUsedDirectly()) {
     return true;  // Used in a MERGE or CONDition.
   }
@@ -892,7 +892,7 @@ bool Node<QueryView>::AllColumnsAreUsed(void) const noexcept {
 // If this view is used by a merge then we're not allowed to re-order the
 // columns. Instead, what we can do is create a tuple that will maintain
 // the ordering, and the canonicalize the join order below that tuple.
-Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query,
+QueryTupleImpl *QueryViewImpl::GuardWithTuple(QueryImpl *query,
                                                   bool force) {
 
   if (!force && !IsUsedDirectly()) {
@@ -944,10 +944,10 @@ Node<QueryTuple> *Node<QueryView>::GuardWithTuple(QueryImpl *query,
 // NOTE(pag): This assumes `in_to_out` is filled up, and operates on
 //            `input_columns` and `attached_columns` to find the best version
 //            of a column from `in_to_out`.
-Node<QueryTuple> *
-Node<QueryView>::GuardWithOptimizedTuple(QueryImpl *query,
+QueryTupleImpl *
+QueryViewImpl::GuardWithOptimizedTuple(QueryImpl *query,
                                          unsigned first_attached_col,
-                                         Node<QueryView> *incoming_view) {
+                                         QueryViewImpl *incoming_view) {
 
   auto tuple = query->tuples.Create();
   tuple->color = color;
@@ -1035,8 +1035,8 @@ Node<QueryView>::GuardWithOptimizedTuple(QueryImpl *query,
 
 // Proxy this node with a comparison of `lhs_col` and `rhs_col`, where
 // `lhs_col` and `rhs_col` either belong to `this->columns` or are constants.
-Node<QueryTuple> *
-Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
+QueryTupleImpl *
+QueryViewImpl::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
                                      COL *lhs_col, COL *rhs_col) {
 
   // Prefer to have the constant first.
@@ -1113,7 +1113,7 @@ Node<QueryView>::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
 }
 
 // Utility for comparing use lists.
-bool Node<QueryView>::ColumnsEq(EqualitySet &eq, const UseList<COL> &c1s,
+bool QueryViewImpl::ColumnsEq(EqualitySet &eq, const UseList<COL> &c1s,
                                 const UseList<COL> &c2s) {
   const auto num_cols = c1s.Size();
   if (num_cols != c2s.Size()) {
@@ -1144,7 +1144,7 @@ bool Node<QueryView>::ColumnsEq(EqualitySet &eq, const UseList<COL> &c1s,
 // updated `incoming_view`.
 //
 // NOTE(pag): This updates `is_canonical = false` if it changes anything.
-Node<QueryView> *Node<QueryView>::PullDataFromBeyondTrivialTuples(
+QueryViewImpl *QueryViewImpl::PullDataFromBeyondTrivialTuples(
     VIEW *incoming_view, UseList<COL> &cols1, UseList<COL> &cols2) {
 
   if (!incoming_view || this == incoming_view) {
@@ -1201,8 +1201,8 @@ Node<QueryView> *Node<QueryView>::PullDataFromBeyondTrivialTuples(
   return PullDataFromBeyondTrivialTuples(next_incoming_view, cols1, cols2);
 }
 
-Node<QueryView> *Node<QueryView>::PullDataFromBeyondTrivialUnions(
-    Node<QueryView> *maybe_merge, UseList<COL> &cols1, UseList<COL> &cols2) {
+QueryViewImpl *QueryViewImpl::PullDataFromBeyondTrivialUnions(
+    QueryViewImpl *maybe_merge, UseList<COL> &cols1, UseList<COL> &cols2) {
 
   const auto merge = maybe_merge->AsMerge();
   if (!merge) {
@@ -1270,7 +1270,7 @@ Node<QueryView> *Node<QueryView>::PullDataFromBeyondTrivialUnions(
 }
 
 // Figure out what the incoming view to `cols1` is.
-VIEW *Node<QueryView>::GetIncomingView(const UseList<COL> &cols1) {
+VIEW *QueryViewImpl::GetIncomingView(const UseList<COL> &cols1) {
   for (auto col : cols1) {
     if (!col->IsConstant()) {
       return col->view;
@@ -1280,7 +1280,7 @@ VIEW *Node<QueryView>::GetIncomingView(const UseList<COL> &cols1) {
 }
 
 // Figure out what the incoming view to `cols1` and/or `cols2` is.
-VIEW *Node<QueryView>::GetIncomingView(const UseList<COL> &cols1,
+VIEW *QueryViewImpl::GetIncomingView(const UseList<COL> &cols1,
                                        const UseList<COL> &cols2) {
   for (auto col : cols1) {
     if (!col->IsConstant()) {
@@ -1304,7 +1304,7 @@ VIEW *Node<QueryView>::GetIncomingView(const UseList<COL> &cols1,
 // otherwise it isn't. The relevant thing here is CONDitions, which are
 // implemented as reference counts on some VIEW. If that VIEW will always have
 // data, then we say that the view isn't conditional.
-bool Node<QueryView>::IsConditional(
+bool QueryViewImpl::IsConditional(
     VIEW *view, std::unordered_map<VIEW *, bool> &conditional_views) {
   if (conditional_views.count(view)) {
     return conditional_views[view];
@@ -1396,7 +1396,7 @@ bool Node<QueryView>::IsConditional(
 
 // Returns a pointer to the only user of this node, or nullptr if there are
 // zero users, or more than one users.
-Node<QueryView> *Node<QueryView>::OnlyUser(void) const noexcept {
+QueryViewImpl *QueryViewImpl::OnlyUser(void) const noexcept {
   VIEW *only_user = nullptr;
   bool fail = false;
   for (auto col : columns) {
@@ -1423,8 +1423,8 @@ Node<QueryView> *Node<QueryView>::OnlyUser(void) const noexcept {
 }
 
 // Create or inherit a condition created on `view`.
-void Node<QueryView>::CreateDependencyOnView(QueryImpl *query,
-                                             Node<QueryView> *view) {
+void QueryViewImpl::CreateDependencyOnView(QueryImpl *query,
+                                             QueryViewImpl *view) {
   assert(this != view);
   COND *condition = nullptr;
   if (auto incoming_cond = view->sets_condition.get(); incoming_cond) {
@@ -1461,7 +1461,7 @@ void Node<QueryView>::CreateDependencyOnView(QueryImpl *query,
 }
 
 // Check that all non-constant views in `cols1` match.
-bool Node<QueryView>::CheckIncomingViewsMatch(const UseList<COL> &cols1) const {
+bool QueryViewImpl::CheckIncomingViewsMatch(const UseList<COL> &cols1) const {
 #ifndef NDEBUG
   VIEW *prev_view = nullptr;
   for (auto col : cols1) {
@@ -1490,7 +1490,7 @@ bool Node<QueryView>::CheckIncomingViewsMatch(const UseList<COL> &cols1) const {
 // NOTE(pag): This isn't a pairwise matching; instead it checks that all
 //            columns in both of the lists independently reference the same
 //            view.
-bool Node<QueryView>::CheckIncomingViewsMatch(const UseList<COL> &cols1,
+bool QueryViewImpl::CheckIncomingViewsMatch(const UseList<COL> &cols1,
                                               const UseList<COL> &cols2) const {
 #ifndef NDEBUG
   VIEW *prev_view = nullptr;
@@ -1534,8 +1534,8 @@ bool Node<QueryView>::CheckIncomingViewsMatch(const UseList<COL> &cols1,
 // be merged because otherwise we would not get the cross product.
 //
 // NOTE(pag): The `group_ids` are sorted.
-bool Node<QueryView>::InsertSetsOverlap(Node<QueryView> *a,
-                                        Node<QueryView> *b) {
+bool QueryViewImpl::InsertSetsOverlap(QueryViewImpl *a,
+                                        QueryViewImpl *b) {
 
   //  if (a->check_group_ids != b->check_group_ids) {
   //    return true;
@@ -1577,6 +1577,14 @@ bool Node<QueryView>::InsertSetsOverlap(Node<QueryView> *a,
   //  });
   //
   //  return a_used_by_join || b_used_by_join;
+}
+
+// Mark this node as being unsatisfiable.
+void QueryViewImpl::MarkAsUnsatisfiable(void) {
+  is_unsat = true;
+  ForEachUse<VIEW>([](VIEW *user_view, VIEW *) {
+    user_view->is_canonical = false;
+  });
 }
 
 }  // namespace hyde

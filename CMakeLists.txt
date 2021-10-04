@@ -1,21 +1,28 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 cmake_minimum_required(VERSION 3.17)
-
 project(DrLojekyll LANGUAGES C CXX)
 
-enable_testing()
+include("cmake/options.cmake")
+include("cmake/add_sanitizer_settings.cmake")
+include("cmake/dr_define_static_library.cmake")
+include("cmake/utils.cmake")
 
-include(cmake/add_sanitizer_settings.cmake)
-include(cmake/dr_define_static_library.cmake)
+if(DRLOJEKYLL_ENABLE_SANITIZERS)
+  defineSanitizersTarget()
+endif()
+
+defineWarningSilencerTarget()
+
+add_subdirectory("libraries" EXCLUDE_FROM_ALL)
+
+if(DRLOJEKYLL_ENABLE_VENDORED_LIBRARIES)
+  add_subdirectory("vendor" EXCLUDE_FROM_ALL)
+endif()
 
 # --------------------------------------------
 # build-time options -------------------------
 # --------------------------------------------
-option(ENABLE_LIBFUZZER "Build libFuzzer fuzz targets" OFF)
-option(ENABLE_SANITIZERS "Build with ASAN and UBSAN" OFF)
-option(ENABLE_TESTS "Build test suite" ON)
-option(WARNINGS_AS_ERRORS "Build treating warnings as errors" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_STANDARD_REQUIRED ON)
@@ -47,27 +54,6 @@ endif()
 # Make sure cmake can find our custom Find* modules.
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-if(ENABLE_TESTS)
-  # Google Test ------------------------------
-  #
-  # Cribbed from https://github.com/google/googletest/tree/master/googletest
-  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-  add_subdirectory(vendor/googletest-release-1.10.0
-      EXCLUDE_FROM_ALL)
-
-  # rapidcheck -------------------------------
-  set(RC_ENABLE_GTEST ON CACHE BOOL "" FORCE)
-  add_subdirectory(vendor/rapidcheck
-      EXCLUDE_FROM_ALL)
-endif()
-
-# reproc -------------------------------------
-set(REPROC++ ON CACHE BOOL "" FORCE)
-set(REPROC_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(REPROC_TEST OFF CACHE BOOL "" FORCE)
-# set(REPROC_OBJECT_LIBRARIES ON)
-add_subdirectory(vendor/reproc-14.2.1)
-
 # --------------------------------------------
 # CMake installation stuff -------------------
 # --------------------------------------------
@@ -80,17 +66,18 @@ configure_package_config_file("${PROJECT_NAME}Config.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
     INSTALL_DESTINATION "${DRLOJEKYLL_CMAKE_INSTALL_DIR}"
 )
-# Runtime header
-install(
-  FILES
-    "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Runtime.h"
-  DESTINATION
-    "include/drlojekyll/Runtime"
-  )
+# # Runtime header
+# install(
+#   FILES
+#     "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Runtime.h"
+#   DESTINATION
+#     "include/drlojekyll/Runtime"
+#   )
 install(
     FILES
         "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
         "${PROJECT_SOURCE_DIR}/cmake/FindFilesystem.cmake"
+        "${PROJECT_SOURCE_DIR}/cmake/Compiler.cmake"
     DESTINATION "${DRLOJEKYLL_CMAKE_INSTALL_DIR}"
 )
 install(EXPORT "${PROJECT_NAME}Targets"
@@ -126,7 +113,7 @@ if(WARNINGS_AS_ERRORS)
 endif()
 
 # sanitizer settings -------------------------
-if(ENABLE_SANITIZERS)
+if(DRLOJEKYLL_ENABLE_SANITIZERS)
     add_sanitizer_settings(settings_public
         SANITIZERS
             address
@@ -137,7 +124,7 @@ if(ENABLE_SANITIZERS)
 endif()
 
 # fuzzer settings ----------------------------
-if(ENABLE_LIBFUZZER)
+if(DRLOJEKYLL_ENABLE_LIBFUZZER)
     if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         message(FATAL_ERROR "ENABLE_LIBFUZZER requires using Clang (currently using '${CMAKE_CXX_COMPILER_ID}')")
     endif()
@@ -164,10 +151,10 @@ install(
 add_subdirectory(lib)
 add_subdirectory(bin)
 
-if(ENABLE_LIBFUZZER)
+if(DRLOJEKYLL_ENABLE_LIBFUZZER)
   add_subdirectory(fuzz)
 endif()
 
-if(ENABLE_TESTS)
+if(DRLOJEKYLL_ENABLE_TESTS)
   add_subdirectory(tests)
 endif()

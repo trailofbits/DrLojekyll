@@ -90,7 +90,7 @@ static void BuildInductiveSwaps(ProgramImpl *impl, Context &context,
                                 QueryView inductive_view, SERIES *view_seq) {
 
   // NOTE(pag): We can use the same vector for insertion and removal, because
-  //            we use `CHECKSTATE` to figure out what to do!
+  //            we use `CHECKTUPLE` to figure out what to do!
   VECTOR *const vec = induction->view_to_add_vec[vec_view];
   VECTOR *const swap_vec = induction->view_to_swap_vec[vec_view];
 
@@ -154,7 +154,7 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
   if (view.IsMerge()) {
 
     // NOTE(pag): We can use the same vector for insertion and removal, because
-    //            we use `CHECKSTATE` to figure out what to do!
+    //            we use `CHECKTUPLE` to figure out what to do!
     VECTOR *const swap_vec = induction->view_to_swap_vec[view];
     assert(swap_vec);
 
@@ -171,6 +171,11 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
     DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
     TABLE *const table = model->table;
     assert(table != nullptr);
+
+    // Keep track of whether or not this loop is connected with a table for
+    // an inductive UNION. This helps us later on in analyzing the control-flow
+    // IR to find the provenance of column data.
+    inductive_cycle->induction_table.Emplace(inductive_cycle, table);
 
     // Fill in the variables of the output and inductive cycle loops.
     for (auto col : view_cols) {
@@ -201,7 +206,7 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
       // updates, we want to make sure that we push the deletions through as far
       // as possible.
       OP *parent_out = nullptr;
-      CHECKSTATE *const check = BuildTopDownCheckerStateCheck(
+      CHECKTUPLE *const check = BuildTopDownCheckerStateCheck(
           impl, cycle, table, view_cols,
           [&](ProgramImpl *impl_, REGION *in_check) -> OP * {
             if (for_add) {
@@ -215,8 +220,8 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
           BuildStateCheckCaseNothing,
           [&](ProgramImpl *impl_, REGION *in_check) -> OP * {
             if (!for_add) {
-              parent_out =
-                  impl_->operation_regions.CreateDerived<LET>(in_check);
+              parent_out = impl_->operation_regions.CreateDerived<MODESWITCH>(
+                  in_check, Mode::kBottomUpRemoval);
               return parent_out;
             } else {
               return nullptr;
@@ -265,6 +270,14 @@ static void BuildFixpointLoop(ProgramImpl *impl, Context &context,
     inductive_cycle->vector.Emplace(inductive_cycle, swap_vec);
     cycle_par->AddRegion(inductive_cycle);
     cycle = inductive_cycle;
+
+    // Keep track of whether or not this loop is connected with a table for
+    // an inductive NEGATE. This helps us later on in analyzing the control-flow
+    // IR to find the provenance of column data.
+    DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
+    if (TABLE *const table = model->table; table ) {
+      inductive_cycle->induction_table.Emplace(inductive_cycle, table);
+    }
 
     // Fill in the variables of the output and inductive cycle loops.
     for (auto col : view_cols) {
@@ -426,7 +439,7 @@ static void BuildOutputLoop(ProgramImpl *impl, Context &context,
   assert(output_vec != nullptr);
 
   // NOTE(pag): We can use the same vector for insertion and removal, because
-  //            we use `CHECKSTATE` to figure out what to do!
+  //            we use `CHECKTUPLE` to figure out what to do!
 
   // We sort & unique the `output_vec`, so that we don't send extraneous
   // stuff forward.
@@ -444,6 +457,16 @@ static void BuildOutputLoop(ProgramImpl *impl, Context &context,
   output_cycle->vector.Emplace(output_cycle, output_vec);
   output_seq->AddRegion(output_cycle);
   OP *output = output_cycle;
+
+  // Keep track of whether or not this loop is connected with a table for
+  // an inductive UNION. This helps us later on in analyzing the control-flow
+  // IR to find the provenance of column data.
+  if (view.IsMerge() || view.IsNegate()) {
+    TABLE *view_table = impl->view_to_model[view]->FindAs<DataModel>()->table;
+    if (view_table) {
+      output_cycle->induction_table.Emplace(output_cycle, view_table);
+    }
+  }
 
   // Fill in the variables of the output and inductive cycle loops.
   for (auto col : view.Columns()) {
@@ -756,7 +779,12 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
     DataModel *const model = impl->view_to_model[merge]->FindAs<DataModel>();
     TABLE *const table = model->table;
 
-    BuildEagerRemovalRegions(impl, merge, context, cycle,
+    auto mode = impl->operation_regions.CreateDerived<MODESWITCH>(
+        cycle, Mode::kBottomUpRemoval);
+
+    cycle->body.Emplace(cycle, mode);
+
+    BuildEagerRemovalRegions(impl, merge, context, mode,
                              merge.NonInductiveSuccessors(), table);
   }
 
@@ -986,7 +1014,7 @@ void AppendToInductionInputVectors(ProgramImpl *impl, QueryView vec_view,
                                    bool for_add) {
 
   // NOTE(pag): We can use the same vector for insertion and removal, because
-  //            we use `CHECKSTATE` to figure out what to do!
+  //            we use `CHECKTUPLE` to figure out what to do!
   VECTOR *const vec = induction->view_to_add_vec[vec_view];
   assert(vec != nullptr);
 

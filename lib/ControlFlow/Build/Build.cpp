@@ -54,6 +54,14 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
     }
   });
 
+  // We will always unique all input data into records, to help kick off
+  // all later record-based analysis.
+  for (auto io : query.IOs()) {
+    for (auto receive : io.Receives()) {
+      (void) TABLE::GetOrCreate(impl, context, receive);
+    }
+  }
+
   for (auto view : query.Inserts()) {
     auto insert = QueryInsert::From(view);
     if (insert.IsRelation()) {
@@ -407,11 +415,16 @@ static REGION *MaybeRemoveFromNegatedView(ProgramImpl *impl, Context &context,
   TABLE *const source_view_table = source_view_model->table;
   assert(source_view_table != nullptr);
 
-  return PivotAroundNegation(
-      impl, context, view, negate, parent, [&](OP *if_present_in_source) {
+  auto ret = impl->operation_regions.CreateDerived<MODESWITCH>(
+      parent, Mode::kBottomUpRemoval);
+
+  ret->body.Emplace(ret, PivotAroundNegation(
+      impl, context, view, negate, ret, [&](OP *if_present_in_source) {
         BuildEagerRemovalRegion(impl, source_view, negate, context,
                                 if_present_in_source, source_view_table);
-      });
+      }));
+
+  return ret;
 }
 
 static REGION *MaybeReAddToNegatedView(ProgramImpl *impl, Context &context,
@@ -424,14 +437,19 @@ static REGION *MaybeReAddToNegatedView(ProgramImpl *impl, Context &context,
   TABLE *const source_view_table = source_view_model->table;
   assert(source_view_table != nullptr);
 
+  auto ret = impl->operation_regions.CreateDerived<MODESWITCH>(
+      parent, Mode::kBottomUpAddition);
+
   // If we don't have a table for the negation, then we need to pivot from the
   // negated view, up to the negation, and down to the source view of the
   // negation.
-  return PivotAroundNegation(
-      impl, context, view, negate, parent, [&](OP *if_present_in_source) {
+  ret->body.Emplace(ret, PivotAroundNegation(
+      impl, context, view, negate, ret, [&](OP *if_present_in_source) {
         BuildEagerRegion(impl, source_view, negate, context,
                          if_present_in_source, source_view_table);
-      });
+      }));
+
+  return ret;
 }
 
 static void MaybeRemoveFromNegatedView(ProgramImpl *impl, Context &context,
@@ -600,7 +618,7 @@ static void BuildTopDownChecker(ProgramImpl *impl, Context &context,
             // Change the tuple's state to mark it as absent so that we can't
             // use it as its own base case.
             const auto table_remove =
-                BuildChangeState(impl, table, parent, view_cols,
+                BuildChangeTuple(impl, table, parent, view_cols,
                                  TupleState::kUnknown, TupleState::kAbsent);
 
             already_checked = model->table;
@@ -608,7 +626,7 @@ static void BuildTopDownChecker(ProgramImpl *impl, Context &context,
             table_remove->body.Emplace(table_remove, recursive_call_if_changed);
 
             // If we're proven the tuple, then try to mark it as present.
-            const auto table_add = BuildChangeState(
+            const auto table_add = BuildChangeTuple(
                 impl, table, recursive_call_if_changed, view_cols,
                 TupleState::kAbsent, TupleState::kPresent);
 
@@ -946,7 +964,7 @@ static void BuildQueryEntryPoint(ProgramImpl *impl, Context &context,
                                  ParsedDeclaration decl, QueryInsert insert) {
   std::unordered_set<std::string> seen_variants;
 
-  for (auto redecl : decl.Redeclarations()) {
+  for (auto redecl : decl.UniqueRedeclarations()) {
 
     // We may have duplicate redeclarations, so don't repeat any.
     std::string binding(redecl.BindingPattern());
@@ -1008,6 +1026,12 @@ static void MapVariables(REGION *region) {
           var->defining_region = region;
         }
       }
+    } else if (auto product = op->AsTableProduct(); product) {
+      for (const auto &var_list : product->output_vars) {
+        for (auto var : var_list) {
+          var->defining_region = region;
+        }
+      }
     } else if (auto gen = op->AsGenerate(); gen) {
       for (auto var : gen->defined_vars) {
         var->defining_region = region;
@@ -1017,6 +1041,33 @@ static void MapVariables(REGION *region) {
 
     } else if (auto call = op->AsCall(); call) {
       MapVariables(call->false_body.get());
+
+    } else if (auto scan = op->AsTableScan(); scan) {
+      for (auto var : scan->out_vars) {
+        var->defining_region = region;
+      }
+    } else if (auto update = op->AsChangeTuple(); update) {
+      MapVariables(update->failed_body.get());
+
+    } else if (auto emplace = op->AsChangeRecord(); emplace) {
+      for (auto var : emplace->record_vars) {
+        var->defining_region = region;
+      }
+      MapVariables(emplace->failed_body.get());
+
+    } else if (auto check = op->AsCheckTuple(); check) {
+      MapVariables(check->absent_body.get());
+      MapVariables(check->unknown_body.get());
+
+    } else if (auto get = op->AsCheckRecord(); get) {
+      for (auto var : get->record_vars) {
+        var->defining_region = region;
+      }
+      MapVariables(get->absent_body.get());
+      MapVariables(get->unknown_body.get());
+
+    } else if (auto cmp = op->AsTupleCompare(); cmp) {
+      MapVariables(cmp->false_body.get());
     }
 
     MapVariables(op->body.get());
@@ -1424,7 +1475,7 @@ InTryInsert(ProgramImpl *impl, Context &context, QueryView view, OP *parent,
       }
 
       // Do the marking.
-      const auto table_remove = BuildChangeState(
+      const auto table_remove = BuildChangeTuple(
           impl, table, parent, cols, from_state, TupleState::kPresent);
 
       parent->body.Emplace(parent, table_remove);
@@ -1468,7 +1519,7 @@ InTryMarkUnknown(ProgramImpl *impl, Context &context, QueryView view,
 
       // Do the marking.
       const auto table_remove =
-          BuildChangeState(impl, table, parent, cols, TupleState::kPresent,
+          BuildChangeTuple(impl, table, parent, cols, TupleState::kPresent,
                            TupleState::kUnknown);
 
       parent->body.Emplace(parent, table_remove);
@@ -1672,8 +1723,8 @@ void BuildEagerRemovalRegionsImpl(ProgramImpl *impl, QueryView view,
   parent->body.Emplace(parent, par);
 
   // Proving this `view` might set a condition. If we set a condition, then
-  // we need to make sure than a CHANGESTATE actually happened. That could
-  // mean re-parenting all successors within a CHANGESTATE.
+  // we need to make sure than a CHANGETUPLE actually happened. That could
+  // mean re-parenting all successors within a CHANGETUPLE.
   //
   // NOTE(pag): Above we made certain to call the top-down checker to make
   //            sure the data is actually gone.
@@ -1691,34 +1742,11 @@ void BuildEagerRemovalRegionsImpl(ProgramImpl *impl, QueryView view,
   for (auto succ_view : successors) {
 
     // New style: use iterative method for removal.
-    if (IRFormat::kIterative == impl->format) {
-      const auto let = impl->operation_regions.CreateDerived<LET>(par);
-      par->AddRegion(let);
+    const auto let = impl->operation_regions.CreateDerived<LET>(par);
+    par->AddRegion(let);
 
-      BuildEagerRemovalRegion(impl, view, succ_view, context, let,
-                              already_removed);
-
-    // Old style: Use recursive push method for removal. This creates lots of
-    // tuple remover procedures.
-    } else {
-      const auto remover_proc = GetOrCreateBottomUpRemover(
-          impl, context, view, succ_view, already_removed);
-      const auto call = impl->operation_regions.CreateDerived<CALL>(
-          impl->next_id++, par, remover_proc);
-
-      auto i = 0u;
-      for (auto col : view.Columns()) {
-        const auto var = parent->VariableFor(impl, col);
-        assert(var != nullptr);
-        call->arg_vars.AddUse(var);
-
-        const auto param = remover_proc->input_vars[i++];
-        assert(var->Type() == param->Type());
-        (void) param;
-      }
-
-      par->AddRegion(call);
-    }
+    BuildEagerRemovalRegion(impl, view, succ_view, context, let,
+                            already_removed);
   }
 }
 
@@ -1759,8 +1787,8 @@ void BuildEagerInsertionRegionsImpl(ProgramImpl *impl, QueryView view,
   parent->body.Emplace(parent, par);
 
   // Proving this `view` might set a condition. If we set a condition, then
-  // we need to make sure than a CHANGESTATE actually happened. That could
-  // mean re-parenting all successors within a CHANGESTATE.
+  // we need to make sure than a CHANGETUPLE actually happened. That could
+  // mean re-parenting all successors within a CHANGETUPLE.
   if (auto set_cond = view.SetCondition(); set_cond) {
     assert(table != nullptr);
     BuildEagerUpdateCondAndNotify(impl, context, *set_cond, par,
@@ -1837,124 +1865,6 @@ void BuildEagerInsertionRegionsImpl(ProgramImpl *impl, QueryView view,
     par->AddRegion(let);
     BuildEagerRegion(impl, view, succ_view, context, let, last_table);
   }
-}
-
-// Build a bottom-up tuple remover, which marks tuples as being in the
-// UNKNOWN state (for later top-down checking).
-PROC *GetOrCreateBottomUpRemover(ProgramImpl *impl, Context &context,
-                                 QueryView from_view, QueryView to_view,
-                                 TABLE *already_checked) {
-  std::vector<QueryColumn> available_cols;
-
-  // Inserts are annoying because they don't have output columns.
-  if (to_view.IsInsert()) {
-
-    for (auto col : to_view.Predecessors()[0].Columns()) {
-      available_cols.push_back(col);
-    }
-
-  } else {
-    for (auto col : from_view.Columns()) {
-      available_cols.push_back(col);
-    }
-  }
-
-  assert(!available_cols.empty());
-
-  std::stringstream ss;
-  ss << to_view.UniqueId();
-  ss << ':' << reinterpret_cast<uintptr_t>(already_checked);
-  for (auto col : available_cols) {
-    ss << ':' << col.Id();
-  }
-
-  auto &proc = context.view_to_bottom_up_remover[ss.str()];
-  if (proc) {
-    return proc;
-  }
-
-  proc = impl->procedure_regions.Create(impl->next_id++,
-                                        ProcedureKind::kTupleRemover);
-
-  // Add parameters to procedure.
-  for (auto param_col : available_cols) {
-    const auto var =
-        proc->input_vars.Create(impl->next_id++, VariableRole::kParameter);
-    var->query_column = param_col;
-    proc->col_id_to_var.emplace(param_col.Id(), var);
-  }
-
-  bool is_equality_cmp = false;
-  if (from_view.IsCompare()) {
-    auto from_cmp = QueryCompare::From(from_view);
-    is_equality_cmp = from_cmp.Operator() == ComparisonOperator::kEqual;
-  }
-
-  // Create variable bindings for input-to-output columns. Our function has
-  // as many columns as `from_view` has, which may be different than what
-  // `to_view` uses (i.e. it might use fewer columns).
-  if (from_view != to_view) {
-    to_view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
-                           std::optional<QueryColumn> out_col) {
-      if (QueryView::Containing(in_col) != from_view || !out_col ||
-          !proc->col_id_to_var.count(in_col.Id()) ||
-          proc->col_id_to_var.count(out_col->Id())) {
-        return;
-      }
-
-      switch (role) {
-        case InputColumnRole::kAggregatedColumn:
-        case InputColumnRole::kIndexValue: return;
-        case InputColumnRole::kCompareLHS:
-        case InputColumnRole::kCompareRHS:
-          if (is_equality_cmp) {
-            return;
-          }
-          [[clang::fallthrough]];
-        default: break;
-      }
-
-      const auto var = proc->VariableFor(impl, in_col);
-      assert(var != nullptr);
-      proc->col_id_to_var.emplace(out_col->Id(), var);
-    });
-
-  } else {
-    to_view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
-                           std::optional<QueryColumn> out_col) {
-      if (!out_col) {
-        return;
-      }
-
-      switch (role) {
-        case InputColumnRole::kAggregatedColumn:
-        case InputColumnRole::kIndexValue: return;
-        case InputColumnRole::kCompareLHS:
-        case InputColumnRole::kCompareRHS:
-          if (is_equality_cmp) {
-            return;
-          }
-          [[clang::fallthrough]];
-        default: break;
-      }
-
-      // TODO(pag): Think about implication of MERGEs here, especially w.r.t.
-      //            constants. Things appear OK given that we're assigning to
-      //            `in_col.Id()`.
-
-      const auto var = proc->VariableFor(impl, *out_col);
-      assert(var != nullptr);
-      proc->col_id_to_var.emplace(in_col.Id(), var);
-    });
-  }
-
-  // Add it to a work list that will be processed after all main bottom-up
-  // (positive) provers are created, so that we have proper access to all
-  // data models.
-  context.bottom_up_removers_work_list.emplace_back(from_view, to_view, proc,
-                                                    already_checked);
-
-  return proc;
 }
 
 // Returns `true` if `view` might need to have its data persisted for the
@@ -2200,9 +2110,8 @@ WorkItem::WorkItem(Context &context, unsigned order_) : order(order_) {}
 WorkItem::~WorkItem(void) {}
 
 // Build a program from a query.
-std::optional<Program> Program::Build(const ::hyde::Query &query,
-                                      IRFormat format_) {
-  auto impl = std::make_shared<ProgramImpl>(query, format_);
+std::optional<Program> Program::Build(const ::hyde::Query &query) {
+  auto impl = std::make_shared<ProgramImpl>(query);
   const auto program = impl.get();
 
   Context context;
@@ -2274,10 +2183,12 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
     }
   }
 
+  FixupContainingProcedure(impl.get());
   impl->Optimize();
 
   ExtractPrimaryProcedure(impl.get(), entry_proc, context);
 
+  FixupContainingProcedure(impl.get());
   impl->Optimize();
 
   // Assign defining regions to each variable.
@@ -2289,19 +2200,30 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
     MapVariables(proc);
   }
 
-//  // Finally, go through our tables. Any table with no indices is given a
-//  // full table index, on the assumption that it is used for things like state
-//  // checking.
-//  for (TABLE *table : impl->tables) {
-//    if (table->indices.Empty()) {
-//      std::vector<unsigned> offsets;
-//      for (auto col : table->columns) {
-//        offsets.push_back(col->index);
-//      }
-//      (void) table->GetOrCreateIndex(impl.get(), std::move(offsets));
-//    }
-//  }
+  // Assign defining regions to each variable.
+  //
+  // NOTE(pag): We don't really want to map variables throughout the building
+  //            process because otherwise every time we replaced all uses of
+  //            one region with another, we'd screw up the mapping.
+  for (auto proc : impl->procedure_regions) {
+    MapVariables(proc);
+  }
 
+  // impl->Analyze();
+#if 0
+  // Finally, go through our tables. Any table with no indices is given a
+  // full table index, on the assumption that it is used for things like state
+  // checking.
+  for (TABLE *table : impl->tables) {
+    if (table->indices.Empty()) {
+      std::vector<unsigned> offsets;
+      for (auto col : table->columns) {
+        offsets.push_back(col->index);
+      }
+      (void) table->GetOrCreateIndex(impl.get(), std::move(offsets));
+    }
+  }
+#endif
   return Program(std::move(impl));
 }
 

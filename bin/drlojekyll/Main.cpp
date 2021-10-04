@@ -1,7 +1,6 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
 #include <drlojekyll/CodeGen/CodeGen.h>
-#include <drlojekyll/CodeGen/MessageSerialization.h>
 #include <drlojekyll/ControlFlow/Format.h>
 #include <drlojekyll/ControlFlow/Program.h>
 #include <drlojekyll/DataFlow/Format.h>
@@ -14,6 +13,16 @@
 #include <drlojekyll/Parse/ModuleIterator.h>
 #include <drlojekyll/Parse/Parser.h>
 #include <drlojekyll/Version/Version.h>
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
+#include <flatbuffers/flatc.h>
+#include <flatbuffers/util.h>
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
 
 #include <cassert>
 #include <cstdlib>
@@ -43,59 +52,191 @@ struct FileStream {
 
 namespace {
 
+std::string gDatabaseName = "datalog";
+bool gHasDatabaseName = false;
+const char *gCxxOutDir = nullptr;
+const char *gPyOutDir = nullptr;
+
 OutputStream *gDOTStream = nullptr;
 OutputStream *gDRStream = nullptr;
-OutputStream *gCxxCodeStream = nullptr;
-OutputStream *gCxxInterfaceCodeStream = nullptr;
-OutputStream *gPyCodeStream = nullptr;
-OutputStream *gPyInterfaceCodeStream = nullptr;
+OutputStream *gFlatCodeStream = nullptr;
 OutputStream *gIRStream = nullptr;
-std::optional<fs::path> gMSGDir = std::nullopt;
 
-static int CompileModule(hyde::DisplayManager display_manager,
-                         hyde::ErrorLog error_log, hyde::ParsedModule module) {
+// Generate a flatbuffer schema in memory.
+static void GenerateFlatBufferSchema(
+    DisplayManager display_manager, Program program,
+    std::string *schema) {
+  if (!schema->empty()) {
+    return;
+  }
+
+  std::stringstream fb_ss;
+  hyde::OutputStream fb_os(display_manager, fb_ss);
+  fb_os.SetIndentSize(2u);
+  flat::GenerateInterfaceCode(program, fb_os);
+  fb_os.Flush();
+  fb_ss.str().swap(*schema);
+}
+
+// Run the FlatBuffers parser and compiler to emit C++ and Python code.
+static void GenerateFlatBufferOutput(const Parser &dr_parser,
+                                     const std::string &schema) {
+
+  flatbuffers::IDLOptions opts;
+  opts.generate_all = true;
+  opts.cpp_static_reflection = true;
+  opts.cpp_std = "C++17";
+  opts.lang_to_generate = flatbuffers::IDLOptions::kCpp |
+                          flatbuffers::IDLOptions::kPython;
+  opts.generate_name_strings = true;
+
+  flatbuffers::Parser parser(opts);
+
+  std::vector<std::string> include_dirs;
+  std::vector<const char *> include_dirs_cstrs;
+  for (auto path : dr_parser.SearchPaths()) {
+    include_dirs.emplace_back(path.generic_string());
+  }
+  for (const auto &path : include_dirs) {
+    include_dirs_cstrs.emplace_back(path.c_str());
+  }
+
+  std::string source_file_name = gDatabaseName + ".fbs";
+
+  parser.Parse(schema.c_str(), &(include_dirs_cstrs[0]),
+               source_file_name.c_str());
+
+  if (gCxxOutDir) {
+    auto out_dir = std::filesystem::path(std::string(gCxxOutDir) + "/").lexically_normal().generic_string();
+    parser.opts.lang = flatbuffers::IDLOptions::kCpp;
+    auto ret1 = flatbuffers::GenerateCPP(parser, out_dir.c_str(),
+                                         gDatabaseName);
+    auto ret2 = flatbuffers::GenerateCppGRPC(parser, out_dir.c_str(),
+                                             gDatabaseName);
+    assert(ret1);
+    assert(ret2);
+    (void) ret1; (void) ret2;
+  }
+
+  if (gPyOutDir) {
+    auto out_dir = std::filesystem::path(std::string(gPyOutDir) + "/").lexically_normal();
+    auto out_dir_str = out_dir.generic_string();
+
+    // The Python codegen for FlatBuffer gRPC stuff needs to execute in the
+    // target working directory.
+    const auto current_dir = std::filesystem::current_path();
+    std::filesystem::current_path(out_dir);
+
+    // If `#database` is manually specified, then this'll introduce a Python
+    // module.
+    if (gHasDatabaseName) {
+      std::filesystem::create_directories(gDatabaseName);
+    }
+
+    parser.opts.lang = flatbuffers::IDLOptions::kPython;
+    parser.opts.generate_object_based_api = true;
+    auto ret1 = flatbuffers::GeneratePython(parser, out_dir_str.c_str(),
+                                            gDatabaseName);
+
+    auto ret2 = flatbuffers::GeneratePythonGRPC(parser, out_dir_str.c_str(),
+                                                gDatabaseName);
+
+    std::filesystem::current_path(current_dir);
+    assert(ret1);
+    assert(ret2);
+    (void) ret1; (void) ret2;
+  }
+}
+
+static int CompileModule(const Parser &parser, DisplayManager display_manager,
+                         ErrorLog error_log, ParsedModule module) {
   auto query_opt = Query::Build(module, error_log);
   if (!query_opt) {
     return EXIT_FAILURE;
   }
 
   auto ret = EXIT_SUCCESS;
+  try {
+    std::string fb_schema;
 
-  if (gIRStream || gCxxCodeStream || gCxxInterfaceCodeStream ||
-      gPyCodeStream || gPyInterfaceCodeStream) {
-    try {
-      if (auto program_opt = Program::Build(*query_opt, IRFormat::kIterative)) {
-        if (gIRStream) {
-          (*gIRStream) << *program_opt;
-          gIRStream->Flush();
-        }
-
-        if (gCxxCodeStream) {
-          gCxxCodeStream->SetIndentSize(2u);
-          hyde::cxx::GenerateDatabaseCode(*program_opt, *gCxxCodeStream);
-        }
-
-        if (gCxxInterfaceCodeStream) {
-          gCxxInterfaceCodeStream->SetIndentSize(2u);
-          hyde::cxx::GenerateInterfaceCode(*program_opt,
-                                           *gCxxInterfaceCodeStream);
-        }
-
-        if (gPyCodeStream) {
-          gPyCodeStream->SetIndentSize(4u);
-          hyde::python::GenerateDatabaseCode(*program_opt, *gPyCodeStream);
-        }
-
-        if (gPyInterfaceCodeStream) {
-          gPyInterfaceCodeStream->SetIndentSize(4u);
-          hyde::python::GenerateInterfaceCode(*program_opt,
-                                              *gPyInterfaceCodeStream);
-        }
-      } else {
-        ret = EXIT_FAILURE;
-      }
-    } catch (...) {
+    auto program_opt = Program::Build(*query_opt);
+    if (!program_opt) {
+      return EXIT_FAILURE;
     }
+
+    if (gCxxOutDir || gPyOutDir || gFlatCodeStream) {
+      GenerateFlatBufferSchema(
+          display_manager, *program_opt, &fb_schema);
+    }
+
+    if (gIRStream) {
+      (*gIRStream) << *program_opt;
+      gIRStream->Flush();
+    }
+
+    if (gCxxOutDir || gPyOutDir) {
+      GenerateFlatBufferOutput(parser, fb_schema);
+    }
+
+    if (gCxxOutDir) {
+      std::filesystem::path dir = gCxxOutDir;
+      hyde::FileStream db_fs(
+          display_manager,
+          (dir / (gDatabaseName + ".db.h")).generic_string());
+      hyde::cxx::GenerateDatabaseCode(*program_opt, db_fs.os);
+
+      hyde::FileStream interface_fs(
+          display_manager,
+          (dir / (gDatabaseName + ".interface.h")).generic_string());
+      hyde::cxx::GenerateInterfaceCode(*program_opt, interface_fs.os);
+
+      hyde::FileStream server_fs(
+          display_manager,
+          (dir / (gDatabaseName + ".server.cpp")).generic_string());
+
+      hyde::cxx::GenerateServerCode(*program_opt, server_fs.os);
+
+      hyde::FileStream client_h_fs(
+          display_manager,
+          (dir / (gDatabaseName + ".client.h")).generic_string());
+
+      hyde::FileStream client_cpp_fs(
+          display_manager,
+          (dir / (gDatabaseName + ".client.cpp")).generic_string());
+
+      hyde::cxx::GenerateClientCode(*program_opt, client_h_fs.os,
+                                    client_cpp_fs.os);
+    }
+
+    if (gPyOutDir) {
+      std::filesystem::path dir = gPyOutDir;
+      if (gHasDatabaseName) {
+        dir /= gDatabaseName;
+      }
+
+      hyde::FileStream interface_fs(
+          display_manager,
+          (dir / "__init__.py").generic_string());
+      hyde::python::GenerateInterfaceCode(*program_opt, interface_fs.os);
+    }
+
+//        if (gPyCodeStream) {
+//          gPyCodeStream->SetIndentSize(4u);
+//          hyde::python::GenerateDatabaseCode(*program_opt, *gPyCodeStream);
+//        }
+//
+//        if (gPyInterfaceCodeStream) {
+//          gPyInterfaceCodeStream->SetIndentSize(4u);
+//          hyde::python::GenerateInterfaceCode(*program_opt,
+//                                              *gPyInterfaceCodeStream);
+//        }
+
+    // FlatBuffer schema output.
+    if (gFlatCodeStream) {
+      (*gFlatCodeStream) << fb_schema;
+    }
+  } catch (...) {
+    ret = EXIT_FAILURE;
   }
 
   // NOTE(pag): We do this later because if we produce the control-flow IR
@@ -109,26 +250,30 @@ static int CompileModule(hyde::DisplayManager display_manager,
   return ret;
 }
 
-static int ProcessModule(hyde::DisplayManager display_manager,
-                         hyde::ErrorLog error_log, hyde::ParsedModule module) {
+// Process a parsed module.
+static int ProcessModule(const Parser &parser, DisplayManager display_manager,
+                         ErrorLog error_log, ParsedModule module) {
+
+  // Figure out the database name to use. This affects code generation.
+  auto maybe_name = module.DatabaseName();
+  if (gHasDatabaseName && maybe_name.has_value()) {
+    if (gDatabaseName != maybe_name->NameAsString()) {
+      error_log.Append(maybe_name->SpellingRange(),
+                       maybe_name->Name().SpellingRange())
+          << "Command-line specifies database name as '" << gDatabaseName
+          << "', which is different than '" << maybe_name->Name()
+          << "', which is specified in the code";
+    }
+  } else if (maybe_name.has_value()) {
+    gHasDatabaseName = true;
+    gDatabaseName = maybe_name->NameAsString();
+  }
 
   // Output the amalgamation of all files.
   if (gDRStream) {
     gDRStream->SetRenameLocals(true);
     (*gDRStream) << module;
     gDRStream->Flush();
-  }
-
-  // Output all message serializations.
-  if (gMSGDir) {
-    for (auto sub_module : ParsedModuleIterator(module)) {
-      for (auto schema_info :
-           GenerateAvroMessageSchemas(display_manager, sub_module, error_log)) {
-        FileStream schema_stream(
-            display_manager, *gMSGDir / (schema_info.message_name + ".avsc"));
-        schema_stream.os << schema_info.schema;
-      }
-    }
   }
 
   // Round-trip test of the parser in debug builds.
@@ -166,7 +311,7 @@ static int ProcessModule(hyde::DisplayManager display_manager,
   assert(ss2.str() == ss3.str());
 #endif
 
-  return CompileModule(display_manager, error_log, module);
+  return CompileModule(parser, display_manager, error_log, module);
 }
 
 // Our current clang-format configuration reformats the long lines in following
@@ -182,11 +327,9 @@ static int HelpMessage(const char *argv[]) {
       << std::endl
       << "OUTPUT OPTIONS:" << std::endl
       << "  -ir-out <PATH>            Emit IR output to PATH." << std::endl
-      << "  -cpp-out <PATH>           Emit transpiled C++ output to PATH." << std::endl
-      << "  -cpp-interface-out <PATH> Emit transpiled C++ interface output to PATH." << std::endl
-      << "  -py-out <PATH>            Emit transpiled Python output to PATH." << std::endl
-      << "  -py-interface-out <PATH>  Emit transpiled Python interface output to PATH." << std::endl
-      << "  -messages-dir <DIR>       Emit generated AVRO messages to the directory specified" << std::endl
+      << "  -cpp-out <DIR>            Emit transpiled C++ output files into DIR." << std::endl
+      << "  -py-out <DIR>             Emit transpiled Python output files into DIR." << std::endl
+      << "  -flat-out <PATH>          Emit a FlatBuffer schema to PATH." << std::endl
       << "  -dr-out <PATH>            Emit an amalgamation of all the input and transitively" << std::endl
       << "                            imported modules to PATH." << std::endl
       << "  -dot-out <PATH>           Emit the data flow graph in GraphViz DOT format to PATH." << std::endl
@@ -236,6 +379,9 @@ static int VersionMessage(void) {
 }  // namespace hyde
 
 extern "C" int main(int argc, const char *argv[]) {
+  // Prevent Appveyor-CI hangs.
+  flatbuffers::SetupDefaultCRTReportMode();
+
   hyde::DisplayManager display_manager;
   hyde::ErrorLog error_log(display_manager);
   hyde::Parser parser(display_manager, error_log);
@@ -251,10 +397,7 @@ extern "C" int main(int argc, const char *argv[]) {
   hyde::gOut = &os;
 
   std::unique_ptr<hyde::FileStream> dot_out;
-  std::unique_ptr<hyde::FileStream> cpp_out;
-  std::unique_ptr<hyde::FileStream> cpp_interface_out;
-  std::unique_ptr<hyde::FileStream> py_out;
-  std::unique_ptr<hyde::FileStream> py_interface_out;
+  std::unique_ptr<hyde::FileStream> fb_out;
   std::unique_ptr<hyde::FileStream> ir_out;
   std::unique_ptr<hyde::FileStream> dr_out;
 
@@ -267,25 +410,10 @@ extern "C" int main(int argc, const char *argv[]) {
       if (i >= argc) {
         error_log.Append()
             << "Command-line argument " << argv[i]
-            << " must be followed by a file path for C++ code output";
+            << " must be followed by a directory path for C++ code output";
       } else {
-        cpp_out.reset(new hyde::FileStream(display_manager, argv[i]));
-        hyde::gCxxCodeStream = &(cpp_out->os);
+        hyde::gCxxOutDir = argv[i];
       }
-
-    // C++ interface output file of the transpiled from the Dr. Lojekyll
-    // source code.
-    } else if (!strcmp(argv[i], "-cpp-interface-out") ||
-               !strcmp(argv[i], "--cpp-interface-out")) {
-       ++i;
-       if (i >= argc) {
-         error_log.Append()
-             << "Command-line argument " << argv[i]
-             << " must be followed by a file path for C++ code output";
-       } else {
-         cpp_interface_out.reset(new hyde::FileStream(display_manager, argv[i]));
-         hyde::gCxxInterfaceCodeStream = &(cpp_interface_out->os);
-       }
 
     // Python output file of the transpiled from the Dr. Lojekyll source code.
     } else if (!strcmp(argv[i], "-py-out") || !strcmp(argv[i], "--py-out")) {
@@ -293,25 +421,22 @@ extern "C" int main(int argc, const char *argv[]) {
       if (i >= argc) {
         error_log.Append()
             << "Command-line argument " << argv[i]
-            << " must be followed by a file path for Python code output";
+            << " must be followed by a directory path for Python code output";
       } else {
-        py_out.reset(new hyde::FileStream(display_manager, argv[i]));
-        hyde::gPyCodeStream = &(py_out->os);
+        hyde::gPyOutDir = argv[i];
       }
 
-    // Python interface output file of the transpiled from the Dr. Lojekyll
-    // source code.
-    } else if (!strcmp(argv[i], "-py-interface-out") ||
-               !strcmp(argv[i], "--py-interface-out")) {
+    } else if (!strcmp(argv[i], "-flat-out") ||
+               !strcmp(argv[i], "--flat-out")) {
       ++i;
       if (i >= argc) {
         error_log.Append()
             << "Command-line argument " << argv[i]
-            << " must be followed by a file path for Python interface "
-            << "code output";
+            << " must be followed by a file path for FlatBuffer "
+            << "schema output";
       } else {
-        py_interface_out.reset(new hyde::FileStream(display_manager, argv[i]));
-        hyde::gPyInterfaceCodeStream = &(py_interface_out->os);
+        fb_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        hyde::gFlatCodeStream = &(fb_out->os);
       }
 
     } else if (!strcmp(argv[i], "-ir-out") || !strcmp(argv[i], "--ir-out")) {
@@ -337,32 +462,6 @@ extern "C" int main(int argc, const char *argv[]) {
         hyde::gDRStream = &(dr_out->os);
       }
 
-    // Write message schemas to an output directory
-    } else if (!strcmp(argv[i], "--messages-dir") ||
-               !strcmp(argv[i], "-messages-dir")) {
-      ++i;
-      if (i >= argc) {
-        hyde::Error err(display_manager);
-        err << "Command-line argument '" << argv[i - 1]
-            << "' must be followed by a directory path for "
-            << "message serialization output";
-        error_log.Append(std::move(err));
-      } else {
-        hyde::gMSGDir = fs::path(argv[i]);
-
-        if (!fs::is_directory(*hyde::gMSGDir) || !fs::exists(*hyde::gMSGDir)) {
-          std::error_code errcode;
-          if (!fs::create_directories(*hyde::gMSGDir, errcode)) {
-            hyde::Error err(display_manager);
-            err << "Directory '" << argv[i] << "' could not be created. "
-                << "(" << errcode.message() << ")";
-            error_log.Append(std::move(err));
-
-            hyde::gMSGDir = std::nullopt;
-          }
-        }
-      }
-
     // GraphViz DOT digraph output, which is useful for debugging the data flow.
     } else if (!strcmp(argv[i], "--dot-out") || !strcmp(argv[i], "-dot-out")) {
       ++i;
@@ -376,15 +475,34 @@ extern "C" int main(int argc, const char *argv[]) {
       }
 
     // Datalog module file search path.
-    } else if (strstr(argv[i], "-M")) {
+    } else if (!strcmp(argv[i], "-M")) {
       if (i >= argc) {
         error_log.Append()
             << "Command-line argument '-M' must be followed by a directory path";
-        continue;
-      }
-      const char *path = argv[++i];
 
-      parser.AddModuleSearchPath(path);
+      } else {
+        std::filesystem::path path(argv[++i]);
+        parser.AddModuleSearchPath(std::move(path));
+      }
+
+    // Name of the datalog database.
+    } else if (!strcmp(argv[i], "-database") ||
+               !strcmp(argv[i], "--database")) {
+      ++i;
+      if (i >= argc) {
+        error_log.Append()
+            << "Command-line argument '-database' must be followed by a string";
+
+      } else if (hyde::gHasDatabaseName) {
+        error_log.Append()
+            << "Command-line argument '-database' has already been specified";
+
+      } else {
+        hyde::gHasDatabaseName = true;
+        hyde::gDatabaseName = argv[i];
+
+        linked_module << "#database " << argv[i] << ".\n";
+      }
 
     // Help message :-)
     } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-help") ||
@@ -440,7 +558,7 @@ extern "C" int main(int argc, const char *argv[]) {
     error_log.Append() << "No input files to parse";
 
   // Parse a single module.
-  } else if (1 == num_input_paths) {
+  } else if (1 == num_input_paths && !hyde::gHasDatabaseName) {
     hyde::DisplayConfiguration config = {
         input_path,  // `name`.
         2,  // `num_spaces_in_tab`.
@@ -448,7 +566,8 @@ extern "C" int main(int argc, const char *argv[]) {
     };
 
     if (auto module_opt = parser.ParsePath(input_path, config)) {
-      code = hyde::ProcessModule(display_manager, error_log, *module_opt);
+      code = hyde::ProcessModule(
+          parser, display_manager, error_log, *module_opt);
     }
 
   // Parse multiple modules as a single module including each module to
@@ -461,7 +580,7 @@ extern "C" int main(int argc, const char *argv[]) {
     };
 
     if (auto module_opt = parser.ParseStream(linked_module, config)) {
-      code = hyde::ProcessModule(display_manager, error_log, *module_opt);
+      code = hyde::ProcessModule(parser, display_manager, error_log, *module_opt);
     }
   }
 

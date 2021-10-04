@@ -4,20 +4,20 @@
 
 namespace hyde {
 
-Node<ProgramParallelRegion>::Node(REGION *parent_)
-    : Node<ProgramRegion>(parent_),
+ProgramParallelRegionImpl::ProgramParallelRegionImpl(REGION *parent_)
+    : ProgramRegionImpl(parent_),
       regions(this) {
   assert(parent_->Ancestor()->AsProcedure());
 }
 
-Node<ProgramParallelRegion>::~Node(void) {}
+ProgramParallelRegionImpl::~ProgramParallelRegionImpl(void) {}
 
-Node<ProgramParallelRegion> *
-Node<ProgramParallelRegion>::AsParallel(void) noexcept {
+ProgramParallelRegionImpl *
+ProgramParallelRegionImpl::AsParallel(void) noexcept {
   return this;
 }
 
-uint64_t Node<ProgramParallelRegion>::Hash(uint32_t depth) const {
+uint64_t ProgramParallelRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = 193u;
   if (depth == 0) {
     return hash;
@@ -32,8 +32,8 @@ uint64_t Node<ProgramParallelRegion>::Hash(uint32_t depth) const {
 // Returns `true` if `this` and `that` are structurally equivalent (after
 // variable renaming) after searching down `depth` levels or until leaf,
 // whichever is first, and where `depth` is 0, compare `this` to `that.
-bool Node<ProgramParallelRegion>::Equals(EqualitySet &eq,
-                                         Node<ProgramRegion> *that_,
+bool ProgramParallelRegionImpl::Equals(EqualitySet &eq,
+                                         ProgramRegionImpl *that_,
                                          uint32_t depth) const noexcept {
   const auto that = that_->AsParallel();
   const auto num_regions = regions.Size();
@@ -109,8 +109,8 @@ bool Node<ProgramParallelRegion>::Equals(EqualitySet &eq,
   return true;
 }
 
-const bool Node<ProgramParallelRegion>::MergeEqual(
-    ProgramImpl *, std::vector<Node<ProgramRegion> *> &merges) {
+const bool ProgramParallelRegionImpl::MergeEqual(
+    ProgramImpl *, std::vector<ProgramRegionImpl *> &merges) {
 
   for (auto region : merges) {
     auto merge = region->AsParallel();
@@ -128,7 +128,7 @@ const bool Node<ProgramParallelRegion>::MergeEqual(
 }
 
 // Returns true if this region is a no-op.
-bool Node<ProgramParallelRegion>::IsNoOp(void) const noexcept {
+bool ProgramParallelRegionImpl::IsNoOp(void) const noexcept {
   for (auto region : regions) {
     assert(region->parent == this);
     if (!region->IsNoOp()) {
@@ -139,7 +139,7 @@ bool Node<ProgramParallelRegion>::IsNoOp(void) const noexcept {
 }
 
 // Returns `true` if all paths through `this` ends with a `return` region.
-bool Node<ProgramParallelRegion>::EndsWithReturn(void) const noexcept {
+bool ProgramParallelRegionImpl::EndsWithReturn(void) const noexcept {
   if (regions.Empty()) {
     return false;
   }

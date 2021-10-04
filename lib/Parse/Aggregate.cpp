@@ -5,20 +5,20 @@
 namespace hyde {
 namespace {
 
-static void AnalyzeAggregateVars(Node<ParsedAggregate> *impl,
+static void AnalyzeAggregateVars(ParsedAggregateImpl *impl,
                                  const ErrorLog &log) {
-  auto next_group_var_ptr = &(impl->first_group_var);
-  auto next_config_var_ptr = &(impl->first_config_var);
-  auto next_aggregate_var_ptr = &(impl->first_aggregate_var);
+  ParsedDeclarationImpl * const decl = impl->functor->declaration;
+  if (decl->context->kind != DeclarationKind::kFunctor) {
+    assert(0u < log.Size());
+    return;
+  }
 
-  for (auto &param_use : impl->predicate->argument_uses) {
-    Node<ParsedVariable> *param_var = param_use->used_var;
+  for (ParsedVariableImpl *param_var : impl->predicate->argument_uses) {
+    ParsedVariableImpl *found_as = nullptr;
 
-    Node<ParsedVariable> *found_as = nullptr;
     auto arg_num = 0u;
-    for (auto &arg_use : impl->functor->argument_uses) {
-      Node<ParsedVariable> *arg_var = arg_use->used_var;
-      if (param_var->Id() == arg_var->Id()) {
+    for (ParsedVariableImpl *arg_var : impl->functor->argument_uses) {
+      if (param_var->first_appearance == arg_var->first_appearance) {
         found_as = arg_var;
         break;
       }
@@ -26,41 +26,39 @@ static void AnalyzeAggregateVars(Node<ParsedAggregate> *impl,
     }
 
     if (!found_as) {
-      *next_group_var_ptr = param_var;
-      next_group_var_ptr = &(param_var->next_group_var);
+      impl->group_vars.AddUse(param_var);
 
     } else {
-      auto decl = impl->functor->declaration;
-      auto param = decl->parameters[arg_num].get();
+      ParsedParameterImpl * const param = decl->parameters[arg_num];
       switch (param->opt_binding.Lexeme()) {
         case Lexeme::kKeywordBound:
-          *next_config_var_ptr = param_var;
-          next_config_var_ptr = &(param_var->next_config_var);
+          impl->config_vars.AddUse(param_var);
           break;
 
         case Lexeme::kKeywordAggregate:
-          *next_aggregate_var_ptr = param_var;
-          next_aggregate_var_ptr = &(param_var->next_aggregate_var);
+          impl->aggregate_vars.AddUse(param_var);
           break;
 
         case Lexeme::kKeywordSummary: {
-          auto agg_range = ParsedAggregate(impl).SpellingRange();
-          auto err =
-              log.Append(agg_range, ParsedVariable(param_var).SpellingRange());
+          DisplayRange decl_range = ParsedDeclaration(decl).SpellingRange();
+          DisplayRange param_range = ParsedParameter(param).SpellingRange();
+
+          DisplayRange agg_range = ParsedAggregate(impl).SpellingRange();
+          DisplayRange found_as_range = ParsedVariable(found_as).SpellingRange();
+          auto err = log.Append(agg_range, param_range);
 
           err << "Parameter variable '" << param_var->name
               << "' to predicate being aggregated shares the same name "
               << "as a summary variable";
 
-          err.Note(ParsedDeclaration(decl).SpellingRange(),
-                   ParsedParameter(param).SpellingRange())
+          err.Note(decl_range, param_range)
               << "Parameter '" << param->name << "' declared as summary here";
 
-          err.Note(agg_range, ParsedVariable(found_as).SpellingRange())
+          err.Note(agg_range, found_as_range)
               << "Variable '" << param_var->name
               << "' used here as as a summary argument to the aggregating functor '"
               << impl->functor->name << "/"
-              << impl->functor->argument_uses.size() << "'";
+              << impl->functor->argument_uses.Size() << "'";
 
           break;
         }
@@ -75,17 +73,22 @@ static void AnalyzeAggregateVars(Node<ParsedAggregate> *impl,
 // Try to parse the predicate application following a use of an aggregating
 // functor.
 bool ParserImpl::ParseAggregatedPredicate(
-    Node<ParsedModule> *module, Node<ParsedClause> *clause,
-    std::unique_ptr<Node<ParsedPredicate>> functor, Token &tok,
+    ParsedModuleImpl *module, ParsedClauseImpl *clause,
+    ParsedAggregateImpl *agg, Token &tok,
     DisplayPosition &next_pos) {
 
   auto state = 0;
 
-  std::unique_ptr<Node<ParsedLocal>> anon_decl;
-  std::unique_ptr<Node<ParsedPredicate>> pred;
-  std::unique_ptr<Node<ParsedParameter>> anon_param;
+  ParsedLocalImpl *anon_decl = nullptr;
+  ParsedPredicateImpl * const functor = &(agg->functor);
+  ParsedPredicateImpl * const pred = &(agg->predicate);
 
-  Node<ParsedVariable> *arg = nullptr;
+  Token param_type;
+  Token param_name;
+  std::vector<std::pair<Token, Token>> anon_params;
+
+  ParsedVariableImpl *arg = nullptr;
+  std::vector<ParsedVariableImpl *> pred_args;
 
   // Build up a token list representing a synthetic clause definition
   // associated with `anon_decl`.
@@ -105,8 +108,13 @@ bool ParserImpl::ParseAggregatedPredicate(
         // An inline predicate; we'll need to invent a declaration and
         // clause for it.
         if (Lexeme::kPuncOpenParen == lexeme) {
-          anon_decl.reset(
-              new Node<ParsedLocal>(module, DeclarationKind::kLocal));
+          anon_decl = module->declarations.CreateDerived<ParsedLocalImpl>(
+              module, DeclarationKind::kLocal);
+
+          // Unconditionally add the declaration. We'll fill in the parameters
+          // as we parse.
+          module->locals.AddUse(anon_decl);
+
           anon_decl->directive_pos = tok.Position();
           anon_decl->name =
               Token::Synthetic(Lexeme::kIdentifierUnnamedAtom, tok_range);
@@ -117,15 +125,14 @@ bool ParserImpl::ParseAggregatedPredicate(
 
           assert(tok.Lexeme() == Lexeme::kPuncOpenParen);
           anon_clause_toks.push_back(tok);
-          pred.reset(new Node<ParsedPredicate>(module, clause));
-          pred->declaration = anon_decl.get();
+          pred->declaration = anon_decl;
           pred->name = anon_decl->name;
+          anon_decl->context->positive_uses.AddUse(pred);
           state = 1;
           continue;
 
-        // Direct application.
+        // Direct application of another predicate.
         } else if (Lexeme::kIdentifierAtom == lexeme) {
-          pred.reset(new Node<ParsedPredicate>(module, clause));
           pred->name = tok;
           state = 6;
           continue;
@@ -139,47 +146,33 @@ bool ParserImpl::ParseAggregatedPredicate(
 
       case 1:
         if (tok.IsType()) {
-          anon_param.reset(new Node<ParsedParameter>);
-          anon_param->opt_type = tok;
-          anon_param->parsed_opt_type = true;
+          param_type = tok;
           state = 2;
+          continue;
+
+        } else if (Lexeme::kIdentifierVariable == lexeme) {
+          anon_clause_toks.push_back(tok);
+
+          param_name = tok;
+          state = 3;
           continue;
 
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected a type name for parameter to inline aggregate "
-              << "clause, but got '" << tok << "' instead";
+              << "Expected a type name or variable name for parameter to "
+              << "inline aggregate clause, but got '" << tok << "' instead";
           return false;
         }
 
       case 2:
         if (Lexeme::kIdentifierVariable == lexeme) {
-          anon_param->name = tok;
-          if (!anon_decl->parameters.empty()) {
-            anon_decl->parameters.back()->next = anon_param.get();
-          }
-          anon_decl->parameters.emplace_back(std::move(anon_param));
-
-          assert(tok.Lexeme() == Lexeme::kIdentifierVariable);
           anon_clause_toks.push_back(tok);
 
-          arg = CreateVariable(clause, tok, false, true);
-          auto use = new Node<ParsedUse<ParsedPredicate>>(UseKind::kArgument,
-                                                          arg, pred.get());
+          param_name = tok;
+          state = 3;
+          continue;
 
-          // Add to this variable's use list.
-          auto &argument_uses = arg->context->argument_uses;
-          if (!argument_uses.empty()) {
-            argument_uses.back()->next = use;
-          }
-          argument_uses.push_back(use);
-
-          // Link the arguments together.
-          if (!pred->argument_uses.empty()) {
-            pred->argument_uses.back()->used_var->next_var_in_arg_list = arg;
-          }
-
-          pred->argument_uses.emplace_back(use);
+          assert(tok.Lexeme() == Lexeme::kIdentifierVariable);
 
           state = 3;
           continue;
@@ -193,17 +186,44 @@ bool ParserImpl::ParseAggregatedPredicate(
 
       case 3:
         if (Lexeme::kPuncComma == lexeme) {
-          state = 1;
+          anon_params.emplace_back(param_type, param_name);
+          param_type = Token();
+          param_name = Token();
+
           assert(tok.Lexeme() == Lexeme::kPuncComma);
           anon_clause_toks.push_back(tok);
+
+          state = 1;
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
-          state = 4;
+          anon_params.emplace_back(param_type, param_name);
+
+          // Add in the parameters to the anonymous declaration, and match them
+          // up as arguments to the predicate.
+          for (auto [p_type, p_name] : anon_params) {
+            ParsedParameterImpl *p = anon_decl->parameters.Create(anon_decl);
+            p->name = p_name;
+            p->opt_type = p_type;
+            p->parsed_opt_type = p->opt_type.IsValid();
+
+            arg = CreateVariable(clause, p_name, false, true);
+            arg->type = p->opt_type;
+            pred->argument_uses.AddUse(arg);
+          }
+
+          param_type = Token();
+          param_name = Token();
+          anon_params.clear();
+
+          assert(tok.Lexeme() == Lexeme::kPuncCloseParen);
           anon_decl->rparen = tok;
           pred->rparen = tok;
-          assert(tok.Lexeme() == Lexeme::kPuncCloseParen);
           anon_clause_toks.push_back(tok);
+
+          FinalizeDeclAndCheckConsistency(anon_decl);
+
+          state = 4;
           continue;
 
         } else {
@@ -247,17 +267,11 @@ bool ParserImpl::ParseAggregatedPredicate(
 
             // Go try to parse the synthetic clause body, telling about our
             // synthetic declaration head.
-            ParseClause(module, anon_decl.get());
+            ParseClause(module, anon_decl);
 
             next_sub_tok_index = prev_next_sub_tok_index;
             sub_tokens.swap(anon_clause_toks);
             prev_prev_named_var.swap(prev_named_var);
-
-            // Unconditionally add the declaration.
-            if (!module->locals.empty()) {
-              module->locals.back()->next = anon_decl.get();
-            }
-            module->locals.emplace_back(std::move(anon_decl));
 
             // It doesn't matter if we parsed it as a clause or not, we always
             // add the declaration, so we may as well permit further parsing.
@@ -276,6 +290,7 @@ bool ParserImpl::ParseAggregatedPredicate(
           continue;
         }
 
+      // We want to parse a predicate application.
       case 6:
         if (Lexeme::kPuncOpenParen == lexeme) {
           state = 7;
@@ -305,23 +320,8 @@ bool ParserImpl::ParseAggregatedPredicate(
         }
 
         if (arg) {
-          auto use = new Node<ParsedUse<ParsedPredicate>>(UseKind::kArgument,
-                                                          arg, pred.get());
-
-          // Add to this variable's use list.
-          auto &argument_uses = arg->context->argument_uses;
-          if (!argument_uses.empty()) {
-            argument_uses.back()->next = use;
-          }
-          argument_uses.push_back(use);
-
-          // Link the arguments together.
-          if (!pred->argument_uses.empty()) {
-            pred->argument_uses.back()->used_var->next_var_in_arg_list = arg;
-          }
-
-          pred->argument_uses.emplace_back(use);
-
+          pred->argument_uses.AddUse(arg);
+          pred_args.push_back(arg);
           state = 8;
           continue;
 
@@ -337,32 +337,63 @@ bool ParserImpl::ParseAggregatedPredicate(
         if (Lexeme::kPuncCloseParen == lexeme) {
           last_pos = tok.NextPosition();
           pred->rparen = tok;
+          pred->declaration = TryMatchPredicateWithDecl(
+              module, pred->name, pred_args, tok);
 
-          if (!TryMatchPredicateWithDecl(module, pred.get())) {
-            return false;
+          // Failed to match it :-( Recover by adding a local declaration;
+          // this will let us keep parsing.
+          if (!pred->declaration) {
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
+
+          parse::IdInterpreter interpreter = {};
+          interpreter.info.atom_name_id = pred->name.IdentifierId();
+          interpreter.info.arity = std::min(
+              pred->argument_uses.Size(), kMaxArity);
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
+
+            const auto id = interpreter.flat;
+
+            ParsedLocalImpl * const local_decl =
+                module->declarations.CreateDerived<ParsedLocalImpl>(
+                    module, DeclarationKind::kLocal);
+            local_decl->directive_pos = pred->name.Position();
+            local_decl->name = pred->name;
+            local_decl->rparen = tok;
+
+            for (ParsedVariableImpl *used_var : pred_args) {
+              ParsedParameterImpl *param = local_decl->parameters.Create(local_decl);
+              param->name = used_var->name;
+              param->opt_type = used_var->type;
+              param->index = local_decl->parameters.Size() - 1u;
+            }
+
+            module->locals.AddUse(local_decl);
+            context->declarations.emplace(id, local_decl);
+
+            // Use the fake declaration.
+            pred->declaration = local_decl;
           }
 
-          // Do some minor checks on the functor over which aggregation is
-          // happening. We disallow `blah1(..) over blah2(...) over ...`, and
-          // instead require intermediate or inline clause bodies to be used.
-          auto pred_decl = ParsedDeclaration::Of(ParsedPredicate(pred.get()));
-          if (pred_decl.IsFunctor()) {
-            const auto pred_functor = ParsedFunctor::From(pred_decl);
-            const auto err_range = ParsedPredicate(pred.get()).SpellingRange();
-            if (pred_functor.IsAggregate()) {
-              context->error_log.Append(scope_range, err_range)
-                  << "Cannot aggregate an aggregating functor '" << pred->name
-                  << "', try using inline clauses instead";
+          // Attach this use in.
+          pred->declaration->context->positive_uses.AddUse(pred);
 
-            // This is basically to keep the data flow builder simpler; we want
-            // to source of data feeding an aggregate into a basic view on which
-            // we can build, and thus treat as unconditionally and immediately
-            // available.
-            } else {
-              context->error_log.Append(scope_range, err_range)
-                  << "Cannot aggregate over a functor '" << pred->name
-                  << "'; aggregates must operate over relations";
-            }
+          // This is basically to keep the data flow builder simpler; we want
+          // to source of data feeding an aggregate into a basic view on which
+          // we can build, and thus treat as unconditionally and immediately
+          // available.
+          if (pred->declaration->context->kind == DeclarationKind::kFunctor) {
+            DisplayRange pred_range = ParsedPredicate(pred).SpellingRange();
+            context->error_log.Append(scope_range, pred_range)
+                << "Cannot aggregate over functor '" << pred->name
+                << "/" << pred->argument_uses.Size()
+                << "'; aggregates must operate over relations";
+
             return false;
           }
 
@@ -382,19 +413,10 @@ bool ParserImpl::ParseAggregatedPredicate(
 
 done:
 
-  std::unique_ptr<Node<ParsedAggregate>> agg(new Node<ParsedAggregate>);
   agg->spelling_range = DisplayRange(functor->name.Position(), last_pos);
-  agg->functor = std::move(functor);
-  agg->predicate = std::move(pred);
-
-  if (!clause->aggregates.empty()) {
-    clause->aggregates.back()->next = agg.get();
-  }
 
   // Make sure the usage of variables is reasonable.
-  AnalyzeAggregateVars(agg.get(), context->error_log);
-
-  clause->aggregates.emplace_back(std::move(agg));
+  AnalyzeAggregateVars(agg, context->error_log);
   return true;
 }
 

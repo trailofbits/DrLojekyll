@@ -1,18 +1,5 @@
-#message add_edge(u64 From, u64 To).
-#query reachable_from(bound u64 From, free u64 To).
-#query reaching_to(free u64 From, bound u64 To).
-#local tc(From, To).
 
-reachable_from(From, To) : tc(From, To).
-reaching_to(From, To) : tc(From, To).
-
-tc(From, To) : tc(From, X), tc(X, To).
-tc(From, To) : add_edge(From, To).
-
-#query is_node(free u64 Node).
-
-is_node(Node) : tc(Node, _).
-is_node(Node) : tc(_, Node).
+#import "../transitive_closure.dr".
 
 #epilogue ```python
 class Functors(DatabaseFunctors):

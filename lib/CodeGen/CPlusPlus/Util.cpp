@@ -42,8 +42,6 @@ OutputStream &Procedure(OutputStream &os, ProgramProcedure proc) {
     case ProcedureKind::kMessageHandler:
       return os << proc.Message()->Name() << '_' << proc.Message()->Arity();
     case ProcedureKind::kTupleFinder: return os << "find_" << proc.Id() << '_';
-    case ProcedureKind::kTupleRemover:
-      return os << "remove_" << proc.Id() << '_';
     case ProcedureKind::kConditionTester:
       return os << "test_" << proc.Id() << '_';
     default: return os << "proc_" << proc.Id() << '_';
@@ -98,8 +96,8 @@ const char *OperatorString(ComparisonOperator op) {
 std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
                                DataVariable var) {
   auto val = var.Value();
-  std::string_view prefix = "(";
-  std::string_view suffix = ")";
+  std::string_view prefix = "";
+  std::string_view suffix = "";
 
   if (val && val->IsTag()) {
     std::stringstream ss;
@@ -140,36 +138,32 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
           prefix = constructor->first;
           suffix = constructor->second;
         }
-        break;
       }
-      [[clang::fallthrough]];
-    default: assert(false); prefix = "void  //";
+      break;
+    default:
+      assert(false);
+      default_val = "";
+      break;
   }
 
   std::stringstream value;
-  value << prefix;
+  value << "{" << prefix;
+  auto has_val = false;
   if (val) {
     if (auto lit = val->Literal()) {
-      if (auto spelling = lit->Spelling(Language::kCxx); spelling) {
-        value << *spelling;
+      if (auto spelling_cxx = lit->Spelling(Language::kCxx)) {
+        value << *spelling_cxx;
+        has_val = true;
       }
     }
   }
-  value << suffix;
-  return value.str();
-}
 
-// Return all messages.
-std::unordered_set<ParsedMessage> Messages(ParsedModule root_module) {
-  std::unordered_set<ParsedMessage> seen;
-
-  for (auto module : ParsedModuleIterator(root_module)) {
-    for (auto message : module.Messages()) {
-      seen.emplace(message);
-    }
+  if (!has_val) {
+    value << default_val;
   }
 
-  return seen;
+  value << suffix << "}";
+  return value.str();
 }
 
 }  // namespace cxx

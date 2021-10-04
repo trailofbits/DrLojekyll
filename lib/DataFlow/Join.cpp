@@ -10,13 +10,13 @@
 
 namespace hyde {
 
-Node<QueryJoin>::~Node(void) {}
+QueryJoinImpl::~QueryJoinImpl(void) {}
 
-Node<QueryJoin> *Node<QueryJoin>::AsJoin(void) noexcept {
+QueryJoinImpl *QueryJoinImpl::AsJoin(void) noexcept {
   return this;
 }
 
-uint64_t Node<QueryJoin>::Hash(void) noexcept {
+uint64_t QueryJoinImpl::Hash(void) noexcept {
   if (hash) {
     return hash;
   }
@@ -62,7 +62,7 @@ uint64_t Node<QueryJoin>::Hash(void) noexcept {
   return local_hash;
 }
 
-unsigned Node<QueryJoin>::Depth(void) noexcept {
+unsigned QueryJoinImpl::Depth(void) noexcept {
   if (depth) {
     return depth;
   }
@@ -92,7 +92,7 @@ unsigned Node<QueryJoin>::Depth(void) noexcept {
 }
 
 // Convert a trivial join (only has a single input view) into a TUPLE.
-void Node<QueryJoin>::ConvertTrivialJoinToTuple(QueryImpl *impl) {
+void QueryJoinImpl::ConvertTrivialJoinToTuple(QueryImpl *impl) {
   TUPLE * const tuple = impl->tuples.Create();
   tuple->color = color;
 
@@ -129,7 +129,7 @@ void Node<QueryJoin>::ConvertTrivialJoinToTuple(QueryImpl *impl) {
 // Returns `true` if any joined views were identified where one or more of
 // their columns are not used by the JOIN. If so, we proxy those views with
 // TUPLEs.
-bool Node<QueryJoin>::ProxyUnusedInputColumns(QueryImpl *impl) {
+bool QueryJoinImpl::ProxyUnusedInputColumns(QueryImpl *impl) {
   const auto is_used_in_merge = IsUsedDirectly();
   if (is_used_in_merge) {
     return false;
@@ -253,7 +253,7 @@ bool Node<QueryJoin>::ProxyUnusedInputColumns(QueryImpl *impl) {
 }
 
 // Remove all constant uses and outputs. This is a pretty aggressive function.
-void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
+void QueryJoinImpl::RemoveConstants(QueryImpl *impl) {
 
   std::unordered_map<VIEW *, VIEW *> view_map;
   std::unordered_map<COL *, COL *> new_to_old_col_map;
@@ -590,7 +590,7 @@ void Node<QueryJoin>::RemoveConstants(QueryImpl *impl) {
 //
 // TODO(pag): If we make the above transform, then a JOIN could devolve into
 //            a cross-product.
-bool Node<QueryJoin>::Canonicalize(QueryImpl *query,
+bool QueryJoinImpl::Canonicalize(QueryImpl *query,
                                    const OptimizationContext &opt,
                                    const ErrorLog &log) {
 
@@ -602,9 +602,16 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query,
     return false;
   }
 
-  if (is_dead || valid != kValid) {
+  if (is_dead || is_unsat || valid != kValid) {
     is_canonical = true;
     return false;
+  }
+
+  for (VIEW *incoming_view : joined_views) {
+    if (incoming_view && incoming_view->is_unsat) {
+      MarkAsUnsatisfiable();
+      return true;
+    }
   }
 
   is_canonical = false;
@@ -724,7 +731,7 @@ bool Node<QueryJoin>::Canonicalize(QueryImpl *query,
 }
 
 // Equality over joins is pointer-based.
-bool Node<QueryJoin>::Equals(EqualitySet &eq, Node<QueryView> *that_) noexcept {
+bool QueryJoinImpl::Equals(EqualitySet &eq, QueryViewImpl *that_) noexcept {
   if (eq.Contains(this, that_)) {
     return true;
   }

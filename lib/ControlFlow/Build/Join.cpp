@@ -290,7 +290,8 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
   // We're now either looping over pivots in a pivot vector, or there was only
   // one entrypoint to the `QueryJoin` that was followed pre-work item, and
   // so we're in the body of an `insert`.
-  TABLEJOIN * const join = impl->join_regions.Create(seq, join_view, impl->next_id++);
+  TABLEJOIN * const join = impl->join_regions.Create(
+      seq, join_view, impl->next_id++);
   seq->AddRegion(join);
 
   TUPLECMP * const cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
@@ -395,6 +396,42 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
     }
   }
 
+  // Figure out which input relation is "most represented" in the outputs,
+  // in terms of non-pivot columns. The way JOINs get emitted is as a loop
+  // over a pivot vector, followed by some index scans, and then comparing
+  // the scanned results against the records from the pivot vector. We want
+  // to make sure that code contained inside of this comparison guard ends
+  // up using variables derived from one of the index scans, rather than from
+  // the pivot vector iteration. This is so that we can maintain better
+  // provenance between downstream writes to tables that can reference upstream
+  // records.
+
+  std::vector<unsigned> num_non_pivot_outputs;
+  num_non_pivot_outputs.resize(view_to_index.size());
+
+  // Add in the non-pivot columns.
+  join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                           std::optional<QueryColumn> out_col) {
+    if (!out_col || InputColumnRole::kJoinNonPivot != role) {
+      return;
+    }
+
+    assert(!out_col->IsConstant());
+    assert(!in_col.IsConstant());
+
+    const QueryView pred_view = QueryView::Containing(in_col);
+    const unsigned pred_view_idx = view_to_index[pred_view];
+    num_non_pivot_outputs[pred_view_idx] += 1u;
+  });
+
+  unsigned most_represented_pred_view_idx = 0u;
+  for (auto i = 1u; i < num_non_pivot_outputs.size(); ++i) {
+    if (num_non_pivot_outputs[i] >
+        num_non_pivot_outputs[most_represented_pred_view_idx]) {
+      most_represented_pred_view_idx = i;
+    }
+  }
+
   // Add in the non-pivot columns.
   join_view.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
                            std::optional<QueryColumn> out_col) {
@@ -436,6 +473,12 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
       //            above code.
       } else {
         assert(false);
+      }
+
+      // For child nodes, this "hides" the variable from the pivot vector
+      // iteration.
+      if (pred_view_idx == most_represented_pred_view_idx) {
+        cmp->col_id_to_var[out_col->Id()] = var;
       }
 
     } else {
@@ -551,7 +594,7 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
       //          impl, context, parent, view, view_cols, pred_view, nullptr);
 
       OP *parent_out = nullptr;
-      CHECKSTATE *const check = BuildTopDownCheckerStateCheck(
+      CHECKTUPLE *const check = BuildTopDownCheckerStateCheck(
           impl, parent, pred_table, pred_view.Columns(),
           [&parent_out](ProgramImpl *impl_, REGION *in_check) {
             parent_out = impl_->operation_regions.CreateDerived<LET>(in_check);
@@ -686,6 +729,8 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
   // generate a bunch of unrolled table/index scans on the other views of the
   // join.
   } else {
+    assert(false && "Disabled\n");
+
     auto [begin, inner] = BuildNestedLoopJoin(impl, join, pred_view, parent);
     parent->body.Emplace(parent, begin);
 

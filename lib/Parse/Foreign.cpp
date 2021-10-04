@@ -6,7 +6,7 @@ namespace hyde {
 
 // Try to parse `sub_range` as a foreign type declaration, adding it to
 // module if successful.
-void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
+void ParserImpl::ParseForeignTypeDecl(ParsedModuleImpl *module) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
@@ -20,10 +20,10 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
   Token name;
   std::string_view code;
 
-  std::unique_ptr<Node<ParsedForeignType>> alloc_type;
-  Node<ParsedForeignType> *type = nullptr;
+  ParsedForeignTypeImpl *alloc_type = nullptr;
+  ParsedForeignTypeImpl *type = nullptr;
 
-  auto set_data = [&](Node<ParsedForeignType>::Info &info,
+  auto set_data = [&](ParsedForeignTypeImpl::Info &info,
                       bool can_override) -> bool {
     if (!info.can_override) {
       auto err = context->error_log.Append(scope_range, tok_range);
@@ -80,20 +80,27 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
         if (Lexeme::kIdentifierAtom == lexeme ||
             Lexeme::kIdentifierVariable == lexeme ||
             Lexeme::kIdentifierType == lexeme) {
-          name = tok;
-          state = 1;
-          auto &found_type = context->foreign_types[tok.IdentifierId()];
+          const auto id = tok.IdentifierId();
+          name = tok.AsForeignType();
+
+          assert(name.IdentifierId() == id);
+
+          auto &found_type = context->foreign_types[id];
           if (!found_type) {
-            alloc_type.reset(new Node<ParsedForeignType>);
-            found_type = alloc_type.get();
+            alloc_type = module->root_module->foreign_types.Create();
+            found_type = alloc_type;
             found_type->name = tok.AsForeignType();
 
-            module->root_module->foreign_types.emplace(tok.IdentifierId(),
-                                                       found_type);
+            module->root_module->id_to_foreign_type.emplace(id, found_type);
+
+          } else {
+            assert(module->root_module->id_to_foreign_type.count(id));
           }
 
           type = found_type;
           type->decls.push_back(scope_range);
+
+          state = 1;
           continue;
 
         } else {
@@ -120,6 +127,25 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
           }
 
           auto &data = type->info[static_cast<unsigned>(Language::kCxx)];
+          if (!set_data(data, false)) {
+            state = 3;
+            report_trailing = false;
+            continue;
+          }
+
+        } else if (Lexeme::kLiteralFlatBufferCode == lexeme) {
+          last_lang = Language::kFlatBuffer;
+          const auto code_id = tok.CodeId();
+          if (!context->string_pool.TryReadCode(code_id, &code) ||
+              !fixup_code()) {
+            context->error_log.Append(scope_range, tok_range)
+                << "Empty or invalid FlatBuffer code literal in foreign type "
+                << "declaration";
+            state = 5;
+            continue;
+          }
+
+          auto &data = type->info[static_cast<unsigned>(Language::kFlatBuffer)];
           if (!set_data(data, false)) {
             state = 3;
             report_trailing = false;
@@ -341,18 +367,11 @@ void ParserImpl::ParseForeignTypeDecl(Node<ParsedModule> *module) {
         << "Incomplete foreign type declaration; the foreign type "
         << "declaration must end with a period";
   }
-
-  if (alloc_type) {
-    if (!module->root_module->types.empty()) {
-      module->root_module->types.back().get()->next = type;
-    }
-    module->root_module->types.emplace_back(std::move(alloc_type));
-  }
 }
 
 // Try to parse `sub_range` as a foreign constant declaration, adding it to
 // module if successful.
-void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
+void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
@@ -365,9 +384,10 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
   DisplayRange tok_range;
   std::string_view code;
 
-  Node<ParsedForeignType> *type = nullptr;
-  Node<ParsedForeignConstant> const_val;
-  const_val.range = scope_range;
+  ParsedForeignTypeImpl *type = nullptr;
+  ParsedForeignConstantImpl * const alloc_const =
+      module->root_module->foreign_constants.Create();
+  alloc_const->range = scope_range;
 
   // Strip out leading and trailing whitespace.
   auto fixup_code = [&code](void) -> bool {
@@ -396,12 +416,41 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
 
           // Create a named constant on a foreign type.
           case Lexeme::kIdentifierType: {
-            const_val.type = TypeLoc(tok);
-            state = 1;
+            alloc_const->type = TypeLoc(tok);
             type = context->foreign_types[tok.IdentifierId()];
+            alloc_const->parent = type;
             assert(type != nullptr);
-            const_val.parent = type;
-            continue;
+
+            break;
+          }
+
+          case Lexeme::kIdentifierAtom:
+          case Lexeme::kIdentifierVariable: {
+
+            auto &found_type = context->foreign_types[tok.IdentifierId()];
+            if (found_type) {
+              context->error_log.Append(scope_range, tok_range)
+                  << "Internal error: parser did not change variable/atom token '"
+                  << tok << "' into a type token";
+
+            } else {
+              context->error_log.Append(scope_range, tok_range)
+                  << "Cannot declare foreign constant on as-of-yet undeclared "
+                  << "foreign type '" << tok << "'";
+
+              // Recover.
+              found_type = module->root_module->builtin_types.Create();
+              found_type->name = tok;
+
+              module->root_module->id_to_foreign_type.emplace(
+                  tok.IdentifierId(), found_type);
+            }
+
+            type = found_type;
+            assert(type != nullptr);
+            alloc_const->parent = type;
+
+            break;
           }
 
           // Create a named constant on a built-in type.
@@ -410,24 +459,20 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
           case Lexeme::kTypeUn:
           case Lexeme::kTypeIn:
           case Lexeme::kTypeFn: {
-            const_val.type = TypeLoc(tok);
-            const auto ident_id = ~static_cast<uint32_t>(const_val.type.Kind());
-            state = 1;
-            type = context->foreign_types[ident_id];
-            if (!type) {
-              type = new Node<ParsedForeignType>;
-              type->name = tok;
-              type->is_built_in = true;
-              context->foreign_types[ident_id] = type;
-
-              if (!module->root_module->types.empty()) {
-                module->root_module->types.back().get()->next = type;
-              }
-              module->root_module->types.emplace_back(type);
+            alloc_const->type = TypeLoc(tok);
+            const auto id = ~static_cast<uint32_t>(alloc_const->type.Kind());
+            auto &found_type = context->foreign_types[id];
+            if (!found_type) {
+              found_type = module->root_module->builtin_types.Create();
+              found_type->name = tok;
+              found_type->is_built_in = true;
             }
+
+            type = found_type;
             assert(type != nullptr);
-            const_val.parent = type;
-            continue;
+            alloc_const->parent = type;
+
+            break;
           }
 
           default:
@@ -437,13 +482,16 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
             return;
         }
 
+        state = 1;
+        continue;
+
       // Name of the foreign constant.
       case 1:
         if (Lexeme::kIdentifierAtom == lexeme ||
             Lexeme::kIdentifierVariable == lexeme ||
             Lexeme::kIdentifierConstant == lexeme) {
 
-          const_val.name = tok.AsForeignConstant(const_val.type.Kind());
+          alloc_const->name = tok.AsForeignConstant(alloc_const->type.Kind());
           state = 2;
           continue;
 
@@ -458,8 +506,8 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
       // Value of the foreign constant.
       case 2:
         if (Lexeme::kLiteralCxxCode == lexeme) {
-          const_val.lang = Language::kCxx;
-          const_val.can_overide = false;
+          alloc_const->lang = Language::kCxx;
+          alloc_const->can_overide = false;
           const auto code_id = tok.CodeId();
           if (!context->string_pool.TryReadCode(code_id, &code) ||
               !fixup_code()) {
@@ -471,9 +519,23 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
             continue;
           }
 
+        } else if (Lexeme::kLiteralFlatBufferCode == lexeme) {
+          alloc_const->lang = Language::kFlatBuffer;
+          alloc_const->can_overide = false;
+          const auto code_id = tok.CodeId();
+          if (!context->string_pool.TryReadCode(code_id, &code) ||
+              !fixup_code()) {
+            context->error_log.Append(scope_range, tok_range)
+                << "Empty or invalid FlatBuffer code literal in foreign "
+                << "constant declaration";
+            state = 3;
+            report_trailing = false;
+            continue;
+          }
+
         } else if (Lexeme::kLiteralPythonCode == lexeme) {
-          const_val.lang = Language::kPython;
-          const_val.can_overide = false;
+          alloc_const->lang = Language::kPython;
+          alloc_const->can_overide = false;
           const auto code_id = tok.CodeId();
           if (!context->string_pool.TryReadCode(code_id, &code) ||
               !fixup_code()) {
@@ -486,6 +548,9 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
           }
 
         } else if (Lexeme::kLiteralCode == lexeme) {
+          alloc_const->lang = Language::kUnknown;
+          alloc_const->can_overide = true;
+
           const auto code_id = tok.CodeId();
           if (!context->string_pool.TryReadCode(code_id, &code) ||
               !fixup_code()) {
@@ -498,9 +563,12 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
           }
 
         } else if (Lexeme::kLiteralString == lexeme) {
-          switch (const_val.type.UnderlyingKind()) {
+          alloc_const->lang = Language::kUnknown;
+          alloc_const->can_overide = true;
+
+          switch (alloc_const->type.UnderlyingKind()) {
             case TypeKind::kBytes:
-              const_val.lang = Language::kUnknown;
+              alloc_const->lang = Language::kUnknown;
               context->display_manager.TryReadData(tok_range, &code);
               break;
             case TypeKind::kForeignType: {
@@ -521,7 +589,7 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
             default:
               context->error_log.Append(scope_range, tok_range)
                   << "Cannot initialize named constant of built-in type '"
-                  << const_val.type.SpellingRange() << "' with string literal";
+                  << alloc_const->type.SpellingRange() << "' with string literal";
               state = 3;
               report_trailing = false;
               continue;
@@ -529,18 +597,21 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
 
         // Named number; basically like an enumerator.
         } else if (Lexeme::kLiteralNumber == lexeme) {
-          switch (const_val.type.UnderlyingKind()) {
+          alloc_const->lang = Language::kUnknown;
+          alloc_const->can_overide = true;
+
+          switch (alloc_const->type.UnderlyingKind()) {
+            case TypeKind::kInvalid:
             case TypeKind::kBytes:
             case TypeKind::kBoolean:
               context->error_log.Append(scope_range, tok_range)
                   << "Cannot initialize named constant of built-in type '"
-                  << const_val.type.SpellingRange() << "' with number literal";
+                  << alloc_const->type.SpellingRange() << "' with number literal";
               state = 3;
               report_trailing = false;
               continue;
 
             default:
-              const_val.lang = Language::kUnknown;
               context->display_manager.TryReadData(tok_range, &code);
               break;
           }
@@ -548,17 +619,20 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
         // Named Boolean; a bit weird, but maybe people want `yes` and `no`.
         } else if (Lexeme::kLiteralTrue == lexeme ||
                    Lexeme::kLiteralFalse == lexeme) {
-          switch (const_val.type.UnderlyingKind()) {
+          alloc_const->lang = Language::kUnknown;
+          alloc_const->can_overide = true;
+
+          switch (alloc_const->type.UnderlyingKind()) {
             default:
               context->error_log.Append(scope_range, tok_range)
                   << "Cannot initialize named constant of built-in type '"
-                  << const_val.type.SpellingRange() << "' with Boolean literal";
+                  << alloc_const->type.SpellingRange()
+                  << "' with Boolean literal";
               state = 3;
               report_trailing = false;
               continue;
 
             case TypeKind::kBoolean:
-              const_val.lang = Language::kUnknown;
               context->display_manager.TryReadData(tok_range, &code);
               break;
           }
@@ -582,14 +656,14 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
           state = 4;
           continue;
         } else if (Lexeme::kPragmaPerfUnique == lexeme) {
-          if (const_val.unique.IsValid()) {
+          if (alloc_const->unique.IsValid()) {
             auto err = context->error_log.Append(scope_range, tok_range);
             err << "Unexpected duplicate '@unique' pragma specified";
 
-            err.Note(scope_range, const_val.unique.SpellingRange())
+            err.Note(scope_range, alloc_const->unique.SpellingRange())
                 << "Previous specification is here";
           } else {
-            const_val.unique = tok;
+            alloc_const->unique = tok;
           }
           state = 3;
           continue;
@@ -642,68 +716,24 @@ void ParserImpl::ParseForeignConstantDecl(Node<ParsedModule> *module) {
     }
   }
 
-  const_val.code.insert(const_val.code.end(), code.begin(), code.end());
+  alloc_const->code.insert(alloc_const->code.end(), code.begin(), code.end());
 
-  std::vector<bool> has_definition(kNumLanguages);
-  auto &const_ptr = context->foreign_constants[const_val.name.IdentifierId()];
+  // Chain it in to the list of constants with the same name. They might
+  // target different languages.
+  auto &const_ptr = context->foreign_constants[alloc_const->name.IdentifierId()];
   if (const_ptr) {
-    for (auto prev_const = const_ptr; prev_const;
-         prev_const = prev_const->next_with_same_name) {
+    alloc_const->next_with_same_name = const_ptr;
+  }
+  const_ptr = alloc_const;
 
-      has_definition[static_cast<unsigned>(prev_const->lang)] = true;
-
-      if (prev_const->lang != const_val.lang) {
-        continue;
-
-      // We're overriding a previous language-agnostic version of the
-      // constant with a language-specific version.
-      } else if (prev_const->can_overide) {
-        const_val.next = prev_const->next;
-        const_val.next_with_same_name = prev_const->next_with_same_name;
-        *prev_const = const_val;
-        return;
-
-      } else {
-        auto err = context->error_log.Append(scope_range, tok_range);
-        err << "Can't override pre-existing foreign constant";
-
-        err.Note(prev_const->range) << "Conflicting previous constant is here";
-        return;
-      }
-    }
+  // Link the constant into its type.
+  auto &constants =
+      type->info[static_cast<unsigned>(alloc_const->lang)].constants;
+  if (!constants) {
+    constants.reset(new UseList<ParsedForeignConstantImpl>(type));
   }
 
-  auto added_def = false;
-  for (auto i = 0u; i < kNumLanguages; ++i) {
-    if (has_definition[i]) {
-      continue;
-    }
-    const auto lang = static_cast<Language>(i);
-    if (lang == const_val.lang || const_val.lang == Language::kUnknown) {
-      auto &info = type->info[i];
-      auto alloc_const = new Node<ParsedForeignConstant>(const_val);
-      module->root_module->foreign_constants.emplace(
-          const_val.name.IdentifierId(), alloc_const);
-
-      assert(alloc_const->type.IsValid());
-      assert(alloc_const->parent != nullptr);
-
-      alloc_const->lang = lang;
-      if (lang == Language::kUnknown) {
-        alloc_const->can_overide = false;
-      }
-      if (!info.constants.empty()) {
-        info.constants.back()->next = alloc_const;
-      }
-      info.constants.emplace_back(alloc_const);
-      alloc_const->next_with_same_name = const_ptr;
-      const_ptr = alloc_const;
-      added_def = true;
-    }
-  }
-
-  (void) added_def;
-  assert(added_def);
+  constants->AddUse(alloc_const);
 }
 
 }  // namespace hyde

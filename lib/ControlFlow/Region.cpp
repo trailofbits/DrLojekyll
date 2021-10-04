@@ -4,10 +4,11 @@
 
 namespace hyde {
 
-Node<ProgramRegion>::~Node(void) {}
+ProgramRegionImpl::~ProgramRegionImpl(void) {}
 
-Node<ProgramRegion>::Node(Node<ProgramProcedure> *containing_procedure_, bool)
-    : Def<Node<ProgramRegion>>(this),
+ProgramRegionImpl::ProgramRegionImpl(
+    ProgramProcedureImpl *containing_procedure_, bool)
+    : Def<ProgramRegionImpl>(this),
       User(this),
       containing_procedure(containing_procedure_),
       parent(containing_procedure_) {
@@ -16,36 +17,50 @@ Node<ProgramRegion>::Node(Node<ProgramProcedure> *containing_procedure_, bool)
   }
 }
 
-Node<ProgramRegion>::Node(Node<ProgramRegion> *parent_)
-    : Def<Node<ProgramRegion>>(this),
+ProgramRegionImpl::ProgramRegionImpl(ProgramRegionImpl *parent_)
+    : Def<ProgramRegionImpl>(this),
       User(this),
       containing_procedure(parent_->containing_procedure),
       parent(parent_) {
   assert(containing_procedure == parent->parent->containing_procedure);
 }
 
-Node<ProgramProcedure> *Node<ProgramRegion>::AsProcedure(void) noexcept {
+// Find the nearest containing mode switch.
+ProgramModeSwitchRegionImpl *
+ProgramRegionImpl::ContainingModeSwitch(void) noexcept {
+  for (auto region = this->parent; region && region != region->parent;
+       region = region->parent) {
+    if (auto op = region->AsOperation()) {
+      if (auto ret = op->AsModeSwitch()) {
+        return ret;
+      }
+    }
+  }
   return nullptr;
 }
 
-Node<ProgramOperationRegion> *Node<ProgramRegion>::AsOperation(void) noexcept {
+ProgramProcedureImpl *ProgramRegionImpl::AsProcedure(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramSeriesRegion> *Node<ProgramRegion>::AsSeries(void) noexcept {
+ProgramOperationRegionImpl *ProgramRegionImpl::AsOperation(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramParallelRegion> *Node<ProgramRegion>::AsParallel(void) noexcept {
+ProgramSeriesRegionImpl *ProgramRegionImpl::AsSeries(void) noexcept {
   return nullptr;
 }
 
-Node<ProgramInductionRegion> *Node<ProgramRegion>::AsInduction(void) noexcept {
+ProgramParallelRegionImpl *ProgramRegionImpl::AsParallel(void) noexcept {
+  return nullptr;
+}
+
+ProgramInductionRegionImpl *ProgramRegionImpl::AsInduction(void) noexcept {
   return nullptr;
 }
 
 // Returns the lexical level of this node.
-unsigned Node<ProgramRegion>::Depth(void) const noexcept {
+unsigned ProgramRegionImpl::Depth(void) const noexcept {
   if (parent == containing_procedure || parent == this || !parent) {
     return 0u;
   } else {
@@ -54,7 +69,7 @@ unsigned Node<ProgramRegion>::Depth(void) const noexcept {
 }
 
 // Returns the lexical level of this node.
-unsigned Node<ProgramRegion>::CachedDepth(void) noexcept {
+unsigned ProgramRegionImpl::CachedDepth(void) noexcept {
   if (cached_depth) {
     return cached_depth;
 
@@ -68,27 +83,27 @@ unsigned Node<ProgramRegion>::CachedDepth(void) noexcept {
 }
 
 // Returns true if this region is a no-op.
-bool Node<ProgramRegion>::IsNoOp(void) const noexcept {
+bool ProgramRegionImpl::IsNoOp(void) const noexcept {
   return false;
 }
 
 // Returns `true` if `this` and `that` are structurally equivalent (after
 // variable renaming) after searching down `depth` levels or until leaf,
 // whichever is first, and where `depth` is 0, compare `this` to `that.
-bool Node<ProgramRegion>::Equals(EqualitySet &, Node<ProgramRegion> *,
+bool ProgramRegionImpl::Equals(EqualitySet &, ProgramRegionImpl *,
                                  uint32_t) const noexcept {
   return false;
 }
 
 const bool
-Node<ProgramRegion>::MergeEqual(ProgramImpl *prog,
-                                std::vector<Node<ProgramRegion> *> &merges) {
+ProgramRegionImpl::MergeEqual(ProgramImpl *prog,
+                                std::vector<ProgramRegionImpl *> &merges) {
   return false;
 }
 
 // Return the farthest ancestor of this region, in terms of linkage. Often this
 // just returns a `PROC *` if this region is linked in to its procedure.
-Node<ProgramRegion> *Node<ProgramRegion>::Ancestor(void) noexcept {
+ProgramRegionImpl *ProgramRegionImpl::Ancestor(void) noexcept {
   auto ret_region = this;
   for (auto region = this; region; region = region->parent) {
     ret_region = region;
@@ -101,8 +116,8 @@ Node<ProgramRegion> *Node<ProgramRegion>::Ancestor(void) noexcept {
 
 // Return the nearest enclosing region that is itself enclosed by an
 // induction.
-Node<ProgramRegion> *
-Node<ProgramRegion>::NearestRegionEnclosedByInduction(void) noexcept {
+ProgramRegionImpl *
+ProgramRegionImpl::NearestRegionEnclosedByInduction(void) noexcept {
   auto ret_region = this;
   for (auto region = this; !region->AsProcedure() && !region->AsInduction();
        region = region->parent) {
@@ -112,8 +127,8 @@ Node<ProgramRegion>::NearestRegionEnclosedByInduction(void) noexcept {
 }
 
 // Find an ancestor node that's shared by both `this` and `that`.
-Node<ProgramRegion> *
-Node<ProgramRegion>::FindCommonAncestor(Node<ProgramRegion> *that) noexcept {
+ProgramRegionImpl *
+ProgramRegionImpl::FindCommonAncestor(ProgramRegionImpl *that) noexcept {
   auto self = this;
   auto self_depth = self->Depth();
   auto that_depth = that->Depth();
@@ -140,8 +155,8 @@ Node<ProgramRegion>::FindCommonAncestor(Node<ProgramRegion> *that) noexcept {
 }
 
 // Make sure that `this` will execute before `that`.
-void Node<ProgramRegion>::ExecuteBefore(ProgramImpl *program,
-                                        Node<ProgramRegion> *that) noexcept {
+void ProgramRegionImpl::ExecuteBefore(ProgramImpl *program,
+                                        ProgramRegionImpl *that) noexcept {
 
   if (auto series = that->AsSeries(); series) {
     UseList<REGION> new_regions(series);
@@ -175,8 +190,8 @@ void Node<ProgramRegion>::ExecuteBefore(ProgramImpl *program,
 }
 
 // Make sure that `this` will execute after `that`.
-void Node<ProgramRegion>::ExecuteAfter(ProgramImpl *program,
-                                       Node<ProgramRegion> *that) noexcept {
+void ProgramRegionImpl::ExecuteAfter(ProgramImpl *program,
+                                       ProgramRegionImpl *that) noexcept {
   if (auto series = that->AsSeries(); series) {
     this->parent = series;
     series->AddRegion(this);
@@ -201,8 +216,8 @@ void Node<ProgramRegion>::ExecuteAfter(ProgramImpl *program,
 }
 
 // Make sure that `this` will execute alongside `that`.
-void Node<ProgramRegion>::ExecuteAlongside(ProgramImpl *program,
-                                           Node<ProgramRegion> *that) noexcept {
+void ProgramRegionImpl::ExecuteAlongside(ProgramImpl *program,
+                                           ProgramRegionImpl *that) noexcept {
   if (auto par = that->AsParallel(); par) {
     this->parent = par;
     par->AddRegion(this);
@@ -226,7 +241,7 @@ void Node<ProgramRegion>::ExecuteAlongside(ProgramImpl *program,
 }
 
 // Return a lexically available use of a variable.
-VAR *Node<ProgramRegion>::VariableFor(ProgramImpl *impl, QueryColumn col) {
+VAR *ProgramRegionImpl::VariableFor(ProgramImpl *impl, QueryColumn col) {
   auto &var = col_id_to_var[col.Id()];
   if (!var) {
 
@@ -252,7 +267,7 @@ VAR *Node<ProgramRegion>::VariableFor(ProgramImpl *impl, QueryColumn col) {
 }
 
 // Return a lexically available use of a variable.
-VAR *Node<ProgramRegion>::VariableForRec(QueryColumn col) {
+VAR *ProgramRegionImpl::VariableForRec(QueryColumn col) {
   auto it = col_id_to_var.find(col.Id());
   if (it != col_id_to_var.end()) {
     assert(it->second != nullptr);

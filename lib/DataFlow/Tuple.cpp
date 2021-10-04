@@ -7,13 +7,13 @@
 
 namespace hyde {
 
-Node<QueryTuple>::~Node(void) {}
+QueryTupleImpl::~QueryTupleImpl(void) {}
 
-Node<QueryTuple> *Node<QueryTuple>::AsTuple(void) noexcept {
+QueryTupleImpl *QueryTupleImpl::AsTuple(void) noexcept {
   return this;
 }
 
-uint64_t Node<QueryTuple>::Hash(void) noexcept {
+uint64_t QueryTupleImpl::Hash(void) noexcept {
   if (hash) {
     return hash;
   }
@@ -36,11 +36,11 @@ uint64_t Node<QueryTuple>::Hash(void) noexcept {
 // replacements easier. Because comparisons are mostly pointer-based, the
 // canonical form of this tuple is one where all input columns are sorted,
 // deduplicated, and where all output columns are guaranteed to be used.
-bool Node<QueryTuple>::Canonicalize(QueryImpl *query,
+bool QueryTupleImpl::Canonicalize(QueryImpl *query,
                                     const OptimizationContext &opt,
                                     const ErrorLog &) {
 
-  if (is_locked || is_dead || valid != VIEW::kValid) {
+  if (is_locked || is_unsat || is_dead || valid != VIEW::kValid) {
     is_canonical = true;
     return false;
   }
@@ -59,6 +59,11 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query,
   // NOTE(pag): This may update `is_canonical`.
   const auto incoming_view = PullDataFromBeyondTrivialTuples(
       GetIncomingView(input_columns), input_columns, attached_columns);
+
+  if (incoming_view && incoming_view->is_unsat) {
+    MarkAsUnsatisfiable();
+    return true;
+  }
 
   auto i = 0u;
   for (; i < num_cols; ++i) {
@@ -159,8 +164,8 @@ bool Node<QueryTuple>::Canonicalize(QueryImpl *query,
 }
 
 // Equality over tuples is structural.
-bool Node<QueryTuple>::Equals(EqualitySet &eq,
-                              Node<QueryView> *that_) noexcept {
+bool QueryTupleImpl::Equals(EqualitySet &eq,
+                              QueryViewImpl *that_) noexcept {
   if (eq.Contains(this, that_)) {
     return true;
   }
@@ -185,13 +190,13 @@ bool Node<QueryTuple>::Equals(EqualitySet &eq,
 
 // Does this tuple forward all of its inputs to the same columns as the
 // outputs, and if so, does it forward all columns of its input?
-bool Node<QueryTuple>::ForwardsAllInputsAsIs(void) const noexcept {
+bool QueryTupleImpl::ForwardsAllInputsAsIs(void) const noexcept {
   return ForwardsAllInputsAsIs(GetIncomingView(input_columns));
 }
 
 // Does this tuple forward all of its inputs to the same columns as the
 // outputs, and if so, does it forward all columns of its input?
-bool Node<QueryTuple>::ForwardsAllInputsAsIs(
+bool QueryTupleImpl::ForwardsAllInputsAsIs(
     VIEW *incoming_view) const noexcept {
 
   if (!incoming_view) {

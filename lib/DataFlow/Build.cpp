@@ -240,7 +240,7 @@ static VIEW *BuildPredicate(QueryImpl *query, ClauseContext &context,
     assert(false);
 
   } else if (decl.IsExport() || decl.IsLocal() || decl.IsQuery()) {
-    Node<QueryRelation> *input = nullptr;
+    QueryRelationImpl *input = nullptr;
 
     auto &rel = query->decl_to_relation[decl];
     if (!rel) {
@@ -776,18 +776,15 @@ static VIEW *TryApplyNegation(QueryImpl *query, ParsedClause clause,
       needed_params.push_back(true);
       needed_vars.push_back(var);
 
-    } else if (var.IsAssigned()) {
-      log.Append(pred.SpellingRange(), var.SpellingRange())
-          << "Internal error: Failed to discover constant used by variable '"
-          << var << "'";
-      return nullptr;
-
     // This should be an unnamed variable only, e.g. `_`.
     } else if (var.IsUnnamed()) {
       needed_params.push_back(false);
       all_needed = false;
 
     } else {
+      log.Append(pred.SpellingRange(), var.SpellingRange())
+          << "Internal error: Failed to discover constant used by variable '"
+          << var << "'";
       return nullptr;
     }
   }
@@ -1327,8 +1324,8 @@ static void AddConditionsToInsert(QueryImpl *query, ParsedClause clause,
                                   VIEW *insert) {
   std::vector<COND *> conds;
 
-  auto add_conds = [&](NodeRange<ParsedPredicate> range, UseList<COND> &uses,
-                       bool is_positive, VIEW *user) {
+  auto add_conds = [&](DefinedNodeRange<ParsedPredicate> range,
+                       UseList<COND> &uses, bool is_positive, VIEW *user) {
     conds.clear();
 
     for (auto pred : range) {
@@ -1389,7 +1386,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   }
 
   auto do_var = [&](ParsedVariable var) {
-    if (1u == var.NumUses() && !var.IsUnnamed()) {
+    if (!var.HasMoreThanOneUse() && !var.IsUnnamed()) {
       log.Append(clause.SpellingRange(), var.SpellingRange())
           << "Named variable '" << var << "' is only used once; you should use "
           << "either '_' or prefix the name with an '_' to explicitly mark it "
@@ -1527,7 +1524,9 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 
   // Fixup all `vc` IDs so that within a set they all match.
   for (auto &vc : context.vars) {
-    vc->id = vc->FindAs<VarColumn>()->id;
+    if (vc) {
+      vc->id = vc->FindAs<VarColumn>()->id;
+    }
   }
 
   // Go back through the comparisons and look for clause-local unsatisfiable
@@ -2074,8 +2073,8 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
 
   auto num_errors = log.Size();
 
-  for (auto sub_module : ParsedModuleIterator(module)) {
-    for (auto clause : sub_module.Clauses()) {
+  for (class ParsedModule sub_module : ParsedModuleIterator(module)) {
+    for (ParsedClause clause : sub_module.Clauses()) {
       if (!clause.IsDisabled()) {
         context.Reset();
         if (!BuildClause(impl.get(), clause, context, log)) {
@@ -2084,17 +2083,13 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
       }
     }
 
-    for (auto clause : sub_module.DeletionClauses()) {
-      if (!clause.IsDisabled()) {
-        context.Reset();
-        if (!BuildClause(impl.get(), clause, context, log)) {
-          return std::nullopt;
-        }
+    for (ParsedMessage message : sub_module.Messages()) {
+      ParsedDeclaration decl(message);
+      if (!decl.IsFirstDeclaration()) {
+        continue;
       }
-    }
 
-    for (auto message : sub_module.Messages()) {
-      if (message.Clauses().empty() && !message.NumUses()) {
+      if (decl.Clauses().empty() && !message.NumUses()) {
         log.Append(message.SpellingRange())
             << "Message '" << message.Name() << '/' << message.Arity()
             << "' is never published or received";
@@ -2104,7 +2099,7 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
 
 #ifndef NDEBUG
   auto check_conds = [=] (void) {
-    for (auto cond : impl->conditions) {
+    for (COND *cond : impl->conditions) {
       assert(cond->UsersAreConsistent());
       assert(cond->SettersAreConsistent());
     }
@@ -2135,27 +2130,44 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
 
   check_conds();
 
-  impl->Optimize(log);
-  if (num_errors != log.Size()) {
-    return std::nullopt;
+  try {
+    impl->Optimize(log);
+    if (num_errors != log.Size()) {
+      return std::nullopt;
+    }
+
+    check_conds();
+
+    impl->ConvertConstantInputsToTuples();
+    impl->RemoveUnusedViews();
+    impl->ExtractConditionsToTuples();
+    impl->RemoveUnusedViews();
+    impl->ProxyInsertsWithTuples();
+    impl->LinkViews();
+    impl->RemoveUnusedViews();
+    impl->IdentifyInductions(log);
+    impl->FinalizeDepths();
+    impl->FinalizeColumnIDs();
+    impl->TrackDifferentialUpdates(log, true);
+    impl->TrackConstAfterInit();
+    impl->RunBackwardsTaintAnalysis();
+    impl->RunForwardsTaintAnalysis();
+
+  // This is useful for debugging.
+  } catch (...) {
+    assert(false);
+    auto view_is_dead = [] (VIEW *v) { return v->is_dead; };
+    impl->selects.RemoveIf(view_is_dead);
+    impl->tuples.RemoveIf(view_is_dead);
+    impl->kv_indices.RemoveIf(view_is_dead);
+    impl->joins.RemoveIf(view_is_dead);
+    impl->maps.RemoveIf(view_is_dead);
+    impl->aggregates.RemoveIf(view_is_dead);
+    impl->merges.RemoveIf(view_is_dead);
+    impl->compares.RemoveIf(view_is_dead);
+    impl->inserts.RemoveIf(view_is_dead);
+    impl->negations.RemoveIf(view_is_dead);
   }
-
-  check_conds();
-
-  impl->ConvertConstantInputsToTuples();
-  impl->RemoveUnusedViews();
-  impl->ExtractConditionsToTuples();
-  impl->RemoveUnusedViews();
-  impl->ProxyInsertsWithTuples();
-  impl->LinkViews();
-  impl->RemoveUnusedViews();
-  impl->IdentifyInductions(log);
-  impl->FinalizeDepths();
-  impl->FinalizeColumnIDs();
-  impl->TrackDifferentialUpdates(log, true);
-  impl->TrackConstAfterInit();
-  impl->RunBackwardsTaintAnalysis();
-  impl->RunForwardsTaintAnalysis();
 
   BuildEquivalenceSets(impl.get());
 

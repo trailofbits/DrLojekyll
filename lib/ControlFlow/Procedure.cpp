@@ -4,10 +4,10 @@
 
 namespace hyde {
 
-Node<ProgramProcedure>::~Node(void) {}
+ProgramProcedureImpl::~ProgramProcedureImpl(void) {}
 
-Node<ProgramProcedure>::Node(unsigned id_, ProcedureKind kind_)
-    : Node<ProgramRegion>(this, true),
+ProgramProcedureImpl::ProgramProcedureImpl(unsigned id_, ProcedureKind kind_)
+    : ProgramRegionImpl(this, true),
       id(id_),
       kind(kind_),
       tables(this),
@@ -18,7 +18,7 @@ Node<ProgramProcedure>::Node(unsigned id_, ProcedureKind kind_)
   assert(parent == containing_procedure);
 }
 
-uint64_t Node<ProgramProcedure>::Hash(uint32_t depth) const {
+uint64_t ProgramProcedureImpl::Hash(uint32_t depth) const {
   uint64_t hash = 1u;
   if (depth == 0) {
     return hash;
@@ -31,7 +31,7 @@ uint64_t Node<ProgramProcedure>::Hash(uint32_t depth) const {
 }
 
 // Returns `true` if this region is a no-op.
-bool Node<ProgramProcedure>::IsNoOp(void) const noexcept {
+bool ProgramProcedureImpl::IsNoOp(void) const noexcept {
   if (checking_if_nop) {
     return true;
   }
@@ -42,7 +42,7 @@ bool Node<ProgramProcedure>::IsNoOp(void) const noexcept {
   return ret;
 }
 
-bool Node<ProgramProcedure>::Equals(EqualitySet &eq, Node<ProgramRegion> *that_,
+bool ProgramProcedureImpl::Equals(EqualitySet &eq, ProgramRegionImpl *that_,
                                     uint32_t depth) const noexcept {
   const auto that = that_->AsProcedure();
   if (!that) {
@@ -135,19 +135,19 @@ bool Node<ProgramProcedure>::Equals(EqualitySet &eq, Node<ProgramRegion> *that_,
 }
 
 const bool
-Node<ProgramProcedure>::MergeEqual(ProgramImpl *,
-                                   std::vector<Node<ProgramRegion> *> &) {
+ProgramProcedureImpl::MergeEqual(ProgramImpl *,
+                                   std::vector<ProgramRegionImpl *> &) {
   NOTE("TODO(ekilmer): Unimplemented merging of ProgramProcedure");
   assert(false);
   return false;
 }
 
-Node<ProgramProcedure> *Node<ProgramProcedure>::AsProcedure(void) noexcept {
+ProgramProcedureImpl *ProgramProcedureImpl::AsProcedure(void) noexcept {
   return this;
 }
 
 // Returns `true` if all paths through `this` ends with a `return` region.
-bool Node<ProgramProcedure>::EndsWithReturn(void) const noexcept {
+bool ProgramProcedureImpl::EndsWithReturn(void) const noexcept {
   if (body) {
     return body->EndsWithReturn();
   } else {
@@ -156,7 +156,7 @@ bool Node<ProgramProcedure>::EndsWithReturn(void) const noexcept {
 }
 
 // Get or create a table in a procedure.
-VECTOR *Node<ProgramProcedure>::VectorFor(ProgramImpl *impl,
+VECTOR *ProgramProcedureImpl::VectorFor(ProgramImpl *impl,
                                           VectorKind vec_kind,
                                           DefinedNodeRange<QueryColumn> cols) {
   const auto next_id = impl->next_id++;

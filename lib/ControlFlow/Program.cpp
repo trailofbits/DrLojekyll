@@ -55,10 +55,15 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto vec_unique = op->AsVectorUnique(); vec_unique) {
       vec_unique->vector.ClearWithoutErasure();
 
-    } else if (auto view_insert = op->AsTransitionState(); view_insert) {
+    } else if (auto view_insert = op->AsChangeTuple(); view_insert) {
       view_insert->table.ClearWithoutErasure();
       view_insert->col_values.ClearWithoutErasure();
       view_insert->failed_body.ClearWithoutErasure();
+
+    } else if (auto view_emplace = op->AsChangeRecord(); view_emplace) {
+      view_emplace->table.ClearWithoutErasure();
+      view_emplace->col_values.ClearWithoutErasure();
+      view_emplace->failed_body.ClearWithoutErasure();
 
     } else if (auto view_join = op->AsTableJoin(); view_join) {
       view_join->tables.ClearWithoutErasure();
@@ -102,11 +107,17 @@ ProgramImpl::~ProgramImpl(void) {
       call->called_proc.ClearWithoutErasure();
       call->false_body.ClearWithoutErasure();
 
-    } else if (auto check = op->AsCheckState(); check) {
+    } else if (auto check = op->AsCheckTuple(); check) {
       check->col_values.ClearWithoutErasure();
       check->table.ClearWithoutErasure();
       check->absent_body.ClearWithoutErasure();
       check->unknown_body.ClearWithoutErasure();
+
+    } else if (auto get = op->AsCheckRecord(); get) {
+      get->col_values.ClearWithoutErasure();
+      get->table.ClearWithoutErasure();
+      get->absent_body.ClearWithoutErasure();
+      get->unknown_body.ClearWithoutErasure();
 
     } else if (auto pub = op->AsPublish(); pub) {
       pub->arg_vars.ClearWithoutErasure();
@@ -119,7 +130,44 @@ ProgramImpl::~ProgramImpl(void) {
   for (auto proc : procedure_regions) {
     proc->body.ClearWithoutErasure();
   }
+
+  for (DATARECORDCASE *record_case : record_cases) {
+    record_case->derived_from.ClearWithoutErasure();
+    record_case->columns.clear();
+    record_case->record.ClearWithoutErasure();
+  }
+
+  for (TABLE *table : tables) {
+    for (TABLEINDEX *index : table->indices) {
+      index->columns.ClearWithoutErasure();
+      index->mapped_columns.ClearWithoutErasure();
+      index->table.ClearWithoutErasure();
+    }
+    for (DATARECORD *record : table->records) {
+      record->table.ClearWithoutErasure();
+      record->cases.ClearWithoutErasure();
+    }
+  }
 }
+
+ProgramImpl::ProgramImpl(Query query_)
+    : User(this),
+      query(query_),
+      query_checkers(this),
+      procedure_regions(this),
+      series_regions(this),
+      parallel_regions(this),
+      induction_regions(this),
+      operation_regions(this),
+      join_regions(this),
+      tables(this),
+      record_cases(this),
+      global_vars(this),
+      const_vars(this),
+      zero(const_vars.Create(next_id++, VariableRole::kConstantZero)),
+      one(const_vars.Create(next_id++, VariableRole::kConstantOne)),
+      false_(const_vars.Create(next_id++, VariableRole::kConstantFalse)),
+      true_(const_vars.Create(next_id++, VariableRole::kConstantTrue)) {}
 
 Program::Program(std::shared_ptr<ProgramImpl> impl_) : impl(std::move(impl_)) {}
 
@@ -141,13 +189,13 @@ const std::vector<ProgramQuery> &Program::Queries(void) const noexcept {
 }
 
 ProgramRegion::ProgramRegion(const ProgramInductionRegion &region)
-    : program::ProgramNode<ProgramRegion>(region.impl) {}
+    : ProgramRegion(region.impl) {}
 
 ProgramRegion::ProgramRegion(const ProgramParallelRegion &region)
-    : program::ProgramNode<ProgramRegion>(region.impl) {}
+    : ProgramRegion(region.impl) {}
 
 ProgramRegion::ProgramRegion(const ProgramSeriesRegion &region)
-    : program::ProgramNode<ProgramRegion>(region.impl) {}
+    : ProgramRegion(region.impl) {}
 
 std::optional<ProgramRegion>
 ProgramRegion::Containing(ProgramRegion &self) noexcept {
@@ -193,10 +241,13 @@ IS_OP(Call)
 IS_OP(Return)
 IS_OP(TestAndSet)
 IS_OP(Generate)
+IS_OP(ModeSwitch)
 IS_OP(LetBinding)
 IS_OP(Publish)
-IS_OP(TransitionState)
-IS_OP(CheckState)
+IS_OP(ChangeTuple)
+IS_OP(ChangeRecord)
+IS_OP(CheckTuple)
+IS_OP(CheckRecord)
 IS_OP(TableJoin)
 IS_OP(TableProduct)
 IS_OP(TableScan)
@@ -221,6 +272,10 @@ ProgramParallelRegion::From(ProgramRegion region) noexcept {
   const auto derived_impl = region.impl->AsParallel();
   assert(derived_impl != nullptr);
   return ProgramParallelRegion(derived_impl);
+}
+
+Mode ProgramModeSwitchRegion::NewMode(void) const noexcept {
+  return impl->new_mode;
 }
 
 bool ProgramTestAndSetRegion::IsAdd(void) const noexcept {
@@ -261,9 +316,12 @@ OPTIONAL_BODY(Body, ProgramTestAndSetRegion, body)
 OPTIONAL_BODY(BodyIfResults, ProgramGenerateRegion, body)
 OPTIONAL_BODY(BodyIfEmpty, ProgramGenerateRegion, empty_body)
 OPTIONAL_BODY(Body, ProgramLetBindingRegion, body)
+OPTIONAL_BODY(Body, ProgramModeSwitchRegion, body)
 OPTIONAL_BODY(Body, ProgramVectorLoopRegion, body)
-OPTIONAL_BODY(BodyIfSucceeded, ProgramTransitionStateRegion, body)
-OPTIONAL_BODY(BodyIfFailed, ProgramTransitionStateRegion, failed_body)
+OPTIONAL_BODY(BodyIfSucceeded, ProgramChangeTupleRegion, body)
+OPTIONAL_BODY(BodyIfFailed, ProgramChangeTupleRegion, failed_body)
+OPTIONAL_BODY(BodyIfSucceeded, ProgramChangeRecordRegion, body)
+OPTIONAL_BODY(BodyIfFailed, ProgramChangeRecordRegion, failed_body)
 OPTIONAL_BODY(Body, ProgramTableJoinRegion, body)
 OPTIONAL_BODY(Body, ProgramTableProductRegion, body)
 OPTIONAL_BODY(BodyIfTrue, ProgramTupleCompareRegion, body)
@@ -289,9 +347,12 @@ FROM_OP(ProgramReturnRegion, AsReturn)
 FROM_OP(ProgramTestAndSetRegion, AsTestAndSet)
 FROM_OP(ProgramGenerateRegion, AsGenerate)
 FROM_OP(ProgramLetBindingRegion, AsLetBinding)
+FROM_OP(ProgramModeSwitchRegion, AsModeSwitch)
 FROM_OP(ProgramPublishRegion, AsPublish)
-FROM_OP(ProgramTransitionStateRegion, AsTransitionState)
-FROM_OP(ProgramCheckStateRegion, AsCheckState)
+FROM_OP(ProgramChangeTupleRegion, AsChangeTuple)
+FROM_OP(ProgramChangeRecordRegion, AsChangeRecord)
+FROM_OP(ProgramCheckTupleRegion, AsCheckTuple)
+FROM_OP(ProgramCheckRecordRegion, AsCheckRecord)
 FROM_OP(ProgramTableJoinRegion, AsTableJoin)
 FROM_OP(ProgramTableProductRegion, AsTableProduct)
 FROM_OP(ProgramTableScanRegion, AsTableScan)
@@ -331,6 +392,8 @@ DEFINED_RANGE(Program, Procedures, ProgramProcedure, procedure_regions)
 DEFINED_RANGE(Program, JoinRegions, ProgramTableJoinRegion, join_regions)
 DEFINED_RANGE(ProgramTableJoinRegion, OutputPivotVariables, DataVariable, pivot_vars)
 DEFINED_RANGE(ProgramTableScanRegion, OutputVariables, DataVariable, out_vars)
+DEFINED_RANGE(ProgramChangeRecordRegion, RecordVariables, DataVariable, record_vars)
+DEFINED_RANGE(ProgramCheckRecordRegion, RecordVariables, DataVariable, record_vars)
 
 USED_RANGE(ProgramCallRegion, VariableArguments, DataVariable, arg_vars)
 USED_RANGE(ProgramCallRegion, VectorArguments, DataVector, arg_vecs)
@@ -338,8 +401,10 @@ USED_RANGE(ProgramPublishRegion, VariableArguments, DataVariable, arg_vars)
 USED_RANGE(ProgramGenerateRegion, InputVariables, DataVariable, used_vars)
 USED_RANGE(ProgramLetBindingRegion, UsedVariables, DataVariable, used_vars)
 USED_RANGE(ProgramVectorAppendRegion, TupleVariables, DataVariable, tuple_vars)
-USED_RANGE(ProgramTransitionStateRegion, TupleVariables, DataVariable, col_values)
-USED_RANGE(ProgramCheckStateRegion, TupleVariables, DataVariable, col_values)
+USED_RANGE(ProgramChangeTupleRegion, TupleVariables, DataVariable, col_values)
+USED_RANGE(ProgramChangeRecordRegion, TupleVariables, DataVariable, col_values)
+USED_RANGE(ProgramCheckTupleRegion, TupleVariables, DataVariable, col_values)
+USED_RANGE(ProgramCheckRecordRegion, TupleVariables, DataVariable, col_values)
 USED_RANGE(DataIndex, KeyColumns, DataColumn, columns)
 USED_RANGE(DataIndex, ValueColumns, DataColumn, mapped_columns)
 USED_RANGE(ProgramTupleCompareRegion, LHS, DataVariable, lhs_vars)
@@ -359,11 +424,6 @@ USED_RANGE(ProgramWorkerIdRegion, HashedVariables, DataVariable, hashed_vars)
 
 #undef DEFINED_RANGE
 #undef USED_RANGE
-
-// The format of the code in this program.
-IRFormat Program::Format(void) const {
-  return impl->format;
-}
 
 namespace {
 
@@ -407,7 +467,7 @@ static VectorUsage VectorUsageOfOp(ProgramOperation op) {
     return VectorUsageOfOp(impl->OP::op); \
   } \
   DataVector name::Vector(void) const noexcept { \
-    return DataVector(impl->Node<name>::vector.get()); \
+    return DataVector(impl->vector.get()); \
   } \
   std::optional<DataVariable> name::WorkerId(void) const { \
     if (impl->worker_id) { \
@@ -462,32 +522,53 @@ ParsedFunctor ProgramGenerateRegion::Functor(void) const noexcept {
   return impl->functor;
 }
 
-unsigned ProgramTransitionStateRegion::Arity(void) const noexcept {
+unsigned ProgramChangeTupleRegion::Arity(void) const noexcept {
   return impl->col_values.Size();
 }
 
-DataTable ProgramTransitionStateRegion::Table(void) const {
+DataTable ProgramChangeTupleRegion::Table(void) const {
   return DataTable(impl->table.get());
 }
 
-TupleState ProgramTransitionStateRegion::FromState(void) const noexcept {
+TupleState ProgramChangeTupleRegion::FromState(void) const noexcept {
   return impl->from_state;
 }
 
-TupleState ProgramTransitionStateRegion::ToState(void) const noexcept {
+TupleState ProgramChangeTupleRegion::ToState(void) const noexcept {
   return impl->to_state;
 }
 
-unsigned ProgramCheckStateRegion::Arity(void) const noexcept {
+unsigned ProgramChangeRecordRegion::Arity(void) const noexcept {
   return impl->col_values.Size();
 }
 
-DataTable ProgramCheckStateRegion::Table(void) const {
+// Returns a unique ID for this region.
+unsigned ProgramChangeRecordRegion::Id(void) const noexcept {
+  return impl->id;
+}
+
+DataTable ProgramChangeRecordRegion::Table(void) const {
+  return DataTable(impl->table.get());
+}
+
+TupleState ProgramChangeRecordRegion::FromState(void) const noexcept {
+  return impl->from_state;
+}
+
+TupleState ProgramChangeRecordRegion::ToState(void) const noexcept {
+  return impl->to_state;
+}
+
+unsigned ProgramCheckTupleRegion::Arity(void) const noexcept {
+  return impl->col_values.Size();
+}
+
+DataTable ProgramCheckTupleRegion::Table(void) const {
   return DataTable(impl->table.get());
 }
 
 std::optional<ProgramRegion>
-ProgramCheckStateRegion::IfPresent(void) const noexcept {
+ProgramCheckTupleRegion::IfPresent(void) const noexcept {
   if (auto body = impl->body.get(); body) {
     return ProgramRegion(body);
   } else {
@@ -496,7 +577,7 @@ ProgramCheckStateRegion::IfPresent(void) const noexcept {
 }
 
 std::optional<ProgramRegion>
-ProgramCheckStateRegion::IfAbsent(void) const noexcept {
+ProgramCheckTupleRegion::IfAbsent(void) const noexcept {
   if (auto body = impl->absent_body.get(); body) {
     return ProgramRegion(body);
   } else {
@@ -505,7 +586,47 @@ ProgramCheckStateRegion::IfAbsent(void) const noexcept {
 }
 
 std::optional<ProgramRegion>
-ProgramCheckStateRegion::IfUnknown(void) const noexcept {
+ProgramCheckTupleRegion::IfUnknown(void) const noexcept {
+  if (auto body = impl->unknown_body.get(); body) {
+    return ProgramRegion(body);
+  } else {
+    return std::nullopt;
+  }
+}
+
+// Returns a unique ID for this region.
+unsigned ProgramCheckRecordRegion::Id(void) const noexcept {
+  return impl->id;
+}
+
+unsigned ProgramCheckRecordRegion::Arity(void) const noexcept {
+  return impl->col_values.Size();
+}
+
+DataTable ProgramCheckRecordRegion::Table(void) const {
+  return DataTable(impl->table.get());
+}
+
+std::optional<ProgramRegion>
+ProgramCheckRecordRegion::IfPresent(void) const noexcept {
+  if (auto body = impl->body.get(); body) {
+    return ProgramRegion(body);
+  } else {
+    return std::nullopt;
+  }
+}
+
+std::optional<ProgramRegion>
+ProgramCheckRecordRegion::IfAbsent(void) const noexcept {
+  if (auto body = impl->absent_body.get(); body) {
+    return ProgramRegion(body);
+  } else {
+    return std::nullopt;
+  }
+}
+
+std::optional<ProgramRegion>
+ProgramCheckRecordRegion::IfUnknown(void) const noexcept {
   if (auto body = impl->unknown_body.get(); body) {
     return ProgramRegion(body);
   } else {
@@ -614,7 +735,7 @@ unsigned DataColumn::Index(void) const noexcept {
 }
 
 // Type of this column.
-TypeKind DataColumn::Type(void) const noexcept {
+TypeLoc DataColumn::Type(void) const noexcept {
   return impl->type;
 }
 
@@ -645,16 +766,21 @@ unsigned DataTable::Id(void) const noexcept {
 
 // Visit the users of this vector.
 void DataTable::VisitUsers(ProgramVisitor &visitor) {
-  impl->ForEachUse<Node<ProgramRegion>>(
-      [&](Node<ProgramRegion> *region, Node<DataTable> *) {
+  impl->ForEachUse<ProgramRegionImpl>(
+      [&](ProgramRegionImpl *region, DataTableImpl *) {
         region->Accept(visitor);
       });
 }
 
 // Apply a function to each user.
 void DataTable::ForEachUser(std::function<void(ProgramRegion)> cb) {
-  impl->ForEachUse<Node<ProgramRegion>>(
-      [&](Node<ProgramRegion> *region, Node<DataTable> *) { cb(region); });
+  impl->ForEachUse<ProgramRegionImpl>(
+      [&](ProgramRegionImpl *region, DataTableImpl *) { cb(region); });
+}
+
+// Return the list of views associated with this table.
+const std::vector<QueryView> DataTable::Views(void) const noexcept {
+  return impl->views;
 }
 
 VectorKind DataVector::Kind(void) const noexcept {
@@ -687,16 +813,16 @@ const std::vector<TypeKind> DataVector::ColumnTypes(void) const noexcept {
 
 // Visit the users of this vector.
 void DataVector::VisitUsers(ProgramVisitor &visitor) {
-  impl->ForEachUse<Node<ProgramRegion>>(
-      [&](Node<ProgramRegion> *region, Node<DataVector> *) {
+  impl->ForEachUse<ProgramRegionImpl>(
+      [&](ProgramRegionImpl *region, DataVectorImpl *) {
         region->Accept(visitor);
       });
 }
 
 // Apply a function to each user.
 void DataVector::ForEachUser(std::function<void(ProgramRegion)> cb) {
-  impl->ForEachUse<Node<ProgramRegion>>(
-      [&](Node<ProgramRegion> *region, Node<DataVector> *) { cb(region); });
+  impl->ForEachUse<ProgramRegionImpl>(
+      [&](ProgramRegionImpl *region, DataVectorImpl *) { cb(region); });
 }
 
 // Return the procedure containing another region.

@@ -251,6 +251,25 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
       } else {
         impl->data.clear();
+
+        auto make_literal = [&] (Lexeme lexeme, unsigned prefix_len) {
+          if (prefix_len) {
+            impl->data.erase(impl->data.begin(),
+                             impl->data.begin() + prefix_len);
+          }
+          const auto after_pos = impl->reader.CurrentPosition();
+
+          auto &literal = ret.As<lex::CodeLiteralToken>();
+          literal.Store<Lexeme>(lexeme);
+          literal.Store<lex::Id>(string_pool.InternCode(impl->data));
+          literal.Store<lex::ReprWidth>(impl->data.size());
+          literal.Store<lex::IndexDisp>(after_pos.Index() -
+                                        ret.position.Index());
+          literal.Store<lex::LineDisp>(after_pos.Line() -
+                                       ret.position.Line());
+          literal.Store<lex::Column>(after_pos.Column());
+        };
+
         while (impl->reader.TryReadChar(&ch)) {
           if (ch != '`') {
             impl->data.push_back(ch);
@@ -268,46 +287,19 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             impl->data.push_back(ch);
 
           } else if (!impl->data.find("c++")) {
-            impl->data.erase(impl->data.begin(), impl->data.begin() + 3u);
-            const auto after_pos = impl->reader.CurrentPosition();
-
-            auto &literal = ret.As<lex::CodeLiteralToken>();
-            literal.Store<Lexeme>(Lexeme::kLiteralCxxCode);
-            literal.Store<lex::Id>(string_pool.InternCode(impl->data));
-            literal.Store<lex::ReprWidth>(impl->data.size());
-            literal.Store<lex::IndexDisp>(after_pos.Index() -
-                                          ret.position.Index());
-            literal.Store<lex::LineDisp>(after_pos.Line() -
-                                         ret.position.Line());
-            literal.Store<lex::Column>(after_pos.Column());
+            make_literal(Lexeme::kLiteralCxxCode, 3u);
             return true;
 
           } else if (!impl->data.find("python")) {
-            impl->data.erase(impl->data.begin(), impl->data.begin() + 6u);
-            const auto after_pos = impl->reader.CurrentPosition();
+            make_literal(Lexeme::kLiteralPythonCode, 6u);
+            return true;
 
-            auto &literal = ret.As<lex::CodeLiteralToken>();
-            literal.Store<Lexeme>(Lexeme::kLiteralPythonCode);
-            literal.Store<lex::Id>(string_pool.InternCode(impl->data));
-            literal.Store<lex::ReprWidth>(impl->data.size());
-            literal.Store<lex::IndexDisp>(after_pos.Index() -
-                                          ret.position.Index());
-            literal.Store<lex::LineDisp>(after_pos.Line() -
-                                         ret.position.Line());
-            literal.Store<lex::Column>(after_pos.Column());
+          } else if (!impl->data.find("flat")) {
+            make_literal(Lexeme::kLiteralFlatBufferCode, 4u);
             return true;
 
           } else {
-            const auto after_pos = impl->reader.CurrentPosition();
-            auto &literal = ret.As<lex::CodeLiteralToken>();
-            literal.Store<Lexeme>(Lexeme::kLiteralCode);
-            literal.Store<lex::Id>(string_pool.InternCode(impl->data));
-            literal.Store<lex::ReprWidth>(impl->data.size());
-            literal.Store<lex::IndexDisp>(after_pos.Index() -
-                                          ret.position.Index());
-            literal.Store<lex::LineDisp>(after_pos.Line() -
-                                         ret.position.Line());
-            literal.Store<lex::Column>(after_pos.Column());
+            make_literal(Lexeme::kLiteralCode, 0u);
             return true;
           }
         }
@@ -731,6 +723,9 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
           } else if (impl->data == "#constant") {
             tentative_lexeme = Lexeme::kHashForeignConstantDecl;
+
+          } else if (impl->data == "#database") {
+            tentative_lexeme = Lexeme::kHashDatabase;
           }
           break;
 

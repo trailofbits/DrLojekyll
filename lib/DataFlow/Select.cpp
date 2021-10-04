@@ -7,13 +7,13 @@
 
 namespace hyde {
 
-Node<QuerySelect>::~Node(void) {}
+QuerySelectImpl::~QuerySelectImpl(void) {}
 
-Node<QuerySelect> *Node<QuerySelect>::AsSelect(void) noexcept {
+QuerySelectImpl *QuerySelectImpl::AsSelect(void) noexcept {
   return this;
 }
 
-uint64_t Node<QuerySelect>::Hash(void) noexcept {
+uint64_t QuerySelectImpl::Hash(void) noexcept {
   if (hash) {
     return hash;
   }
@@ -53,11 +53,11 @@ uint64_t Node<QuerySelect>::Hash(void) noexcept {
 // Return a number that can be used to help sort this node. The idea here
 // is that we often want to try to merge together two different instances
 // of the same underlying node when we can.
-uint64_t Node<QuerySelect>::Sort(void) noexcept {
+uint64_t QuerySelectImpl::Sort(void) noexcept {
   return position.Index();
 }
 
-unsigned Node<QuerySelect>::Depth(void) noexcept {
+unsigned QuerySelectImpl::Depth(void) noexcept {
   if (depth) {
     return depth;
   }
@@ -95,7 +95,7 @@ unsigned Node<QuerySelect>::Depth(void) noexcept {
 //            then there's an orphaned SELECT in `average_weight.dr`. This
 //            is because the RELation or IO holds onto a use of the SELECT
 //            and so the SELECT always looks used.
-bool Node<QuerySelect>::Canonicalize(QueryImpl *query,
+bool QuerySelectImpl::Canonicalize(QueryImpl *query,
                                      const OptimizationContext &opt,
                                      const ErrorLog &err) {
 
@@ -142,8 +142,8 @@ bool Node<QuerySelect>::Canonicalize(QueryImpl *query,
 }
 
 // Equality over SELECTs is a mix of structural and pointer-based.
-bool Node<QuerySelect>::Equals(EqualitySet &eq,
-                               Node<QueryView> *that_) noexcept {
+bool QuerySelectImpl::Equals(EqualitySet &eq,
+                               QueryViewImpl *that_) noexcept {
   const auto that = that_->AsSelect();
   if (!that || can_receive_deletions != that->can_receive_deletions ||
       can_produce_deletions != that->can_produce_deletions ||

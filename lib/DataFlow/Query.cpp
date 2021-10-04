@@ -100,11 +100,17 @@ QueryStream QueryStream::From(const QuerySelect &sel) noexcept {
   return QueryStream(stream);
 }
 
+QueryStream QueryStream::From(const QueryInsert &ins) noexcept {
+  const auto stream = ins.impl->stream.get();
+  assert(stream != nullptr);
+  return QueryStream(stream);
+}
+
 QueryStream::QueryStream(const QueryIO &io) noexcept
-    : query::QueryNode<QueryStream>(io.impl) {}
+    : QueryStream(io.impl) {}
 
 QueryStream::QueryStream(const QueryConstant &const_) noexcept
-    : query::QueryNode<QueryStream>(const_.impl) {}
+    : QueryStream(const_.impl) {}
 
 const char *QueryStream::KindName(void) const noexcept {
   return impl->KindName();
@@ -231,7 +237,11 @@ std::optional<unsigned> QueryView::TableId(void) const noexcept {
 // Id assigned by building the equivalence set in BuildEquivalenceSets
 // return std::nullopt if the EquivalenceSet hasn't been built yet
 unsigned QueryView::EquivalenceSetId(void) const noexcept {
-  return impl->equivalence_set->Find()->id;
+  if (!impl->equivalence_set) {
+    return ~0u;
+  } else {
+    return impl->equivalence_set->Find()->id;
+  }
 }
 
 // VIEWs in this nodes equivelence set
@@ -624,8 +634,7 @@ UsedNodeRange<QueryColumn> QueryColumn::BackwardsColumnTaints(void) const {
 // is a constant.
 std::optional<unsigned> QueryColumn::Index(void) const noexcept {
   if (!impl->IsConstant()) {
-    assert(impl->index < impl->view->columns.Size());
-    return impl->index;
+    return impl->Index();
   } else {
     return std::nullopt;
   }

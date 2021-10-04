@@ -80,7 +80,6 @@ static void DeclareDescriptors(OutputStream &os, Program program,
 
     auto sep = "";
 
-
     std::vector<DataIndex> indexes;
     for (DataIndex index : table.Indices()) {
       indexes.push_back(index);
@@ -196,6 +195,7 @@ static void DeclareDescriptors(OutputStream &os, Program program,
     // Print out the indexes in order of the number of decreasing number of
     // key columns. Thus, if there's an index over all columns, then it appears
     // first.
+    assert(!indexes.empty());
     for (auto index : indexes) {
       os << sep << index.Id();
       sep = ", ";
@@ -216,7 +216,7 @@ static void DeclareDescriptors(OutputStream &os, Program program,
 
 static void DefineGlobal(OutputStream &os, ParsedModule module,
                          DataVariable global) {
-  auto type = global.Type();
+  TypeLoc type = global.Type();
   os << os.Indent();
   if (global.IsConstant()) {
     switch (global.Type().Kind()) {
@@ -281,7 +281,7 @@ static void DefineConstant(OutputStream &os, ParsedModule module,
   auto type = global.Type();
   if (CanInlineDefineConstant(global)) {
     os << os.Indent() << "static constexpr " << TypeName(module, type) << " "
-       << Var(os, global) << " = " << TypeName(module, type)
+       << Var(os, global) << " = "
        << TypeValueOrDefault(module, type, global) << ";\n";
 
   } else {
@@ -344,6 +344,13 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
   explicit CPPCodeGenVisitor(OutputStream &os_, ParsedModule module_)
       : os(os_),
         module(module_) {}
+
+  void Visit(ProgramModeSwitchRegion region) override {
+    os << Comment(os, region, "ProgramModeSwitchRegion");
+    if (auto body = region.Body()) {
+      body->Accept(*this);
+    }
+  }
 
   void Visit(ProgramCallRegion region) override {
     os << Comment(os, region, "ProgramCallRegion");
@@ -753,8 +760,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << os.Indent() << Vector(os, region.Vector()) << ".SortAndUnique();\n";
   }
 
-  void Visit(ProgramTransitionStateRegion region) override {
-    os << Comment(os, region, "ProgramTransitionStateRegion");
+  void Visit(ProgramChangeTupleRegion region) override {
+    os << Comment(os, region, "ProgramChangeTupleRegion");
     const auto tuple_vars = region.TupleVariables();
 
     auto print_state_enum = [&](TupleState state) {
@@ -767,7 +774,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     };
 
     os << os.Indent() << "if (" << Table(os, region.Table())
-       << ".TryChangeStateFrom";
+       << ".TryChangeTupleFrom";
 
     print_state_enum(region.FromState());
     os << "To";
@@ -799,8 +806,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     }
   }
 
-  void Visit(ProgramCheckStateRegion region) override {
-    os << Comment(os, region, "ProgramCheckStateRegion");
+  void Visit(ProgramCheckTupleRegion region) override {
+    os << Comment(os, region, "ProgramCheckTupleRegion");
     const auto table = region.Table();
     const auto vars = region.TupleVariables();
     os << os.Indent() << "switch (" << Table(os, table) << ".GetState(";
@@ -1157,11 +1164,12 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 
 static void DeclareFunctor(OutputStream &os, ParsedModule module,
                            ParsedFunctor func, bool user_fwd_declare = false) {
+  ParsedDeclaration decl(func);
   std::stringstream return_tuple;
   std::vector<ParsedParameter> args;
   auto sep_ret = "";
   auto num_ret_types = 0u;
-  for (auto param : func.Parameters()) {
+  for (auto param : decl.Parameters()) {
     if (param.Binding() == ParameterBinding::kBound) {
       args.push_back(param);
     } else {
@@ -1217,13 +1225,14 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
 
 static void DefineFunctor(OutputStream &os, ParsedModule module,
                           ParsedFunctor func) {
+  ParsedDeclaration decl(func);
   DeclareFunctor(os, module, func);
   os << " {\n";
   os.PushIndent();
   os << os.Indent() << "return _" << func.Name() << '_'
      << ParsedDeclaration(func).BindingPattern() << "(";
   auto sep_ret = "";
-  for (auto param : func.Parameters()) {
+  for (auto param : decl.Parameters()) {
     if (param.Binding() == ParameterBinding::kBound) {
       os << sep_ret << param.Name();
       sep_ret = ", ";
@@ -1241,21 +1250,10 @@ static void DeclareFunctors(OutputStream &os, Program program,
   os << os.Indent() << "public:\n";
   os.PushIndent();
 
-  std::unordered_set<std::string> seen;
-
-  for (auto module : ParsedModuleIterator(root_module)) {
-    for (auto first_func : module.Functors()) {
-      for (auto func : first_func.Redeclarations()) {
-        std::stringstream ss;
-        ss << func.Id() << ':' << ParsedDeclaration(func).BindingPattern();
-        if (auto [it, inserted] = seen.emplace(ss.str()); inserted) {
-          DefineFunctor(os, module, func);
-
-          (void) it;
-        }
-      }
-    }
+  for (ParsedFunctor func : Functors(root_module)) {
+    DefineFunctor(os, root_module, func);
   }
+
   os.PopIndent();
 
   os.PopIndent();
@@ -1264,11 +1262,12 @@ static void DeclareFunctors(OutputStream &os, Program program,
 
 static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
                                  ParsedMessage message) {
+  ParsedDeclaration decl(message);
   os << os.Indent() << "void " << message.Name() << "_" << message.Arity()
      << "(";
 
   auto sep = "";
-  for (auto param : message.Parameters()) {
+  for (auto param : decl.Parameters()) {
     os << sep;
     if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
       os << TypeName(module, param.Type()) << " p";
@@ -1557,18 +1556,11 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     os << os.Indent() << "return num_generated;\n";
     os.PopIndent();
     os << os.Indent() << "}\n";
-
-  } else {
-    os << os.Indent() << "return num_generated;\n";
   }
 
   os.PopIndent();
-  os << os.Indent() << "}\n";
-
-  if (num_free_params) {
-    os << os.Indent() << "return num_generated;\n";
-  }
-
+  os << os.Indent() << "}\n"
+     << os.Indent() << "return num_generated;\n";
   os.PopIndent();
   os << os.Indent() << "}\n\n";
 }
@@ -1579,56 +1571,60 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << "/* Auto-generated file */\n\n"
      << "#pragma once\n\n"
-     << "#include <drlojekyll/Runtime/Runtime.h>\n\n"
+     << "#include <drlojekyll/Runtime/Server/Runtime.h>\n\n"
      << "#ifndef __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n"
      << "#  define __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n";
   const auto module = program.ParsedModule();
 
+  std::string ns_name;
+  if (const auto db_name = module.DatabaseName()) {
+    ns_name = db_name->NameAsString();
+  }
+
+  const auto inlines = Inlines(module, Language::kCxx);
+
   // Output prologue code.
-  for (auto sub_module : ParsedModuleIterator(module)) {
-    for (auto code : sub_module.Inlines()) {
-      switch (code.Language()) {
-        case Language::kUnknown:
-        case Language::kCxx:
-          if (code.IsPrologue()) {
-            os << code.CodeToInline() << "\n\n";
-          }
-          break;
-        default: break;
-      }
+  for (auto code : inlines) {
+    if (code.IsPrologue()) {
+      os << code.CodeToInline() << "\n\n";
     }
   }
 
   os << "#endif  // __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n\n"
      << "#include <algorithm>\n"
+     << "#include <cstdio>\n"
+     << "#include <cinttypes>\n"
      << "#include <optional>\n"
      << "#include <tuple>\n"
      << "#include <unordered_map>\n"
      << "#include <vector>\n\n";
 
+  if (!ns_name.empty()) {
+    os << "namespace " << ns_name << " {\n";
+  }
+
   // Forward-declare user-provided functors
-  std::unordered_set<std::string> seen;
-  for (auto sub_module : ParsedModuleIterator(module)) {
-    for (auto first_func : sub_module.Functors()) {
-      for (auto func : first_func.Redeclarations()) {
-        std::stringstream ss;
-        ss << func.Id() << ':' << ParsedDeclaration(func).BindingPattern();
-        if (auto [it, inserted] = seen.emplace(ss.str()); inserted) {
-          DeclareFunctor(os, sub_module, func, true);
-          os << ";\n";
-          (void) it;
-        }
-      }
-    }
+  for (ParsedFunctor func : Functors(module)) {
+    DeclareFunctor(os, module, func, true);
+    os << ";\n";
   }
   os << "\n";
 
+  if (!ns_name.empty()) {
+    os << "}  // namespace " << ns_name << "\n\n";
+  }
+
   DeclareDescriptors(os, program, module);
+
+  if (!ns_name.empty()) {
+    os << "namespace " << ns_name << " {\n";
+  }
+
   DeclareFunctors(os, program, module);
   DeclareMessageLog(os, program, module);
 
   // A program gets its own class
-  os << "template <typename StorageT, typename LogT, typename FunctorsT>\n";
+  os << "template <typename StorageT, typename LogT=DatabaseLog, typename FunctorsT=DatabaseFunctors>\n";
   os << "class " << gClassName << " {\n";
   os.PushIndent();  // class
 
@@ -1722,7 +1718,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << os.Indent() << "}\n\n"
      << os.Indent() << "void DumpStats(void) const {\n";
   os.PushIndent();
-  os << os.Indent() << "if constexpr (true) {\n";
+  os << os.Indent() << "if constexpr (false) {\n";
   os.PushIndent();
   os << os.Indent() << "return;  /* change to false to enable */\n";
   os.PopIndent();
@@ -1741,7 +1737,6 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << "\\n\");\n";
   os.PopIndent();
   os << os.Indent() << "}\n";
-  os.PopIndent();
   os << os.Indent() << "fprintf(tables, \"";
   sep = "";
   for (auto table : program.Tables()) {
@@ -1755,6 +1750,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   }
   os << ");\n";
 
+  os.PopIndent();
   os << os.Indent() << "}\n\n";
 
   for (auto proc : program.Procedures()) {
@@ -1767,20 +1763,21 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os.PopIndent();  // class:
   os << "};\n\n";
 
+  if (!ns_name.empty()) {
+    os << "}  // namespace " << ns_name << "\n\n";
+  }
+
+  os << "#ifndef __DRLOJEKYLL_EPILOGUE_CODE_" << gClassName << "\n"
+     << "#  define __DRLOJEKYLL_EPILOGUE_CODE_" << gClassName << "\n";
+
   // Output epilogue code.
-  for (auto sub_module : ParsedModuleIterator(module)) {
-    for (auto code : sub_module.Inlines()) {
-      switch (code.Language()) {
-        case Language::kUnknown:
-        case Language::kCxx:
-          if (code.IsEpilogue()) {
-            os << code.CodeToInline() << "\n\n";
-          }
-          break;
-        default: break;
-      }
+  for (auto code : inlines) {
+    if (code.IsEpilogue()) {
+      os << code.CodeToInline() << "\n\n";
     }
   }
+
+  os << "#endif  // __DRLOJEKYLL_EPILOGUE_CODE_" << gClassName << "\n\n";
 }
 
 }  // namespace cxx

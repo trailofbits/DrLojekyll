@@ -26,13 +26,13 @@ static bool MergeFunctorsEq(const std::vector<ParsedFunctor> &lhs,
 
 }  // namespace
 
-Node<QueryKVIndex>::~Node(void) {}
+QueryKVIndexImpl::~QueryKVIndexImpl(void) {}
 
-Node<QueryKVIndex> *Node<QueryKVIndex>::AsKVIndex(void) noexcept {
+QueryKVIndexImpl *QueryKVIndexImpl::AsKVIndex(void) noexcept {
   return this;
 }
 
-uint64_t Node<QueryKVIndex>::Hash(void) noexcept {
+uint64_t QueryKVIndexImpl::Hash(void) noexcept {
   if (hash) {
     return hash;
   }
@@ -60,8 +60,8 @@ uint64_t Node<QueryKVIndex>::Hash(void) noexcept {
   return local_hash;
 }
 
-bool Node<QueryKVIndex>::Equals(EqualitySet &eq,
-                                Node<QueryView> *that_) noexcept {
+bool QueryKVIndexImpl::Equals(EqualitySet &eq,
+                                QueryViewImpl *that_) noexcept {
   if (eq.Contains(this, that_)) {
     return true;
   }
@@ -89,11 +89,11 @@ bool Node<QueryKVIndex>::Equals(EqualitySet &eq,
 // Put the KV index into a canonical form. The only real internal optimization
 // that will happen is constant propagation of keys, but NOT values (as we can't
 // predict how the merge functors will affect them).
-bool Node<QueryKVIndex>::Canonicalize(QueryImpl *query,
+bool QueryKVIndexImpl::Canonicalize(QueryImpl *query,
                                       const OptimizationContext &opt,
                                       const ErrorLog &) {
 
-  if (is_dead || valid != VIEW::kValid) {
+  if (is_dead || is_unsat || valid != VIEW::kValid) {
     is_canonical = true;
     return false;
   }
@@ -102,6 +102,13 @@ bool Node<QueryKVIndex>::Canonicalize(QueryImpl *query,
     valid = VIEW::kInvalidBeforeCanonicalize;
     is_canonical = true;
     return false;
+  }
+
+  VIEW *const incoming_view = GetIncomingView(
+      input_columns, attached_columns);
+  if (incoming_view && incoming_view->is_unsat) {
+    MarkAsUnsatisfiable();
+    return true;
   }
 
   is_canonical = true;

@@ -4,11 +4,11 @@
 
 namespace hyde {
 
-Node<QueryColumn>::~Node(void) {}
+QueryColumnImpl::~QueryColumnImpl(void) {}
 
 // Returns the real constant associated with this column if this column is
 // a constant or constant reference. Otherwise it returns `nullptr`.
-Node<QueryColumn> *Node<QueryColumn>::AsConstant(void) noexcept {
+QueryColumnImpl *QueryColumnImpl::AsConstant(void) noexcept {
   if (referenced_constant) {
     return referenced_constant.get();
   }
@@ -22,7 +22,7 @@ Node<QueryColumn> *Node<QueryColumn>::AsConstant(void) noexcept {
 
 // Try to resolve this column to a constant, and return it, otherwise returns
 // `this`.
-Node<QueryColumn> *Node<QueryColumn>::TryResolveToConstant(void) noexcept {
+QueryColumnImpl *QueryColumnImpl::TryResolveToConstant(void) noexcept {
   if (auto const_col = referenced_constant.get(); const_col) {
     return const_col;
   } else {
@@ -31,12 +31,12 @@ Node<QueryColumn> *Node<QueryColumn>::TryResolveToConstant(void) noexcept {
 }
 
 // Returns `true` if will have a constant value at runtime.
-bool Node<QueryColumn>::IsConstantRef(void) const noexcept {
+bool QueryColumnImpl::IsConstantRef(void) const noexcept {
   return referenced_constant;
 }
 
 // Returns `true` if this column is a constant.
-bool Node<QueryColumn>::IsConstantOrConstantRef(void) const noexcept {
+bool QueryColumnImpl::IsConstantOrConstantRef(void) const noexcept {
   if (referenced_constant) {
     return true;
   }
@@ -49,7 +49,7 @@ bool Node<QueryColumn>::IsConstantOrConstantRef(void) const noexcept {
 }
 
 // Returns `true` if this column is a constant.
-bool Node<QueryColumn>::IsConstant(void) const noexcept {
+bool QueryColumnImpl::IsConstant(void) const noexcept {
   if (auto sel = view->AsSelect()) {
     if (sel->stream && sel->stream->AsConstant()) {
       assert(!referenced_constant);
@@ -59,13 +59,43 @@ bool Node<QueryColumn>::IsConstant(void) const noexcept {
   return false;
 }
 
+// Returns `true` if this column is a constant that is marked as being
+// unique.
+bool QueryColumnImpl::IsUniqueConstant(void) const noexcept {
+  SELECT * const sel = view->AsSelect();
+  if (!sel || !sel->stream) {
+    return false;
+  }
+
+  CONST * const c = sel->stream->AsConstant();
+  if (!c) {
+    return false;
+  }
+
+  if (c->AsTag()) {
+    return true;
+  }
+
+  if (!c->literal) {
+    return false;
+  }
+
+  if (!c->literal->IsConstant() ||
+      !c->literal->Type().IsForeign()) {
+    return false;
+  }
+
+  auto fc = ParsedForeignConstant::From(c->literal.value());
+  return fc.IsUnique();
+}
+
 // Returns `true` if this column is being used directly, or indirectly via
 // a usage of the view (e.g. by a merge, a join, a condition, a negation, etc.)
 //
 // NOTE(pag): Even if the column doesn't look used, it might be used indirectly
 //            via a merge, and thus we want to capture this.
-bool Node<QueryColumn>::IsUsed(void) const noexcept {
-  if (this->Def<Node<QueryColumn>>::IsUsed()) {
+bool QueryColumnImpl::IsUsed(void) const noexcept {
+  if (this->Def<QueryColumnImpl>::IsUsed()) {
     return true;
   }
 
@@ -73,7 +103,7 @@ bool Node<QueryColumn>::IsUsed(void) const noexcept {
 }
 
 // Return the index of this column inside of its view.
-unsigned Node<QueryColumn>::Index(void) noexcept {
+unsigned QueryColumnImpl::Index(void) noexcept {
   if (index >= view->columns.Size() || this != view->columns[index]) {
     auto i = 0u;
     for (auto col : view->columns) {
@@ -87,7 +117,7 @@ unsigned Node<QueryColumn>::Index(void) noexcept {
   return index;
 }
 
-uint64_t Node<QueryColumn>::Hash(void) noexcept {
+uint64_t QueryColumnImpl::Hash(void) noexcept {
   if (!hash) {
     const auto view_hash = view->Hash();
     hash = view_hash ^
@@ -101,11 +131,11 @@ uint64_t Node<QueryColumn>::Hash(void) noexcept {
 // Return a number that can be used to help sort this node. The idea here
 // is that we often want to try to merge together two different instances
 // of the same underlying node when we can.
-uint64_t Node<QueryColumn>::Sort(void) noexcept {
+uint64_t QueryColumnImpl::Sort(void) noexcept {
   return Hash();
 }
 
-void Node<QueryColumn>::CopyConstantFrom(Node<QueryColumn> *maybe_const_col) {
+void QueryColumnImpl::CopyConstantFrom(QueryColumnImpl *maybe_const_col) {
   if (auto const_col = maybe_const_col->AsConstant();
       const_col && !referenced_constant) {
 
@@ -118,7 +148,7 @@ void Node<QueryColumn>::CopyConstantFrom(Node<QueryColumn> *maybe_const_col) {
   }
 }
 
-void Node<QueryColumn>::ReplaceAllUsesWith(COL *that) {
+void QueryColumnImpl::ReplaceAllUsesWith(COL *that) {
 
   //  if (that->referenced_constant) {
   //    UseRef<COL> new_real_constant(that->referenced_constant->CreateUse(this->view));
@@ -132,7 +162,7 @@ void Node<QueryColumn>::ReplaceAllUsesWith(COL *that) {
   if (referenced_constant && !that->IsConstantOrConstantRef()) {
     that->CopyConstantFrom(referenced_constant.get());
   }
-  this->Def<Node<QueryColumn>>::ReplaceAllUsesWith(that);
+  this->Def<QueryColumnImpl>::ReplaceAllUsesWith(that);
 
   //  }
 }

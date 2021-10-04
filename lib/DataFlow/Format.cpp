@@ -79,7 +79,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "<TD rowspan=\"" << row_span << "\" port=\"cc" << port
          << cond.UniqueId() << "\">" << prefix;
       if (auto maybe_pred = cond.Predicate(); maybe_pred) {
-        os << maybe_pred->Name();
+        ParsedDeclaration decl(*maybe_pred);
+        os << ParsedDeclarationName(decl);
+
       } else {
         os << cond.UniqueId();
       }
@@ -193,12 +195,12 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
   }
 
-  for (auto constant : query.Constants()) {
-    os << "t" << constant.UniqueId() << " [label=<" << kBeginTable
-       << "<TD port=\"p0\">";
-    do_const(constant);
-    os << "</TD>" << kEndTable << ">];\n";
-  }
+//  for (auto constant : query.Constants()) {
+//    os << "t" << constant.UniqueId() << " [label=<" << kBeginTable
+//       << "<TD port=\"p0\">";
+//    do_const(constant);
+//    os << "</TD>" << kEndTable << ">];\n";
+//  }
 
   for (auto tag : query.Tags()) {
     os << "t" << tag.UniqueId() << " [label=<" << kBeginTable
@@ -212,7 +214,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << "c" << cond.UniqueId() << " [label=<" << kBeginTable
        << "<TD port=\"p0\">";
     if (auto maybe_pred = cond.Predicate(); maybe_pred) {
-      os << maybe_pred->Name();
+      ParsedDeclaration decl(*maybe_pred);
+      os << ParsedDeclarationName(decl);
     } else {
       os << cond.UniqueId();
     }
@@ -472,7 +475,8 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
     os << ParsedDeclarationName(map.Functor()) << "</TD>";
 
-    for (auto param : map.Functor().Parameters()) {
+    ParsedDeclaration map_functor_decl(map.Functor());
+    for (ParsedParameter param : map_functor_decl.Parameters()) {
       auto col = map.MappedColumns()[param.Index()];
       os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
     }
@@ -486,7 +490,7 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     }
 
     auto i = 0u;
-    for (auto param : map.Functor().Parameters()) {
+    for (ParsedParameter param : map_functor_decl.Parameters()) {
       if (param.Binding() == ParameterBinding::kBound) {
         auto in_col = map.NthInputColumn(i);
         os << "<TD port=\"p" << i << "\">" << do_col(in_col) << "</TD>";

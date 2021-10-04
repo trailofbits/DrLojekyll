@@ -227,10 +227,15 @@ bool ParserImpl::ReadNextToken(Token &tok_out) {
       case Lexeme::kIdentifierVariable: {
         const auto id = next_tok.IdentifierId();
         if (context->foreign_types.count(id)) {
+          assert(context->foreign_types[id] != nullptr);
           next_tok = next_tok.AsForeignType();
+          assert(next_tok.IdentifierId() == id);
+
         } else if (context->foreign_constants.count(id)) {
+          assert(context->foreign_constants[id] != nullptr);
           next_tok = next_tok.AsForeignConstant(
               context->foreign_constants[id]->type.Kind());
+          assert(next_tok.IdentifierId() == id);
         }
       }
         [[clang::fallthrough]];
@@ -343,11 +348,11 @@ DisplayRange ParserImpl::SubTokenRange(void) const {
 
 // Try to parse `sub_range` as an exported rule, adding it to `module`
 // if successful.
-template <typename NodeType, DeclarationKind kDeclKind,
+template <typename NodeTypeImpl, DeclarationKind kDeclKind,
           Lexeme kIntroducerLexeme>
 void ParserImpl::ParseLocalExport(
-    Node<ParsedModule> *module,
-    std::vector<std::unique_ptr<Node<NodeType>>> &out_vec) {
+    ParsedModuleImpl *module,
+    UseList<NodeTypeImpl, ParsedDeclarationImpl> &out_vec) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
@@ -366,9 +371,16 @@ void ParserImpl::ParseLocalExport(
   //                                     5      6
 
   int state = 0;
-  std::unique_ptr<Node<NodeType>> local;
-  std::unique_ptr<Node<ParsedParameter>> param;
-  std::vector<std::unique_ptr<Node<ParsedParameter>>> params;
+  NodeTypeImpl *local = nullptr;
+
+  TypeLoc param_type;
+  Token param_binding;
+  Token param_merge_functor_name;
+  DisplayRange prev_param_mutable_range;
+  DisplayRange param_mutable_range;
+  ParsedFunctorImpl *param_merge_functor = nullptr;
+  Token param_name;
+  std::vector<std::tuple<TypeLoc, Token, DisplayRange, ParsedFunctorImpl *, Token>> params;
 
   // Interpretation of this local/export as a clause.
   std::vector<Token> clause_toks;
@@ -419,23 +431,19 @@ void ParserImpl::ParseLocalExport(
         }
 
       case 2:
-        if (!param) {
-          param.reset(new Node<ParsedParameter>);
-        }
 
         if (tok.IsType()) {
-          param->opt_type = tok;
-          param->parsed_opt_type = true;
+          param_type = tok;
           state = 3;
           continue;
 
         } else if (Lexeme::kKeywordMutable == lexeme) {
-          param->opt_binding = tok;
+          param_binding = tok;
           state = 5;
           continue;
 
         } else if (Lexeme::kIdentifierVariable == lexeme) {
-          param->name = tok;
+          param_name = tok;
           state = 4;
           continue;
 
@@ -450,7 +458,7 @@ void ParserImpl::ParseLocalExport(
 
       case 3:
         if (Lexeme::kIdentifierVariable == lexeme) {
-          param->name = tok;
+          param_name = tok;
           state = 4;
           continue;
 
@@ -463,23 +471,23 @@ void ParserImpl::ParseLocalExport(
         }
 
       case 4:
-        clause_toks.push_back(param->name);
+        clause_toks.push_back(param_name);
 
-        // Add the parameter in.
-        if (!params.empty()) {
-          params.back()->next = param.get();
-
-          if (params.size() == kMaxArity) {
-            const auto err_range = ParsedParameter(param.get()).SpellingRange();
-            context->error_log.Append(scope_range, err_range)
-                << "Too many parameters to " << introducer_tok << " '" << name
-                << "'; the maximum number of parameters is " << kMaxArity;
-            return;
-          }
+        if (params.size() == kMaxArity) {
+          context->error_log.Append(scope_range, param_name.SpellingRange())
+              << "Too many parameters to " << introducer_tok << " '" << name
+              << "'; the maximum number of parameters is " << kMaxArity;
+          return;
         }
 
-        param->index = static_cast<unsigned>(params.size());
-        params.push_back(std::move(param));
+        params.emplace_back(param_type, param_binding, param_mutable_range,
+                            param_merge_functor, param_name);
+        param_type = TypeLoc();
+        param_binding = Token();
+        param_merge_functor_name = Token();
+        param_mutable_range = DisplayRange();
+        param_merge_functor = nullptr;
+        param_name = Token();
 
         if (Lexeme::kPuncComma == lexeme) {
           clause_toks.push_back(tok);
@@ -488,19 +496,34 @@ void ParserImpl::ParseLocalExport(
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
           clause_toks.push_back(tok);
-          local.reset(
-              AddDecl<NodeType>(module, kDeclKind, name, params.size()));
+
+          local = AddDecl<NodeTypeImpl>(module, kDeclKind, name, params.size());
           if (!local) {
             return;
-
-          } else {
-            local->rparen = tok;
-            local->name = name;
-            local->parameters.swap(params);
-            local->directive_pos = sub_tokens.front().Position();
-            state = 8;
-            continue;
           }
+
+          out_vec.AddUse(local);
+
+          local->rparen = tok;
+          local->name = name;
+          local->directive_pos = sub_tokens.front().Position();
+          local->has_mutable_parameter = has_mutable_parameter;
+
+          // Add in the parameters.
+          for (auto [p_type, p_binding, p_binding_range,
+                     p_merge_functor, p_name] : params) {
+            ParsedParameterImpl * const param = local->parameters.Create(local);
+            param->opt_type = p_type;
+            param->name = p_name;
+            param->parsed_opt_type = p_type.IsValid();
+            param->opt_binding = p_binding;
+            param->index = local->parameters.Size() - 1u;
+            param->opt_merge = p_merge_functor;
+            param->opt_mutable_range = p_binding_range;
+          }
+
+          state = 8;
+          continue;
 
         } else {
           context->error_log.Append(scope_range, tok_range)
@@ -523,150 +546,7 @@ void ParserImpl::ParseLocalExport(
 
       case 6:
         if (Lexeme::kIdentifierAtom == lexeme) {
-
-#if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wconversion"
-#endif
-          parse::IdInterpreter interpreter = {};
-          interpreter.info.atom_name_id = tok.IdentifierId();
-          interpreter.info.arity = 3;  // Old val, proposed val, new val.
-
-#if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic pop
-#endif
-
-          const auto id = interpreter.flat;
-          if (!context->declarations.count(id)) {
-            context->error_log.Append(scope_range, tok_range)
-                << "Expected a functor name here, but got '" << tok
-                << "' instead; maybe it wasn't declared yet?";
-            return;
-          }
-
-          auto decl = context->declarations[id];
-          if (decl->context->kind != DeclarationKind::kFunctor) {
-            context->error_log.Append(scope_range, tok_range)
-                << "Expected a functor name here, but got a "
-                << decl->KindName() << " name instead";
-            return;
-          }
-
-          has_mutable_parameter = true;
-          param->opt_merge = reinterpret_cast<Node<ParsedFunctor> *>(decl);
-          param->opt_merge->is_merge = true;
-          assert(param->opt_merge->parameters.size() == 3);
-
-          // Make sure the `range` specification of the merge functor is sane.
-          if (decl->range_begin_opt.IsValid()) {
-            if (decl->range != FunctorRange::kOneToOne) {
-              DisplayRange range_spec(decl->range_begin_opt.Position(),
-                                      decl->range_end_opt.NextPosition());
-
-              auto err = context->error_log.Append(scope_range, tok_range);
-
-              err << "Merge functor '" << decl->name << "/3' declared with "
-                  << "explicit, non-one-to-one range specification, but must "
-                  << "be one-to-one, i.e. 'range(.)'";
-
-              err.Note(ParsedFunctor(param->opt_merge).SpellingRange(),
-                       range_spec)
-                  << "Incorrect range specification specification is here";
-              return;
-            }
-          } else {
-            decl->range = FunctorRange::kOneToOne;
-          }
-
-          param->opt_type =
-              TypeLoc(param->opt_merge->parameters[0]->opt_type.Kind(),
-                      param->opt_mutable_range);
-
-          // NOTE(pag): We don't mark `param->parsed_opt_type` as `true` because
-          //            it's coming from the functor, and thus would result in
-          //            an unusual spelling range.
-          //
-          // TODO(pag): Does the above setting of `opt_type`, to get it to use
-          //            the spelling range of the `mutable(...)` conflict with
-          //            the below error reporting?
-
-          // Make sure all parameters of the functor being used as a merge
-          // operator have matching types.
-          for (auto p = 1u; p <= 2u; ++p) {
-            if (param->opt_merge->parameters[p]->opt_type.Kind() !=
-                param->opt_type.Kind()) {
-
-              auto err = context->error_log.Append(
-                  ParsedFunctor(param->opt_merge).SpellingRange(),
-                  param->opt_merge->parameters[p]->opt_type.SpellingRange());
-
-              err << "Mismatch between parameter type '"
-                  << param->opt_merge->parameters[p - 1]
-                         ->opt_type.SpellingRange()
-                  << "' for parameter '"
-                  << param->opt_merge->parameters[p - 1]->name
-                  << "and parameter type '"
-                  << param->opt_merge->parameters[p]->opt_type.SpellingRange()
-                  << "' for parameter '"
-                  << param->opt_merge->parameters[p]->name
-                  << "' of merge functor '" << decl->name << "'";
-
-              auto note = err.Note(scope_range, tok_range);
-              note << "Functor '" << tok
-                   << "' specified as merge operator here";
-              return;
-            }
-          }
-
-          // Make sure the first two parameters of the merge functor are bound,
-          // and the last is free.
-          if (param->opt_merge->parameters[0]->opt_binding.Lexeme() !=
-              Lexeme::kKeywordBound) {
-            auto err = context->error_log.Append(
-                ParsedFunctor(param->opt_merge).SpellingRange(),
-                param->opt_merge->parameters[0]->opt_binding.SpellingRange());
-            err << "First parameter of merge functor '" << decl->name
-                << "' must be bound";
-
-            auto note = err.Note(scope_range, tok_range);
-            note << "Functor '" << tok << "' specified as merge operator here";
-            return;
-          }
-
-          if (param->opt_merge->parameters[1]->opt_binding.Lexeme() !=
-              Lexeme::kKeywordBound) {
-            auto err = context->error_log.Append(
-                ParsedFunctor(param->opt_merge).SpellingRange(),
-                param->opt_merge->parameters[0]->opt_binding.SpellingRange());
-            err << "Second parameter of merge functor '" << decl->name
-                << "' must be bound";
-
-            err.Note(scope_range, tok_range)
-                << "Functor '" << tok << "' specified as merge operator here";
-            return;
-          }
-
-          if (param->opt_merge->parameters[2]->opt_binding.Lexeme() !=
-              Lexeme::kKeywordFree) {
-            auto err = context->error_log.Append(
-                ParsedFunctor(param->opt_merge).SpellingRange(),
-                param->opt_merge->parameters[0]->opt_binding.SpellingRange());
-            err << "Third parameter of merge functor '" << decl->name
-                << "' must be free";
-
-            err.Note(scope_range, tok_range)
-                << "Functor '" << tok << "' specified as merge operator here";
-            return;
-          }
-
-          // Make sure that the functor isn't impure.
-          if (!param->opt_merge->is_pure) {
-            context->error_log.Append(scope_range, tok_range)
-                << "Value merging functor " << tok << "/3 cannot be used in a "
-                << "mutable parameter because it's marked as impure";
-            return;
-          }
-
+          param_merge_functor_name = tok;
           state = 7;
           continue;
 
@@ -679,11 +559,195 @@ void ParserImpl::ParseLocalExport(
 
       case 7:
         if (Lexeme::kPuncCloseParen == lexeme) {
-          param->opt_mutable_range =
-              DisplayRange(param->opt_binding.Position(), tok.NextPosition());
-          state = 3;  // Go parse the variable name; we can infer the type
+          param_mutable_range =
+              DisplayRange(param_binding.Position(), tok.NextPosition());
 
-          // name from the functor.
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
+          parse::IdInterpreter interpreter = {};
+          interpreter.info.atom_name_id =
+              param_merge_functor_name.IdentifierId();
+          interpreter.info.arity = 3;  // Old val, proposed val, new val.
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
+
+          // Try to find any declaration that should match the 3-argument
+          // prototype of merge functors: input old val, input proposed val,
+          // output merged val.
+          const auto id = interpreter.flat;
+          if (!context->declarations.count(id)) {
+            context->error_log.Append(scope_range, param_mutable_range,
+                                      param_merge_functor_name.Position())
+                << "Expected a functor name here, but got '"
+                << param_merge_functor_name
+                << "' instead; maybe it wasn't declared yet?";
+            return;
+          }
+
+          // Make sure the found declaration is actually a functor.
+          ParsedDeclarationImpl *decl = context->declarations[id];
+          if (decl->context->kind != DeclarationKind::kFunctor) {
+            context->error_log.Append(scope_range,
+                                      param_merge_functor_name.SpellingRange())
+                << "Expected a functor name here, but got a "
+                << decl->KindName() << " name instead";
+            return;
+          }
+
+          // We don't permit more than one mutable parameters, because that gets
+          // really tricky and annoying from a codegen perspective. This is a
+          // recoverable error.
+          if (has_mutable_parameter) {
+            auto err = context->error_log.Append(
+                scope_range, prev_param_mutable_range);
+            err << "The " << local->KindName() << " " << name
+                << " cannot be declared  with more than one mutable parameters";
+
+            err.Note(scope_range, prev_param_mutable_range)
+                << "Previous mutable parameter is declared here";
+          }
+
+          // Save for later for reporting the abover error.
+          prev_param_mutable_range = param_mutable_range;
+
+          has_mutable_parameter = true;
+          param_merge_functor = dynamic_cast<ParsedFunctorImpl *>(decl);
+          assert(param_merge_functor != nullptr);
+          assert(param_merge_functor->parameters.Size() == 3u);
+
+          DisplayRange functor_decl_range =
+              ParsedFunctor(param_merge_functor).SpellingRange();
+
+          // Make sure the `range` specification of the merge functor is sane.
+          if (decl->range_begin_opt.IsValid()) {
+            if (decl->range != FunctorRange::kOneToOne) {
+              DisplayRange range_spec(decl->range_begin_opt.Position(),
+                                      decl->range_end_opt.NextPosition());
+
+              auto err = context->error_log.Append(
+                  scope_range, param_mutable_range,
+                  param_merge_functor_name.Position());
+
+              err << "Merge functor '" << decl->name << "/3' declared with "
+                  << "explicit, non-one-to-one range specification, but must "
+                  << "be one-to-one, i.e. 'range(.)'";
+
+              err.Note(functor_decl_range, range_spec)
+                  << "Incorrect range specification specification is here";
+              return;
+            }
+          } else {
+            decl->range = FunctorRange::kOneToOne;
+          }
+
+          // Infer the type from the mutable range.
+          param_type =
+              TypeLoc(param_merge_functor->parameters[0]->opt_type.Kind(),
+                      param_mutable_range);
+
+          // Make sure all parameters of the functor being used as a merge
+          // operator have matching types.
+          if (!param_merge_functor->is_merge) {
+            for (auto p = 1u; p <= 2u; ++p) {
+              ParsedParameterImpl * const merge_param =
+                  param_merge_functor->parameters[p];
+              ParsedParameterImpl * const prev_merge_param =
+                  param_merge_functor->parameters[p - 1u];
+              if (merge_param->opt_type.Kind() !=
+                  prev_merge_param->opt_type.Kind()) {
+
+                auto err = context->error_log.Append(
+                    functor_decl_range, merge_param->opt_type.SpellingRange());
+
+                err << "Mismatch between parameter type '"
+                    << prev_merge_param->opt_type.SpellingRange()
+                    << "' for parameter '"
+                    << prev_merge_param->name
+                    << "and parameter type '"
+                    << merge_param->opt_type.SpellingRange()
+                    << "' for parameter '"
+                    << merge_param->name
+                    << "' of merge functor '" << decl->name << "/3'";
+
+                err.Note(scope_range, param_mutable_range,
+                         param_merge_functor_name.Position())
+                     << "Functor '" << param_merge_functor_name
+                     << "/3' specified as merge operator here";
+                return;
+              }
+            }
+
+            // Make sure the first two parameters of the merge functor are bound,
+            // and the last is free.
+            ParsedParameterImpl * const p0 = param_merge_functor->parameters[0u];
+            ParsedParameterImpl * const p1 = param_merge_functor->parameters[1u];
+            ParsedParameterImpl * const p2 = param_merge_functor->parameters[2u];
+            if (param_merge_functor->parameters[0]->opt_binding.Lexeme() !=
+                Lexeme::kKeywordBound) {
+              auto err = context->error_log.Append(
+                  functor_decl_range, p0->opt_binding.SpellingRange());
+              err << "First parameter of merge functor '" << decl->name
+                  << "' must be bound";
+
+              err.Note(scope_range, param_mutable_range,
+                                   param_merge_functor_name.Position())
+                  << "Functor '" << param_merge_functor_name
+                  << "/3' specified as merge operator here";
+              return;
+            }
+
+            if (p1->opt_binding.Lexeme() !=
+                Lexeme::kKeywordBound) {
+              auto err = context->error_log.Append(
+                  functor_decl_range, p1->opt_binding.SpellingRange());
+              err << "Second parameter of merge functor '" << decl->name
+                  << "' must be bound";
+
+              err.Note(scope_range, param_mutable_range,
+                       param_merge_functor_name.Position())
+                  << "Functor '" << param_merge_functor_name
+                  << "/3' specified as merge operator here";
+              return;
+            }
+
+            if (p2->opt_binding.Lexeme() !=
+                Lexeme::kKeywordFree) {
+              auto err = context->error_log.Append(
+                  functor_decl_range, p2->opt_binding.SpellingRange());
+              err << "Third parameter of merge functor '" << decl->name
+                  << "' must be free";
+
+              err.Note(scope_range, param_mutable_range,
+                       param_merge_functor_name.Position())
+                  << "Functor '" << param_merge_functor_name
+                  << "/3' specified as merge operator here";
+              return;
+            }
+
+            // Make sure that the functor isn't impure.
+            if (!param_merge_functor->is_pure) {
+              context->error_log.Append(scope_range, param_mutable_range,
+                                        param_merge_functor_name.Position())
+                  << "Value merging functor '" << param_merge_functor_name
+                  << "/3' cannot be used in a mutable parameter because it's "
+                  << "marked as impure";
+              return;
+            }
+
+            // Make sure to mark the functor as being a merge functor so that
+            // we don't need to repeat the above checks on each use in a
+            // declaration.
+            param_merge_functor->is_merge = true;
+          }
+
+          // Go parse the variable name; we've already inferred the type from
+          // the functor.
+          state = 3;
           continue;
 
         } else {
@@ -692,29 +756,35 @@ void ParserImpl::ParseLocalExport(
               << "' instead";
           return;
         }
+
       case 8:
         if (Lexeme::kPragmaPerfInline == lexeme) {
 
-          // Found more than one @inline attributes
+          // Found more than one `@inline` attributes
           if (local->inline_attribute.IsValid()) {
             context->error_log.Append(scope_range, tok_range)
-                << "Unexpected second '@inline' pragma on " << introducer_tok
-                << " '" << local->name << "'";
+                << "Unexpected second '" << tok << "' pragma on "
+                << local->KindName() << " '" << local->name << "/"
+                << local->parameters.Size() << "'";
             state = 10;  // Ignore further errors, but add the local in.
             continue;
 
-          // Found an @inline attribute.
+          // Found an `@inline` attribute.
           } else {
             local->inline_attribute = tok;
             state = 8;
             continue;
           }
 
+        // Done with our declaration.
         } else if (Lexeme::kPuncPeriod == lexeme) {
           local->last_tok = tok;
           state = 9;
           continue;
 
+        // We've declared a local or export, and instead of the declaration
+        // immediatel ending in a period, instead in ends in a colon, marking
+        // it as containing trailing/embedded clauses.
         } else if (Lexeme::kPuncColon == lexeme) {
           has_embedded_clauses = true;
           clause_toks.push_back(tok);
@@ -723,15 +793,15 @@ void ParserImpl::ParseLocalExport(
           }
 
           // Look at the last token.
-          if (Lexeme::kPuncPeriod == clause_toks.back().Lexeme()) {
-            local->last_tok = clause_toks.back();
+          if (Lexeme::kPuncPeriod == tok.Lexeme()) {
+            local->last_tok = tok;
             state = 9;
             continue;
 
           } else {
-            context->error_log.Append(scope_range,
-                                      clause_toks.back().NextPosition())
+            context->error_log.Append(scope_range, next_pos)
                 << "Declaration of '" << local->name
+                << "/" << local->parameters.Size()
                 << "' containing an embedded clause does not end with a period";
             state = 10;
             continue;
@@ -742,8 +812,8 @@ void ParserImpl::ParseLocalExport(
                                  sub_tokens.back().NextPosition());
           context->error_log.Append(scope_range, err_range)
               << "Unexpected tokens before the terminating period in the"
-              << " declaration of the '" << local->name << "' "
-              << introducer_tok;
+              << " declaration of the " << local->KindName()
+              << " '" << local->name << "/" << local->parameters.Size() << "'";
           state = 10;
           continue;
         }
@@ -752,8 +822,10 @@ void ParserImpl::ParseLocalExport(
         DisplayRange err_range(tok.Position(),
                                sub_tokens.back().NextPosition());
         context->error_log.Append(scope_range, err_range)
-            << "Unexpected tokens following declaration of the '" << local->name
-            << "' " << introducer_tok;
+            << "Unexpected tokens following declaration of the "
+            << local->KindName() << " '"
+            << local->name << "/" << local->parameters.Size()
+            << "'";
         state = 10;  // Ignore further errors, but add the local in.
         continue;
       }
@@ -764,16 +836,16 @@ void ParserImpl::ParseLocalExport(
 
   if (state != 9) {
     context->error_log.Append(scope_range, next_pos)
-        << "Incomplete " << introducer_tok
-        << " declaration; the declaration must end "
-        << "with a period";
-    RemoveDecl<NodeType>(std::move(local));
+        << "The " << local->KindName()
+        << " declaration for '" << local->name << "/"
+        << local->parameters.Size()
+        << "' must end with a period";
+    RemoveDecl(local);
 
-  // Add the local to the module.
+  // Add the local/export to the module.
   } else {
-    const auto decl_for_clause = local.get();
-    local->has_mutable_parameter = has_mutable_parameter;
-    FinalizeDeclAndCheckConsistency<NodeType>(out_vec, std::move(local));
+    const auto decl_for_clause = local;
+    FinalizeDeclAndCheckConsistency(local);
 
     // If we parsed a `:` after the head of the `#local` or `#export` then
     // go parse the attached bodies recursively.
@@ -789,13 +861,13 @@ void ParserImpl::ParseLocalExport(
 }
 
 // Try to match a clause with a declaration.
-bool ParserImpl::TryMatchClauseWithDecl(Node<ParsedModule> *module,
-                                        Node<ParsedClause> *clause) {
+bool ParserImpl::TryMatchClauseWithDecl(ParsedModuleImpl *module,
+                                        ParsedClauseImpl *clause) {
 
   DisplayRange clause_head_range(clause->name.Position(),
                                  clause->rparen.NextPosition());
 
-  if (clause->head_variables.size() > kMaxArity) {
+  if (clause->head_variables.Size() > kMaxArity) {
     context->error_log.Append(scope_range, clause_head_range)
         << "Too many parameters in clause '" << clause->name
         << "; maximum number of parameters is " << kMaxArity;
@@ -809,7 +881,7 @@ bool ParserImpl::TryMatchClauseWithDecl(Node<ParsedModule> *module,
 
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = clause->name.IdentifierId();
-  interpreter.info.arity = clause->head_variables.size();
+  interpreter.info.arity = clause->head_variables.Size();
 
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC diagnostic pop
@@ -819,24 +891,20 @@ bool ParserImpl::TryMatchClauseWithDecl(Node<ParsedModule> *module,
   assert(!!id);
 
   DisplayRange directive_range;
-  Node<ParsedDeclaration> *decl = nullptr;
+  ParsedDeclarationImpl *decl = nullptr;
 
   // If it's a zero-arity clause head then it's treated by default as an
   // `#export`.
-  if (clause->head_variables.empty()) {
+  if (clause->head_variables.Empty()) {
     if (auto decl_it = context->declarations.find(id);
         decl_it != context->declarations.end()) {
       decl = decl_it->second;
       assert(decl->context->kind == DeclarationKind::kExport);
 
     } else {
-      auto export_decl =
-          new Node<ParsedExport>(module, DeclarationKind::kExport);
-      export_decl->name = clause->name;
-      if (!module->exports.empty()) {
-        module->exports.back()->next = export_decl;
-      }
-      module->exports.emplace_back(export_decl);
+      auto export_decl = module->declarations.CreateDerived<ParsedExportImpl>(
+          module, DeclarationKind::kExport);
+      module->exports.AddUse(export_decl);
       context->declarations.emplace(id, export_decl);
       decl = export_decl;
     }
@@ -855,26 +923,25 @@ bool ParserImpl::TryMatchClauseWithDecl(Node<ParsedModule> *module,
   } else {
     context->error_log.Append(scope_range, clause_head_range)
         << "Missing declaration for clause head '" << clause->name << "/"
-        << clause->head_variables.size() << "'";
+        << clause->head_variables.Size() << "'";
 
     // Recover by adding a local_decl declaration; this will let us keep
     // parsing.
-    auto local_decl = new Node<ParsedLocal>(module, DeclarationKind::kLocal);
+    auto local_decl = module->declarations.CreateDerived<ParsedLocalImpl>(
+        module, DeclarationKind::kLocal);
+
     local_decl->directive_pos = clause->name.Position();
     local_decl->name = clause->name;
     local_decl->rparen = clause->rparen;
-    Node<ParsedParameter> *prev_param = nullptr;
-    for (const auto &param_var : clause->head_variables) {
-      auto param = new Node<ParsedParameter>;
+
+    for (ParsedVariableImpl *param_var : clause->head_variables) {
+      ParsedParameterImpl * const param =
+          local_decl->parameters.Create(local_decl);
       param->name = param_var->name;
-      if (prev_param) {
-        prev_param->next = param;
-      }
-      local_decl->parameters.emplace_back(param);
-      prev_param = param;
+      param->index = local_decl->parameters.Size() - 1u;
     }
 
-    module->locals.emplace_back(local_decl);
+    module->locals.AddUse(local_decl);
     context->declarations.emplace(id, local_decl);
     decl = local_decl;
 
@@ -929,97 +996,102 @@ bool ParserImpl::TryMatchClauseWithDecl(Node<ParsedModule> *module,
 }
 
 // Try to match a clause with a declaration.
-bool ParserImpl::TryMatchPredicateWithDecl(Node<ParsedModule> *module,
-                                           Node<ParsedPredicate> *pred) {
+ParsedDeclarationImpl *ParserImpl::TryMatchPredicateWithDecl(
+    ParsedModuleImpl *module, Token pred_name,
+    const std::vector<ParsedVariableImpl *> &pred_vars,
+    Token pred_end_tok) {
+
+  const DisplayRange pred_head_range(pred_name.Position(),
+                                     pred_end_tok.NextPosition());
+  const auto arity = static_cast<unsigned>(pred_vars.size());
+  if (arity > kMaxArity) {
+    context->error_log.Append(scope_range, pred_head_range)
+        << "Too many arguments to predicate '" << pred_name
+        << "; maximum number of arguments is " << kMaxArity;
+    return nullptr;
+  }
+
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC diagnostic push
 #  pragma GCC diagnostic ignored "-Wconversion"
 #endif
 
   parse::IdInterpreter interpreter = {};
-  interpreter.info.atom_name_id = pred->name.IdentifierId();
-  interpreter.info.arity = pred->argument_uses.size();
+  interpreter.info.atom_name_id = pred_name.IdentifierId();
+  interpreter.info.arity = arity;
 
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC diagnostic pop
 #endif
 
   const auto id = interpreter.flat;
-
-  DisplayRange pred_head_range(pred->name.Position(),
-                               pred->rparen.NextPosition());
-
-  if (pred->argument_uses.size() > kMaxArity) {
-    context->error_log.Append(scope_range, pred_head_range)
-        << "Too many arguments to predicate '" << pred->name
-        << "; maximum number of arguments is " << kMaxArity;
-    return false;
-  }
+  auto &decl = context->declarations[id];
 
   // A zero-argument predicate is like a boolean variable / option, and is
   // declared/invented on the spot. Later we'll make sure that there are clauses
   // that prove it.
-  if (pred->argument_uses.empty()) {
-    if (!context->declarations.count(id)) {
-      auto export_decl =
-          new Node<ParsedExport>(module, DeclarationKind::kExport);
-      export_decl->name = pred->name;
-      module->exports.emplace_back(export_decl);
+  if (!arity) {
+    if (!decl) {
+      ParsedExportImpl * const export_decl =
+          module->declarations.CreateDerived<ParsedExportImpl>(
+              module, DeclarationKind::kExport);
+      export_decl->name = pred_name;
+      module->exports.AddUse(export_decl);
       context->declarations.emplace(id, export_decl);
+
+      decl = export_decl;
     }
 
   // There are no forward declarations associated with this ID.
   // We'll report an error and invent one.
-  } else if (!context->declarations.count(id)) {
+  } else if (!decl) {
     context->error_log.Append(scope_range, pred_head_range)
-        << "Missing declaration for predicate '" << pred->name << "/"
-        << pred->argument_uses.size() << "'";
+        << "Missing declaration for predicate '" << pred_name << "/"
+        << arity << "'";
 
     // Recover by adding a local declaration; this will let us keep
     // parsing.
-    auto local = new Node<ParsedLocal>(module, DeclarationKind::kLocal);
-    local->directive_pos = pred->name.Position();
-    local->name = pred->name;
-    local->rparen = pred->rparen;
+    ParsedLocalImpl * const local_decl =
+        module->declarations.CreateDerived<ParsedLocalImpl>(
+            module, DeclarationKind::kLocal);
+    local_decl->directive_pos = pred_name.Position();
+    local_decl->name = pred_name;
+    local_decl->rparen = pred_end_tok;
 
-    Node<ParsedParameter> *prev_param = nullptr;
-    for (const auto &arg_use : pred->argument_uses) {
-      auto param = new Node<ParsedParameter>;
-      param->name = arg_use->used_var->name;
-      if (prev_param) {
-        prev_param->next = param;
-      }
-      local->parameters.emplace_back(param);
-      prev_param = param;
+    for (ParsedVariableImpl *used_var : pred_vars) {
+      ParsedParameterImpl *param = local_decl->parameters.Create(local_decl);
+      param->name = used_var->name;
+      param->opt_type = used_var->type;
+      param->index = local_decl->parameters.Size() - 1u;
     }
 
-    module->locals.emplace_back(local);
-    context->declarations.emplace(id, local);
+    module->locals.AddUse(local_decl);
+    context->declarations.emplace(id, local_decl);
+
+    decl = local_decl;
   }
 
-  pred->declaration = context->declarations[id];
-
   // Don't let us receive this message if we have any sends of this message.
-  if (pred->declaration->context->kind == DeclarationKind::kMessage &&
-      !pred->declaration->context->clauses.empty()) {
+  parse::DeclarationContext *const decl_context = decl->context.get();
+  if (decl_context->kind == DeclarationKind::kMessage &&
+      !decl_context->clauses.Empty()) {
 
     auto err = context->error_log.Append(scope_range, pred_head_range);
-    err << "Cannot receive input from message " << pred->name << '/'
-        << pred->argument_uses.size()
-        << "; the message is already used for sending data";
+    err << "Cannot receive input from message '" << pred_name << '/'
+        << arity << "'; the message is already used for sending data";
 
-    for (auto &clause_ : pred->declaration->context->clauses) {
-      auto clause = ParsedClause(clause_.get());
+    for (ParsedClauseImpl *clause_ : decl_context->clauses) {
+      auto clause = ParsedClause(clause_);
       err.Note(clause.SpellingRange(), ParsedClauseHead(clause).SpellingRange())
           << "Message send is here";
     }
   }
 
-  return true;
+  return decl;
 }
 
 // Try to parse all of the tokens.
-void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
+void ParserImpl::ParseAllTokens(ParsedModuleImpl *module) {
   next_tok_index = 0;
   Token tok;
 
@@ -1057,7 +1129,7 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
 
       case Lexeme::kHashExportDecl:
         ReadStatement();
-        ParseLocalExport<ParsedExport, DeclarationKind::kExport,
+        ParseLocalExport<ParsedExportImpl, DeclarationKind::kExport,
                          Lexeme::kHashExportDecl>(module, module->exports);
         if (first_non_import.IsInvalid()) {
           first_non_import = SubTokenRange();
@@ -1066,7 +1138,7 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
 
       case Lexeme::kHashLocalDecl:
         ReadStatement();
-        ParseLocalExport<ParsedLocal, DeclarationKind::kLocal,
+        ParseLocalExport<ParsedLocalImpl, DeclarationKind::kLocal,
                          Lexeme::kHashLocalDecl>(module, module->locals);
         if (first_non_import.IsInvalid()) {
           first_non_import = SubTokenRange();
@@ -1121,6 +1193,16 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
         ParseInlineCode(module);
         continue;
 
+      // Declare the name of this datbase.
+      //
+      //    #database atom_name.
+      //
+      // This affects later code generation. E.g. the
+      case Lexeme::kHashDatabase:
+        ReadStatement();
+        ParseDatabase(module);
+        continue;
+
       // A clause. For example:
       //
       //    foo(...).
@@ -1159,11 +1241,326 @@ void ParserImpl::ParseAllTokens(Node<ParsedModule> *module) {
   }
 }
 
-// Perform type checking/assignment. Returns `false` if there was an error.
-bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
+// Remove a declaration.
+void ParserImpl::RemoveDecl(ParsedDeclarationImpl *decl) {
+  if (!decl) {
+    return;
+  }
 
-  auto var_var_eq_p = [=](Node<ParsedVariable> *a,
-                          Node<ParsedVariable> *b) -> bool {
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
+
+  parse::IdInterpreter interpreter = {};
+  interpreter.info.atom_name_id = decl->name.IdentifierId();
+  interpreter.info.arity = decl->parameters.Size();
+  const auto id = interpreter.flat;
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
+
+  decl->context->redeclarations.RemoveIf([=] (ParsedDeclarationImpl *that) {
+    return that == decl;
+  });
+
+  context->declarations.erase(id);
+}
+
+// Add `decl` to the end of `decl_list`, and make sure `decl` is consistent
+// with any prior declarations of the same name.
+void ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
+
+  const auto scope_range = SubTokenRange();
+  const auto num_params = decl->parameters.Size();
+
+  const ParsedDeclaration decl_pub(decl);
+  const parse::DeclarationContext *decl_context = decl->context.get();
+  auto &redecls = decl_context->redeclarations;
+
+  // Link this declaration in.
+  switch (auto &unique_redeclarations = decl->context->unique_redeclarations;
+          decl->context->kind) {
+    case DeclarationKind::kFunctor:
+    case DeclarationKind::kQuery:
+      for (auto redecl : unique_redeclarations) {
+        const auto arity = decl->parameters.Size();
+        auto all_same = true;
+        for (auto i = 0u; i < arity; ++i) {
+          ParsedParameterImpl *const old_p = redecl->parameters[i];
+          ParsedParameterImpl *const new_p = decl->parameters[i];
+          if (old_p->opt_binding.Lexeme() != new_p->opt_binding.Lexeme()) {
+            all_same = false;
+          }
+        }
+        if (!all_same) {
+          return;  // Not a unique redecl.
+        }
+      }
+
+      // If we made it down here, then it's not unique.
+      unique_redeclarations.AddUse(decl);
+      break;
+
+    default:
+      if (unique_redeclarations.Empty()) {
+        unique_redeclarations.AddUse(decl);
+      }
+      break;
+  }
+
+  auto num_redecls = redecls.Size();
+  if (1u >= num_redecls) {
+    return;
+  }
+
+  ParsedDeclarationImpl *const prev_decl = redecls[num_redecls - 1u];
+  const ParsedDeclaration prev_decl_pub(prev_decl);
+  const DisplayRange prev_decl_range = prev_decl_pub.SpellingRange();
+  assert(prev_decl->parameters.Size() == num_params);
+
+  // The first usage of a functor in a `mutable` attribute marks it as
+  // being a merge functor and forces a `1:1` range.
+  if (prev_decl->range != decl->range &&
+      prev_decl->range == FunctorRange::kOneToOne && prev_decl->is_merge) {
+    assert(!decl->is_merge);
+    decl->is_merge = true;
+    decl->range = FunctorRange::kOneToOne;
+  }
+
+  // Different differential attributes.
+  if (prev_decl->differential_attribute.IsValid() !=
+      decl->differential_attribute.IsValid()) {
+
+    if (decl->differential_attribute.IsValid()) {
+      auto err = context->error_log.Append(
+          scope_range, decl->differential_attribute.SpellingRange());
+      err << "Message is marked as differential, but prior declaration isn't";
+
+      auto note = err.Note(prev_decl_range);
+      note << "Previous declaration is here";
+
+    } else {
+      auto err = context->error_log.Append(
+          prev_decl_range,
+          prev_decl->differential_attribute.SpellingRange());
+      err << "Message is marked as differential, but redeclaration isn't";
+
+      auto note = err.Note(scope_range);
+      note << "Redeclaration is here";
+    }
+  }
+
+  // The inferred range specifications don't match.
+  if (prev_decl->range != decl->range &&
+      (prev_decl_pub.BindingPattern() == decl_pub.BindingPattern())) {
+    DisplayRange prev_range_spec(prev_decl->range_begin_opt.Position(),
+                                 prev_decl->range_end_opt.NextPosition());
+
+    DisplayRange curr_range_spec(decl->range_begin_opt.Position(),
+                                 decl->range_end_opt.NextPosition());
+
+    // Examine the concrete syntax to produce a meaningful error message.
+    if (prev_decl->range_begin_opt.IsValid() &&
+        decl->range_begin_opt.IsValid()) {
+      auto err = context->error_log.Append(scope_range, curr_range_spec);
+      err << "Functor range specifier differs from prior range specifier";
+
+      auto note = err.Note(prev_decl_range, prev_range_spec);
+      note << "Previous range specifier is here";
+
+    } else if (prev_decl->range_begin_opt.IsValid()) {
+      auto err = context->error_log.Append(scope_range);
+      err << "Functor uses default zero-or-more range specifier, but prior "
+          << "declaration explicitly changes the range";
+
+      auto note = err.Note(prev_decl_range, prev_range_spec);
+      note << "Previous range specifier is here";
+
+    } else if (decl->range_begin_opt.IsValid()) {
+      auto err = context->error_log.Append(scope_range, curr_range_spec);
+      err << "Functor explicitly specifies a non-default range specifier "
+          << "that is different than the implicit zero-or-more specification";
+
+      auto note = err.Note(prev_decl_range);
+      note << "Previous declaration uses the implicit zero-or-more range "
+           << "specification";
+
+    // Neither functor has explicit `range` syntax, and they disagree.
+    } else {
+      auto err = context->error_log.Append(scope_range);
+      err << "Inferred functor range differs from prior inferred range";
+
+      auto note = err.Note(prev_decl_range);
+      note << "Previous declaration is here";
+    }
+
+    RemoveDecl(decl);
+    return;
+  }
+
+  const DeclarationKind prev_decl_kind = prev_decl->context->kind;
+
+  // Make sure all parameters bindings, types, merge declarations, etc. match
+  // across all re-declarations.
+  for (size_t i = 0; i < num_params; ++i) {
+    ParsedParameterImpl * const prev_param = prev_decl->parameters[i];
+    ParsedParameterImpl * const curr_param = decl->parameters[i];
+    if ((prev_param->opt_binding.Lexeme() !=
+         curr_param->opt_binding.Lexeme()) &&
+        prev_decl_kind != DeclarationKind::kFunctor &&
+        prev_decl_kind != DeclarationKind::kQuery) {
+      auto err = context->error_log.Append(
+          scope_range, curr_param->opt_binding.SpellingRange());
+      err << "Parameter binding attribute differs";
+
+      auto note = err.Note(prev_decl_range,
+                           prev_param->opt_binding.SpellingRange());
+      note << "Previous parameter binding attribute is here";
+
+      RemoveDecl(decl);
+      return;
+    }
+
+    // Make sure the names of the parameters match, as these are all "exported"
+    // symbols to codegen, and we want the names of structure fields and such to
+    // be consistently named.
+    if ((prev_decl_kind == DeclarationKind::kFunctor ||
+         prev_decl_kind == DeclarationKind::kQuery ||
+         prev_decl_kind == DeclarationKind::kMessage) &&
+        (prev_param->name.IdentifierId() !=
+         curr_param->name.IdentifierId())) {
+      auto err = context->error_log.Append(
+          scope_range, curr_param->name.SpellingRange());
+      err << "Parameter name on externally visible declaration (query, "
+          << "message, functor) differs from prior declaration";
+
+      auto note = err.Note(prev_decl_range,
+                           prev_param->name.SpellingRange());
+      note << "Previous parameter name here";
+
+      RemoveDecl(decl);
+      return;
+    }
+
+    if (prev_param->opt_merge != curr_param->opt_merge) {
+      auto err = context->error_log.Append(
+          scope_range, curr_param->opt_binding.SpellingRange());
+      err << "Mutable parameter's merge operator differs";
+
+      auto note = err.Note(ParsedDeclaration(prev_decl).SpellingRange(),
+                           prev_param->opt_binding.SpellingRange());
+      note << "Previous mutable attribute declaration is here";
+
+      RemoveDecl(decl);
+      return;
+    }
+
+    if (prev_param->opt_type.Kind() != curr_param->opt_type.Kind()) {
+      auto err = context->error_log.Append(
+          scope_range, curr_param->opt_type.SpellingRange());
+      err << "Parameter type specification differs";
+
+      auto note = err.Note(prev_decl_range,
+                           prev_param->opt_type.SpellingRange());
+      note << "Previous type specification is here";
+
+      RemoveDecl(decl);
+      return;
+    }
+  }
+
+  // Make sure this inline attribute matches the prior one.
+  if (prev_decl->inline_attribute.Lexeme() !=
+      decl->inline_attribute.Lexeme()) {
+    auto err = context->error_log.Append(
+        scope_range, decl->inline_attribute.SpellingRange());
+    err << "Inline attribute differs";
+
+    auto note = err.Note(prev_decl_range,
+                         prev_decl->inline_attribute.SpellingRange());
+    note << "Previous inline attribute is here";
+    RemoveDecl(decl);
+    return;
+  }
+}
+
+// Try to parse `sub_range` as a database name declaration.
+void ParserImpl::ParseDatabase(ParsedModuleImpl *module) {
+  Token tok;
+  if (!ReadNextSubToken(tok)) {
+    assert(false);
+  }
+
+  assert(tok.Lexeme() == Lexeme::kHashDatabase);
+
+  const Token introducer_tok = tok;
+
+  if (!ReadNextSubToken(tok)) {
+    context->error_log.Append(scope_range, introducer_tok.NextPosition())
+        << "Unexpected end-of-stream here; expected an atom for the database "
+        << "name here";
+    return;
+  }
+
+  const Token db_name = tok;
+  switch (db_name.Lexeme()) {
+    case Lexeme::kIdentifierAtom:
+    case Lexeme::kIdentifierVariable:
+    case Lexeme::kIdentifierConstant:
+    case Lexeme::kIdentifierType:
+      break;
+    default:
+      context->error_log.Append(scope_range, introducer_tok.NextPosition())
+          << "Expected an atom or variable identifier, but got '"
+          << db_name << "' instead";
+      return;
+  }
+
+  if (!ReadNextSubToken(tok)) {
+    context->error_log.Append(scope_range, db_name.NextPosition())
+        << "Unexpected end-of-stream here; expected a period to end the "
+        << "database name declaration here";
+    return;
+  }
+
+  std::string_view data_view;
+  if (!context->display_manager.TryReadData(db_name.SpellingRange(),
+                                            &data_view) ||
+      data_view.empty()) {
+    context->error_log.Append(scope_range, db_name.SpellingRange())
+        << "Unable to read database name, or database name is empty";
+    return;
+  }
+
+  const Token dot = tok;
+  std::string name_str(data_view.data(), data_view.size());
+
+  const auto name = module->root_module->names.Create(
+      introducer_tok, db_name, dot, std::move(name_str));
+  const auto first_name = module->root_module->names[0];
+
+  if (name->name != first_name->name) {
+    auto err = context->error_log.Append(scope_range, db_name.SpellingRange());
+
+    err
+        << "Unexpected change in database name here; previous name was '"
+        << first_name->name << "'";
+
+    err.Note(DisplayRange(first_name->introducer_tok.Position(),
+                          first_name->dot_tok.NextPosition()),
+             first_name->name_tok.SpellingRange())
+        << "Previous name declaration was here";
+    return;
+  }
+}
+
+// Perform type checking/assignment. Returns `false` if there was an error.
+bool ParserImpl::AssignTypes(ParsedModuleImpl *root_module) {
+
+  auto var_var_eq_p = [=](ParsedVariableImpl *a,
+                          ParsedVariableImpl *b) -> bool {
     if (a->type.Kind() == b->type.Kind()) {
       return true;
     }
@@ -1172,7 +1569,7 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
     ParsedVariable b_var(b);
 
     auto err = context->error_log.Append(
-        ParsedClause(a->context->clause).SpellingRange(),
+        ParsedClause(a->clause).SpellingRange(),
         a_var.SpellingRange());
     err << "Type mismatch between variable '" << a_var.Name() << "' (type '"
         << a_var.Type().SpellingRange() << "') and '" << b_var.Name()
@@ -1189,8 +1586,8 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
     return false;
   };
 
-  auto var_param_eq_p = [=](Node<ParsedVariable> *a,
-                            Node<ParsedParameter> *b) -> bool {
+  auto var_param_eq_p = [=](ParsedVariableImpl *a,
+                            ParsedParameterImpl *b) -> bool {
     if (a->type.Kind() == b->opt_type.Kind()) {
       return true;
     }
@@ -1199,7 +1596,7 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
     ParsedParameter b_var(b);
 
     auto err = context->error_log.Append(
-        ParsedClause(a->context->clause).SpellingRange(),
+        ParsedClause(a->clause).SpellingRange(),
         a_var.SpellingRange());
     err << "Type mismatch between variable '" << a_var.Name() << "' (type '"
         << a_var.Type().SpellingRange() << "') and parameter '" << b_var.Name()
@@ -1216,12 +1613,13 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
     return false;
   };
 
-  std::vector<Node<ParsedVariable> *> missing;
+  std::vector<ParsedVariableImpl *> missing;
   auto changed = true;
 
-  auto check_apply_var_types = [&](Node<ParsedVariable> *var) -> bool {
-    for (auto next_var = var->context->first_use; next_var != nullptr;
-         next_var = next_var->next_use) {
+  auto check_apply_var_types = [&](ParsedVariableImpl *var) -> bool {
+    for (ParsedVariableImpl *next_var = var->first_appearance;
+         next_var != nullptr; next_var = next_var->next_appearance) {
+
       assert(next_var->name.IdentifierId() == var->name.IdentifierId());
       if (next_var->type.IsInvalid()) {
         next_var->type = var->type;
@@ -1234,17 +1632,17 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
     return true;
   };
 
-  auto pred_valid = [&](Node<ParsedPredicate> *pred) -> bool {
+  auto pred_valid = [&](ParsedPredicateImpl *pred) -> bool {
     auto j = 0u;
     auto pred_decl = pred->declaration;
-    for (auto &arg : pred->argument_uses) {
-      auto &param = pred_decl->parameters[j++];
-      auto &lhs_type = arg->used_var->type;
+    for (ParsedVariableImpl * const arg : pred->argument_uses) {
+      ParsedParameterImpl * const param = pred_decl->parameters[j++];
+      auto &lhs_type = arg->type;
       auto &rhs_type = param->opt_type;
       auto lhs_is_valid = lhs_type.IsValid();
       auto rhs_is_valid = rhs_type.IsValid();
       if (lhs_is_valid && rhs_is_valid) {
-        if (!var_param_eq_p(arg->used_var, param.get())) {
+        if (!var_param_eq_p(arg, param)) {
           return false;
         }
       } else if (lhs_is_valid) {
@@ -1254,20 +1652,21 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
       } else if (rhs_is_valid) {
         lhs_type = rhs_type;
         changed = true;
-        check_apply_var_types(arg->used_var);
+        check_apply_var_types(arg);
 
       } else {
-        missing.push_back(arg->used_var);
+        missing.push_back(arg);
       }
     }
     return true;
   };
 
-  auto do_clause = [&](Node<ParsedClause> *clause) -> bool {
+  auto do_clause = [&](ParsedClauseImpl *clause) -> bool {
     auto i = 0u;
 
-    for (const auto &var : clause->head_variables) {
-      const auto &decl_param = clause->declaration->parameters[i++];
+    for (ParsedVariableImpl * const var : clause->head_variables) {
+      ParsedParameterImpl * const decl_param =
+          clause->declaration->parameters[i++];
 
       // Head variable-based top-down. The head variable has a type, so
       // propagate that type through all uses and check that they all
@@ -1279,11 +1678,11 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
           decl_param->opt_type = var->type;
           changed = true;
 
-        } else if (!var_param_eq_p(var.get(), decl_param.get())) {
+        } else if (!var_param_eq_p(var, decl_param)) {
           return false;
         }
 
-        if (!check_apply_var_types(var.get())) {
+        if (!check_apply_var_types(var)) {
           return false;
         }
 
@@ -1297,8 +1696,8 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
       // Bottom-up propagation step: find the first typed use of the variable,
       // then assign that type to the parameter variable.
       } else {
-        for (auto next_var = var->next_use; next_var != nullptr;
-             next_var = next_var->next_use) {
+        for (auto next_var = var->next_appearance; next_var != nullptr;
+             next_var = next_var->next_appearance) {
           if (next_var->type.IsValid()) {
             var->type = next_var->type;
             changed = true;
@@ -1308,21 +1707,21 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
 
         // If we reached down here then the parameter variable's type was
         // not inferred from any use.
-        missing.push_back(var.get());
+        missing.push_back(var);
       }
     }
 
     // Go through all assignments and propagate the variable's type to the
     // literals.
-    for (const auto &assign : clause->assignments) {
-      auto lhs_type = assign->lhs.used_var->type;
+    for (ParsedAssignmentImpl *assign : clause->assignments) {
+      TypeLoc &lhs_type = assign->lhs->type;
       if (lhs_type.IsValid()) {
         if (!assign->rhs.type.IsValid()) {
           assign->rhs.type = lhs_type;
 
         // E.g. assigning a type-inferred variable to a named constant.
         } else if (assign->rhs.type.Kind() != lhs_type.Kind()) {
-          auto lhs_var = ParsedVariable(assign->lhs.used_var);
+          auto lhs_var = ParsedVariable(assign->lhs.get());
           auto rhs_const = ParsedLiteral(&(assign->rhs));
           auto err = context->error_log.Append(
               ParsedClause(clause).SpellingRange(), lhs_var.SpellingRange());
@@ -1345,58 +1744,59 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
 
       // E.g. assigning a variable to a named constant.
       } else if (assign->rhs.type.IsValid()) {
-        assign->lhs.used_var->type = assign->rhs.type;
+        lhs_type = assign->rhs.type;
 
       } else {
-        missing.push_back(assign->lhs.used_var);
+        missing.push_back(assign->lhs.get());
       }
     }
 
     // Go through all comparisons and try to match up the types of the
     // compared variables.
-    for (const auto &cmp : clause->comparisons) {
-      auto &lhs_type = cmp->lhs.used_var->type;
-      auto &rhs_type = cmp->rhs.used_var->type;
+    for (ParsedComparisonImpl * const cmp : clause->comparisons) {
+      ParsedVariableImpl * const lhs = cmp->lhs.get();
+      ParsedVariableImpl * const rhs = cmp->rhs.get();
+      TypeLoc &lhs_type = lhs->type;
+      TypeLoc &rhs_type = rhs->type;
       auto lhs_is_valid = lhs_type.IsValid();
       auto rhs_is_valid = rhs_type.IsValid();
       if (lhs_is_valid && rhs_is_valid) {
-        if (!var_var_eq_p(cmp->lhs.used_var, cmp->rhs.used_var)) {
+        if (!var_var_eq_p(lhs, rhs)) {
           return false;
         }
       } else if (lhs_is_valid) {
         rhs_type = lhs_type;
         changed = true;
-        check_apply_var_types(cmp->rhs.used_var);
+        check_apply_var_types(rhs);
 
       } else if (rhs_is_valid) {
         lhs_type = rhs_type;
         changed = true;
-        check_apply_var_types(cmp->lhs.used_var);
+        check_apply_var_types(lhs);
 
       } else {
-        missing.push_back(cmp->lhs.used_var);
-        missing.push_back(cmp->rhs.used_var);
+        missing.push_back(lhs);
+        missing.push_back(rhs);
       }
     }
 
     // Go through all positive predicates, and do declaration-based
     // bottom-up type propagation.
-    for (const auto &pred : clause->positive_predicates) {
-      if (!pred_valid(pred.get())) {
+    for (ParsedPredicateImpl *pred : clause->positive_predicates) {
+      if (!pred_valid(pred)) {
         return false;
       }
     }
 
-    for (const auto &pred : clause->negated_predicates) {
-      if (!pred_valid(pred.get())) {
+    for (ParsedPredicateImpl *pred : clause->negated_predicates) {
+      if (!pred_valid(pred)) {
         return false;
       }
     }
 
     // Go through all aggregates.
-    for (const auto &agg : clause->aggregates) {
-      if (!pred_valid(agg->functor.get()) ||
-          !pred_valid(agg->predicate.get())) {
+    for (ParsedAggregateImpl *agg : clause->aggregates) {
+      if (!pred_valid(&(agg->functor)) || !pred_valid(&(agg->predicate))) {
         return false;
       }
     }
@@ -1408,8 +1808,8 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
     changed = false;
     missing.clear();
 
-    for (auto module : root_module->all_modules) {
-      for (auto clause : module->clauses) {
+    for (ParsedModuleImpl *module : root_module->all_modules) {
+      for (ParsedClauseImpl *clause : module->clauses) {
         if (!do_clause(clause)) {
           return false;
         }
@@ -1424,9 +1824,9 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
   // variable is not used anywhere. Range restriction issues are generally
   // discoverable at a later stage, by the SIPSVisitor.
   if (!missing.empty()) {
-    for (auto var : missing) {
+    for (ParsedVariableImpl *var : missing) {
       context->error_log.Append(
-          ParsedClause(var->context->clause).SpellingRange(),
+          ParsedClause(var->clause).SpellingRange(),
           ParsedVariable(var).SpellingRange())
           << "Could not infer type of non-range-restricted variable '"
           << var->name << "'";
@@ -1437,13 +1837,14 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
   // Type the redecls. This applies to locals/exports only, as type annotations
   // are required on all parameters of other kinds of declarations.
   auto type_redecls = [&](const auto &decl_list) {
-    for (const auto &first : decl_list) {
-      const auto &redecls = first->context->redeclarations;
-      for (auto i = 1u; i < redecls.size(); ++i) {
-        Node<ParsedDeclaration> *next = redecls[i];
-        for (auto j = 0u; j < first->parameters.size(); ++j) {
-          auto first_param = first->parameters[j].get();
-          auto next_param = next->parameters[j].get();
+    for (ParsedDeclarationImpl *first : decl_list) {
+      const auto num_params = first->parameters.Size();
+
+      for (ParsedDeclarationImpl *next : first->context->redeclarations) {
+
+        for (auto j = 0u; j < num_params; ++j) {
+          ParsedParameterImpl * const first_param = first->parameters[j];
+          ParsedParameterImpl * const next_param = next->parameters[j];
           if (!next_param->parsed_opt_type) {
             next_param->opt_type = first_param->opt_type;
           }
@@ -1452,7 +1853,7 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
     }
   };
 
-  for (auto module : root_module->all_modules) {
+  for (ParsedModuleImpl *module : root_module->all_modules) {
     type_redecls(module->locals);
     type_redecls(module->exports);
   }
@@ -1461,7 +1862,7 @@ bool ParserImpl::AssignTypes(Node<ParsedModule> *root_module) {
 }
 
 // Checks that all locals and exports are defined.
-static bool AllDeclarationsAreDefined(Node<ParsedModule> *root_module,
+static bool AllDeclarationsAreDefined(ParsedModuleImpl *root_module,
                                       const ErrorLog &log) {
 
   auto do_decl = [&](ParsedDeclaration decl) {
@@ -1486,12 +1887,12 @@ static bool AllDeclarationsAreDefined(Node<ParsedModule> *root_module,
   };
 
   const auto prev_num_errors = log.Size();
-  for (auto module : root_module->all_modules) {
-    for (auto &decl : module->locals) {
-      do_decl(ParsedDeclaration(decl.get()));
+  for (ParsedModuleImpl *module : root_module->all_modules) {
+    for (ParsedLocalImpl *decl : module->locals) {
+      do_decl(ParsedDeclaration(decl));
     }
-    for (auto &decl : module->exports) {
-      do_decl(ParsedDeclaration(decl.get()));
+    for (ParsedExportImpl *decl : module->exports) {
+      do_decl(ParsedDeclaration(decl));
     }
   }
 
@@ -1511,7 +1912,7 @@ ParserImpl::ParseDisplay(Display display, const DisplayConfiguration &config) {
   }
 
   const auto prev_num_errors = context->error_log.Size();
-  module = std::make_shared<Node<ParsedModule>>(config);
+  module = std::make_shared<ParsedModuleImpl>(config);
 
   // Initialize now, even before we know that we have a valid parsed module,
   // just in case we have recursive/cyclic imports.
@@ -1609,8 +2010,13 @@ Parser::ParseStream(std::istream &is,
 }
 
 // Add a directory as a search path for files.
-void Parser::AddModuleSearchPath(std::string_view path) const {
+void Parser::AddModuleSearchPath(std::filesystem::path path) const {
   impl->context->import_search_paths.emplace_back(path);
+}
+
+// Return a copy of the list of search paths used by the parser.
+std::vector<std::filesystem::path> Parser::SearchPaths(void) const noexcept {
+  return impl->context->import_search_paths;
 }
 
 }  // namespace hyde

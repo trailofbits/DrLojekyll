@@ -1,656 +1,384 @@
-// Copyright 2020, Trail of Bits. All rights reserved.
+// Copyright 2021, Trail of Bits. All rights reserved.
 
 #include <drlojekyll/CodeGen/CodeGen.h>
 #include <drlojekyll/Parse/ModuleIterator.h>
 
 #include <algorithm>
+#include <cassert>
 #include <sstream>
+#include <string>
 #include <unordered_set>
 #include <vector>
 
 #include "Util.h"
+
 
 namespace hyde {
 namespace python {
 
 // Emits Python code for the given program to `os`.
 void GenerateInterfaceCode(const Program &program, OutputStream &os) {
-  os << "# Auto-generated file\n\n"
-     << "# flake8: noqa\n"  // Disable Flake8 linting.
-     << "# fmt: off\n\n"  // Disable Black auto-formatting.
-     << "from __future__ import annotations\n"
-     << "from dataclasses import dataclass\n"
-     << "from typing import Final, Iterator, List, Optional, Tuple\n"
-     << "try:\n";
-  os.PushIndent();
-  os << os.Indent() << "from typing import Protocol\n";
-  os.PopIndent();
-  os << "except ImportError:\n";
-  os.PushIndent();
-  os << os.Indent()
-     << "from typing_extensions import Protocol  # type: ignore\n\n\n";
-  os.PopIndent();
-
   const auto module = program.ParsedModule();
-
-  // Output prologue code.
-  for (auto sub_module : ParsedModuleIterator(module)) {
-    for (auto code : sub_module.Inlines()) {
-      switch (code.Language()) {
-        case Language::kUnknown:
-        case Language::kPython:
-          if (code.IsPrologue()) {
-            os << code.CodeToInline() << "\n\n\n";
-          }
-          break;
-        default: break;
-      }
-    }
-  }
-
+  const auto db_name = module.DatabaseName();
+  const auto queries = Queries(module);
   const auto messages = Messages(module);
 
-  // Creates a protocol that describes a datalog database.
-  os << os.Indent() << "class " << gClassName << "Interface(Protocol):\n";
-  os.PushIndent();
-
-  // Emit one method per received message that adds the message data into
-  // the aggregate output message.
-  for (auto message : messages) {
-    if (message.IsPublished()) {
-      continue;
-    }
-
-    os << os.Indent() << "def " << message.Name() << '_' << message.Arity()
-       << "(self, vector: List[";
-
-    if (1u < message.Arity()) {
-      os << "Tuple[";
-    }
-
-    auto sep = "";
-    for (auto param : message.Parameters()) {
-      os << sep << TypeName(module, param.Type());
-      sep = ", ";
-    }
-
-    if (1u < message.Arity()) {
-      os << "]";
-    }
-
-    os << ']';
-
-    if (message.IsDifferential()) {
-      os << ", added: bool";
-    }
-
-    os << "):\n";
-    os.PushIndent();
-    os << os.Indent() << "...\n\n";
-    os.PopIndent();
+  std::string file_name = "datalog";
+  std::string ns_name;
+  std::string ns_name_prefix;
+  if (db_name) {
+    file_name = db_name->NameAsString();
+    ns_name = file_name;
+    ns_name_prefix = ns_name + ".";
   }
-  os.PopIndent();
+
+  auto has_inputs = false;
+  auto has_outputs = false;
+  auto has_removed_inputs = false;
+  auto has_removed_outputs = false;
+  for (auto message : messages) {
+    if (message.IsDifferential()) {
+      if (message.IsPublished()) {
+        has_removed_outputs = true;
+      } else if (message.IsReceived()) {
+        has_removed_inputs = true;
+      } else {
+        assert(false);
+      }
+    } else if (message.IsPublished()) {
+      has_outputs = true;
+    } else if (message.IsReceived()) {
+      has_inputs = true;
+    }
+  }
+
+  os << "# Auto-generated file\n\n"
+     << "from __future__ import annotations\n\n"
+     << "import grpc\n"
+     << "import flatbuffers\n\n"
+     << "from dataclasses import dataclass\n"
+     << "from typing import Final, Iterator, List, Optional\n"
+     << "from ." << file_name << "_grpc_fb import DatalogStub\n"
+     << "from .InputMessage import InputMessageT as InputMessage\n"
+     << "from .OutputMessage import OutputMessageT as OutputMessage\n"
+     << "from .Client import ClientT as Client\n"
+     << "from .AddedInputMessage import AddedInputMessageT as AddedInputMessage\n";
+
+  if (has_outputs) {
+    os << "from .AddedOutputMessage import AddedOutputMessageT as AddedOutputMessage\n";
+  }
+  if (has_removed_outputs) {
+    os << "from .RemovedOutputMessage import RemovedOutputMessageT as RemovedOutputMessage\n";
+  }
+
+  if (has_removed_inputs) {
+    os << "from .RemovedInputMessage import RemovedInputMessageT as RemovedInputMessage\n";
+  }
+
+  // Import each message builder object with a nice name.
+  for (ParsedMessage message : messages) {
+    const auto name = message.Name();
+    const auto arity = message.Arity();
+    os << "from .Message_" << name << "_" << arity
+       << " import Message_" << name << "_" << arity
+       << "T as " << name << "_" << arity << '\n';
+  }
+
+  // Import each query builder object with a nice name.
+  for (ParsedQuery query : queries) {
+    ParsedDeclaration decl(query);
+    const auto name = query.Name();
+    const auto arity = query.Arity();
+
+    if (decl.IsFirstDeclaration()) {
+      os << "from ." << name << "_" << arity
+         << " import " << name << "_" << arity
+         << "T as " << name << "_" << arity << '\n';
+    }
+
+    auto bp = decl.BindingPattern();
+    os << "from ." << name << "_" << bp
+       << " import " << name << "_" << bp
+       << "T as " << name << "_" << bp << '\n';
+  }
+
   os << '\n';
 
-  // Input messages to datalog.
-  os << os.Indent() << "@dataclass\n"
-     << os.Indent() << "class " << gClassName << "InputMessage:\n";
-
+  os << os.Indent() << "class InputMessageBuilder:\n";
   os.PushIndent();
+  if (has_inputs) {
 
-  for (auto message : messages) {
-    if (message.IsPublished()) {
-      continue;
+    os << os.Indent() << "_msg: InputMessage\n"
+       << os.Indent() << "_added_msg: Optional[AddedInputMessage]\n";
+    if (has_removed_inputs) {
+      os << os.Indent() << "_removed_msg: Optional[RemovedInputMessage]\n";
     }
-
-    os << os.Indent() << "_add_" << message.Name() << '_' << message.Arity()
-       << ": Optional[List[";
-    if (1u < message.Arity()) {
-      os << "Tuple[";
-    }
-
-    auto sep = "";
-    for (auto param : message.Parameters()) {
-      os << sep << TypeName(module, param.Type());
-      sep = ", ";
-    }
-
-    if (1u < message.Arity()) {
-      os << ']';
-    }
-    os << "]] = None\n";
-
-    if (!message.IsDifferential()) {
-      continue;
-    }
-
-    os << os.Indent() << "_rem_" << message.Name() << '_' << message.Arity()
-       << ": Optional[List[";
-    if (1u < message.Arity()) {
-      os << "Tuple[";
-    }
-
-    sep = "";
-    for (auto param : message.Parameters()) {
-      os << sep << TypeName(module, param.Type());
-      sep = ", ";
-    }
-
-    if (1u < message.Arity()) {
-      os << ']';
-    }
-    os << "]] = None\n";
-  }
-  os << '\n';
-
-  // Emit a method that will apply everything in this data class to an
-  // instance of the database. Returns the number of processed messages.
-  os << os.Indent() << "def apply(self, db: " << gClassName
-     << "Interface) -> int:\n";
-  os.PushIndent();
-  os << os.Indent() << "num_messages: int = 0\n";
-  for (auto message : messages) {
-    if (message.IsPublished()) {
-      continue;
-    }
-    os << os.Indent() << "if self._add_" << message.Name() << '_'
-       << message.Arity() << " is not None:\n";
+    os << '\n'
+       << os.Indent() << "def __init__(self):\n";
     os.PushIndent();
-    os << os.Indent() << "num_messages += len(self._add_" << message.Name()
-       << '_' << message.Arity() << ")\n"
-       << os.Indent() << "db." << message.Name() << '_' << message.Arity()
-       << "(self._add_" << message.Name() << '_' << message.Arity();
-    if (message.IsDifferential()) {
-      os << ", True";
+    os << os.Indent() << "self._msg = InputMessage()\n"
+       << os.Indent() << "self._added_msg = None\n";
+    if (has_removed_inputs) {
+      os << os.Indent() << "self._removed_msg = None\n";
     }
-    os << ")\n";
+    os << "\n";
     os.PopIndent();
 
-    if (!message.IsDifferential()) {
-      continue;
-    }
-
-    os << os.Indent() << "if self._rem_" << message.Name() << '_'
-       << message.Arity() << " is not None:\n";
+    os << os.Indent() << "def _added(self) -> AddedInputMessage:\n";
     os.PushIndent();
-    os << os.Indent() << "num_messages += len(self._rem_" << message.Name()
-       << '_' << message.Arity() << ")\n"
-       << os.Indent() << "db." << message.Name() << '_' << message.Arity()
-       << "(self._rem_" << message.Name() << '_' << message.Arity()
-       << ", False)\n";
+    os << os.Indent() << "if self._added_msg is None:\n";
+    os.PushIndent();
+    os << os.Indent() << "self._added_msg = AddedInputMessage()\n"
+       << os.Indent() << "self._msg.added = self._added_msg\n";
     os.PopIndent();
-  }
-  os << os.Indent() << "return num_messages\n";
-  os.PopIndent();
-  os.PopIndent();
-  os << "\n\n";
+    os << os.Indent() << "return self._added_msg\n\n";
+    os.PopIndent();  // _added
 
-  // Implements a class that can build input messages.
-  os << os.Indent() << "class " << gClassName << "InputMessageProducer:\n";
-  os.PushIndent();
-  os << os.Indent() << "def __init__(self):\n";
-  os.PushIndent();
-  os << os.Indent() << "self._msg: " << gClassName
-     << "InputMessage = " << gClassName << "InputMessage()\n"
-     << os.Indent() << "self._num_msgs: int = 0\n\n";
-  os.PopIndent();
-  for (auto message : messages) {
-    if (message.IsPublished()) {
-      continue;
-    }
-
-    os << os.Indent() << "def produce_" << message.Name() << '_'
-       << message.Arity() << "(self";
-
-    for (auto param : message.Parameters()) {
-      os << ", " << param.Name() << ": " << TypeName(module, param.Type());
-    }
-
-    if (message.IsDifferential()) {
-      os << ", _added: bool";
-    }
-
-    os << "):\n";
-    os.PushIndent();
-    os << os.Indent() << "self._num_msgs += 1\n";
-
-    if (!message.IsDifferential()) {
-      os << os.Indent() << "_added = True\n";
-    }
-
-    // Differential, need to select among add/remove.
-
-    os << os.Indent() << "if _added:\n";
-    os.PushIndent();
-    os << os.Indent() << "_msgs = self._msg._add_" << message.Name() << '_'
-       << message.Arity() << '\n'
-       << os.Indent() << "if _msgs is None:\n";
-    os.PushIndent();
-    os << os.Indent() << "_msgs = []\n"
-       << os.Indent() << "self._msg._add_" << message.Name() << '_'
-       << message.Arity() << " = _msgs\n";
-    os.PopIndent();
-    os.PopIndent();
-
-    if (message.IsDifferential()) {
-      os << os.Indent() << "else:\n";
+    if (has_removed_inputs) {
+      os << os.Indent() << "def _removed(self) -> RemovedInputMessage:\n";
       os.PushIndent();
-      os << os.Indent() << "_msgs = self._msg._rem_" << message.Name() << '_'
-         << message.Arity() << '\n'
-         << os.Indent() << "if _msgs is None:\n";
+      os << os.Indent() << "if self._removed_msg is None:\n";
       os.PushIndent();
-      os << os.Indent() << "_msgs = []\n"
-         << os.Indent() << "self._msg._rem_" << message.Name() << '_'
-         << message.Arity() << " = _msgs\n";
+      os << os.Indent() << "self._removed_msg = AddedInputMessage()\n"
+         << os.Indent() << "self._msg.removed = self._added_msg\n";
       os.PopIndent();
-      os.PopIndent();
+      os << os.Indent() << "return self._removed_msg\n\n";
+      os.PopIndent();  // _removed
     }
 
-    os << os.Indent() << "_msgs.append(";
-    if (1u < message.Arity()) {
-      os << '(';
-    }
+    auto do_message = [&] (ParsedMessage message, const char *prefix, const char *method) {
+      const ParsedDeclaration decl(message);
+      const auto name = message.Name();
+      const auto arity = message.Arity();
+      os << os.Indent() << "def " << prefix << name << '_' << arity << "(self";
 
-    auto sep = "";
-    for (auto param : message.Parameters()) {
-      os << sep << param.Name();
-      sep = ", ";
-    }
-
-    if (1u < message.Arity()) {
-      os << ')';
-    }
-
-    os << ")  # type: ignore\n\n";
-    os.PopIndent();
-  }
-
-  // Emit a method that returns `None` if no messages were published by Datalog,
-  // or emits an aggregated message representing all published messages since
-  // the last time we asked.
-  os << os.Indent() << "def produce(self) -> Optional[" << gClassName
-     << "InputMessage]:\n";
-  os.PushIndent();
-  os << os.Indent() << "if not self._num_msgs:\n";
-  os.PushIndent();
-  os << os.Indent() << "return None\n";
-  os.PopIndent();
-  os << os.Indent() << "self._num_msgs = 0\n"
-     << os.Indent() << "msg = self._msg\n"
-     << os.Indent() << "self._msg = " << gClassName << "InputMessage()\n"
-     << os.Indent() << "return msg\n\n";
-  os.PopIndent();
-
-  os << os.Indent() << "def __len__(self) -> int:\n";
-  os.PushIndent();
-  os << os.Indent() << "return self._num_msgs\n\n\n";
-  os.PopIndent();
-  os.PopIndent();
-
-  // Output messages from datalog.
-  os << os.Indent() << "@dataclass\n"
-     << os.Indent() << "class " << gClassName << "OutputMessage:\n";
-
-  os.PushIndent();
-
-  auto empty = true;
-
-  // First, make the backing storage for the messages.
-  for (auto message : messages) {
-    if (!message.IsPublished()) {
-      continue;
-    }
-
-    empty = false;
-
-    os << os.Indent() << "_add_" << message.Name() << '_' << message.Arity()
-       << ": Optional[List[";
-
-    if (1 < message.Arity()) {
-      os << "Tuple[";
-    }
-
-    auto sep = "";
-    for (auto param : message.Parameters()) {
-      os << sep << TypeName(module, param.Type());
-      sep = ", ";
-    }
-
-    if (1 < message.Arity()) {
-      os << "]";
-    }
-
-    os << "]] = None\n";
-
-    if (!message.IsDifferential()) {
-      continue;
-    }
-
-    os << os.Indent() << "_rem_" << message.Name() << '_' << message.Arity()
-       << ": Optional[List[";
-
-    if (1 < message.Arity()) {
-      os << "Tuple[";
-    }
-
-    sep = "";
-    for (auto param : message.Parameters()) {
-      os << sep << TypeName(module, param.Type());
-      sep = ", ";
-    }
-
-    if (1 < message.Arity()) {
-      os << "]";
-    }
-
-    os << "]] = None\n";
-  }
-
-  auto r = 0u;
-
-  // Then, expose them via properties / accessor functions.
-  for (auto message : messages) {
-    if (!message.IsPublished()) {
-      continue;
-    }
-
-    // In the differential case, we have a function giving access to one of the
-    // internal lists, based on the parameter of `True` (added) or `False`
-    // (removed).
-    if (message.IsDifferential()) {
-      os << os.Indent() << "def " << message.Name() << '_' << message.Arity()
-         << "(self, _added: bool) -> Iterator[";
-
-      if (1 < message.Arity()) {
-        os << "Tuple[";
+      for (ParsedParameter param : decl.Parameters()) {
+        os << ", " << param.Name() << ": " << TypeName(module, param.Type());
       }
 
-      auto sep = "";
-      for (auto param : message.Parameters()) {
-        os << sep << TypeName(module, param.Type());
-        sep = ", ";
+      os << ") -> None:\n";
+      os.PushIndent();
+      os << os.Indent() << "ls = self." << method << "()\n"
+         << os.Indent() << "if ls." << name << '_' << arity << " is None:\n";
+      os.PushIndent();
+      os << os.Indent() << "ls." << name << '_' << arity << " = []\n";
+      os.PopIndent();
+      os << os.Indent() << "msg = " << name << '_' << arity << "()\n";
+      for (ParsedParameter param : decl.Parameters()) {
+        os << os.Indent() << "msg." << param.Name() << " = " << param.Name() << '\n';
+      }
+      os << os.Indent() << "ls." << name << '_' << arity << ".append(msg)\n\n";
+      os.PopIndent();
+    };
+
+    for (ParsedMessage message : messages) {
+      if (!message.IsReceived()) {
+        continue;
       }
 
-      if (1 < message.Arity()) {
-        os << "]";
-      }
+      do_message(message, "produce_", "_added");
 
-      os << "]:\n";
-      os.PushIndent();
-      os << os.Indent() << "if _added:\n";
-
-      os.PushIndent();
-      os << os.Indent() << "if self._add_" << message.Name() << '_'
-         << message.Arity() << " is not None:\n";
-      os.PushIndent();
-      os << os.Indent() << "for _row" << r << " in self._add_" << message.Name()
-         << '_' << message.Arity() << ":\n";
-      os.PushIndent();
-      os << os.Indent() << "yield _row" << r << "\n";
-      os.PopIndent();
-      os.PopIndent();
-      os.PopIndent();
-      ++r;
-
-      os << os.Indent() << "else:\n";
-      os.PushIndent();
-      os << os.Indent() << "if self._rem_" << message.Name() << '_'
-         << message.Arity() << " is not None:\n";
-      os.PushIndent();
-      os << os.Indent() << "for _row" << r << " in self._rem_" << message.Name()
-         << '_' << message.Arity() << ":\n";
-      os.PushIndent();
-      os << os.Indent() << "yield _row" << r << "\n";
-      os.PopIndent();
-      os.PopIndent();
-
-      os.PopIndent();
-      os.PopIndent();
-      ++r;
-
-    // In the non-differential case, we have a property giving access to the
-    // private field, in terms of an iterator.
-    } else {
-      os << os.Indent() << "@property\n"
-         << os.Indent() << "def " << message.Name() << '_' << message.Arity()
-         << "(self) -> Iterator[";
-
-      if (1 < message.Arity()) {
-        os << "Tuple[";
-      }
-
-      auto sep = "";
-      for (auto param : message.Parameters()) {
-        os << sep << TypeName(module, param.Type());
-        sep = ", ";
-      }
-
-      if (1 < message.Arity()) {
-        os << "]";
-      }
-
-      os << "]:\n";
-      os.PushIndent();
-      os << os.Indent() << "if self._add_" << message.Name() << '_'
-         << message.Arity() << " is not None:\n";
-      os.PushIndent();
-      os << os.Indent() << "for _row" << r << " in self._add_" << message.Name()
-         << '_' << message.Arity() << ":\n";
-      os.PushIndent();
-      os << os.Indent() << "yield _row" << r << "\n";
-      os.PopIndent();
-      os.PopIndent();
-      os.PopIndent();
-
-      ++r;
-    }
-  }
-
-  if (empty) {
-    os << os.Indent() << "pass\n";
-  }
-
-  os.PopIndent();
-  os << "\n\n";
-
-  // Implements the `DatabaseLog` protocol, and aggregates all messages into
-  // a single `DatabaseOutputMessage`.
-  os << os.Indent() << "class " << gClassName << "OutputMessageProducer:\n";
-  os.PushIndent();
-
-  os << os.Indent() << "def __init__(self):\n";
-  os.PushIndent();
-  os << os.Indent() << "self._num_msgs: int = 0\n"
-     << os.Indent() << "self._msg: " << gClassName
-     << "OutputMessage = " << gClassName << "OutputMessage()\n\n";
-  os.PopIndent();
-
-  // Emit one method per published message that adds the message data into
-  // the aggregate output message.
-  for (auto message : messages) {
-    if (!message.IsPublished()) {
-      continue;
-    }
-    os << os.Indent() << "def " << message.Name() << '_' << message.Arity()
-       << "(self";
-
-    for (auto param : message.Parameters()) {
-      os << ", " << param.Name() << ": " << TypeName(module, param.Type());
-    }
-
-    if (message.IsDifferential()) {
-      os << ", _added: bool";
-    }
-
-    os << "):\n";
-    os.PushIndent();
-
-    if (!message.IsDifferential()) {
-      os << os.Indent() << "_added = True\n";
-    }
-
-    os << os.Indent() << "if _added:\n";
-    os.PushIndent();
-    os << os.Indent() << "_msgs = self._msg._add_" << message.Name() << '_'
-       << message.Arity() << '\n'
-       << os.Indent() << "if _msgs is None:\n";
-    os.PushIndent();
-    os << os.Indent() << "_msgs = []\n"
-       << os.Indent() << "self._msg._add_" << message.Name() << '_'
-       << message.Arity() << " = _msgs\n";
-    os.PopIndent();
-    os.PopIndent();
-
-    if (message.IsDifferential()) {
-      os << os.Indent() << "else:\n";
-      os.PushIndent();
-      os << os.Indent() << "_msgs = self._msg._rem_" << message.Name() << '_'
-         << message.Arity() << '\n'
-         << os.Indent() << "if _msgs is None:\n";
-      os.PushIndent();
-      os << os.Indent() << "_msgs = []\n"
-         << os.Indent() << "self._msg._rem_" << message.Name() << '_'
-         << message.Arity() << " = _msgs\n";
-      os.PopIndent();
-      os.PopIndent();
-    }
-
-    os << os.Indent() << "_msgs.append(";
-    if (1 < message.Arity()) {
-      os << "(";
-    }
-
-    auto sep = "";
-    for (auto param : message.Parameters()) {
-      os << sep << param.Name();
-      sep = ", ";
-    }
-    if (1 < message.Arity()) {
-      os << ")";
-    }
-    os << ")  # type: ignore\n";
-
-    os << os.Indent() << "self._num_msgs += 1\n\n";
-    os.PopIndent();
-  }
-
-  // Emit a method that returns `None` if no messages were published by Datalog,
-  // or emits an aggregated message representing all published messages since
-  // the last time we asked.
-  os << os.Indent() << "def produce(self) -> Optional[" << gClassName
-     << "OutputMessage]:\n";
-  os.PushIndent();
-  os << os.Indent() << "if not self._num_msgs:\n";
-  os.PushIndent();
-  os << os.Indent() << "return None\n";
-  os.PopIndent();
-  os << os.Indent() << "self._num_msgs = 0\n"
-     << os.Indent() << "msg = self._msg\n"
-     << os.Indent() << "self._msg = " << gClassName << "OutputMessage()\n"
-     << os.Indent() << "return msg\n\n";
-  os.PopIndent();
-  os << os.Indent() << "def __len__(self) -> int:\n";
-  os.PushIndent();
-  os << os.Indent() << "return self._num_msgs\n\n\n";
-  os.PopIndent();
-  os.PopIndent();
-
-  os << os.Indent() << "class " << gClassName << "OutputMessageConsumer:\n";
-  os.PushIndent();
-  os << os.Indent() << "def consume(self, msg: " << gClassName
-     << "OutputMessage):\n";
-  os.PushIndent();
-
-  for (auto message : messages) {
-    if (!message.IsPublished()) {
-      continue;
-    }
-    os << os.Indent() << "if msg._add_" << message.Name() << '_'
-       << message.Arity() << " is not None:\n";
-    os.PushIndent();
-    os << os.Indent() << "for _row" << r << " in msg._add_" << message.Name()
-       << '_' << message.Arity() << ":\n";
-    os.PushIndent();
-    os << os.Indent() << "self.consume_" << message.Name() << '_'
-       << message.Arity() << "(";
-
-    if (1 == message.Arity()) {
-      os << "_row" << r;
-    } else {
-      auto sep = "";
-      for (auto i = 0u; i < message.Arity(); ++i) {
-        os << sep << "_row" << r << "[" << i << ']';
-        sep = ", ";
+      if (message.IsDifferential()) {
+        do_message(message, "retract_", "_removed");
       }
     }
-
-    if (message.IsDifferential()) {
-      os << ", True";
-    }
-
-    os << ")\n";
-    os.PopIndent();
-    os.PopIndent();
-
-    ++r;
-
-    if (!message.IsDifferential()) {
-      continue;
-    }
-
-    os << os.Indent() << "if msg._rem_" << message.Name() << '_'
-       << message.Arity() << " is not None:\n";
-    os.PushIndent();
-    os << os.Indent() << "for _row" << r << " in msg._rem_" << message.Name()
-       << '_' << message.Arity() << ":\n";
-    os.PushIndent();
-    os << os.Indent() << "self.consume_" << message.Name() << '_'
-       << message.Arity() << "(";
-
-    if (1 == message.Arity()) {
-      os << "_row" << r;
-    } else {
-      auto sep = "";
-      for (auto i = 0u; i < message.Arity(); ++i) {
-        os << sep << "_row" << r << "[" << i << ']';
-        sep = ", ";
-      }
-    }
-
-    ++r;
-
-    os << ", False)\n";
-    os.PopIndent();
-    os.PopIndent();
-  }
-  os << os.Indent() << "return\n\n";
-  os.PopIndent();
-
-  for (auto message : messages) {
-    if (!message.IsPublished()) {
-      continue;
-    }
-
-    os << os.Indent() << "def consume_" << message.Name() << '_'
-       << message.Arity() << "(self";
-
-    for (auto param : message.Parameters()) {
-      os << ", " << param.Name() << ": " << TypeName(module, param.Type());
-    }
-
-    if (message.IsDifferential()) {
-      os << ", _added: bool";
-    }
-
-    os << "):\n";
-    os.PushIndent();
+  } else {
     os << os.Indent() << "pass\n\n";
-    os.PopIndent();
   }
+  os.PopIndent();  // class InputMessageBuilder
+
+  os << "class OutputMessageConsumer:\n";
+  os.PushIndent();
+  os << os.Indent() << "def begin(self, db: 'Datalog') -> None:\n";
+  os.PushIndent();
+  os << os.Indent() << "pass\n\n";
   os.PopIndent();
 
-  // Stupid hack to make Flake8 / Black happy.
-  os << "# End of auto-generated file\n";
+  os << os.Indent() << "def end(self, db: 'Datalog') -> None:\n";
+  os.PushIndent();
+  os << os.Indent() << "pass\n\n";
+  os.PopIndent();
+
+  if (has_outputs) {
+    for (ParsedMessage message : messages) {
+      if (!message.IsPublished()) {
+        continue;
+      }
+
+      const ParsedDeclaration decl(message);
+      const auto name = message.Name();
+      const auto arity = message.Arity();
+      os << os.Indent() << "def consume_" << name << '_' << arity
+         << "(self, db: 'Datalog'";
+
+      for (ParsedParameter param : decl.Parameters()) {
+        os << ", " << param.Name() << ": " << TypeName(module, param.Type());
+      }
+
+      if (message.IsDifferential()) {
+        os << ", added: bool";
+      }
+
+      os << "):\n";
+      os.PushIndent();
+      os << os.Indent() << "pass\n\n";
+      os.PopIndent();
+    }
+  }
+
+  os << os.Indent() << "def consume(self, db: 'Datalog', output: OutputMessage):\n";
+  os.PushIndent();
+  os << os.Indent() << "self.begin(db)\n";
+  if (has_outputs) {
+    auto i = 0;
+
+    auto do_message = [&] (ParsedMessage message, const char *list, const char *added) {
+      const ParsedDeclaration decl(message);
+      const auto name = message.Name();
+      const auto arity = message.Arity();
+      os << os.Indent() << "if output." << list << '.' << name << '_' << arity << " is not None:\n";
+      os.PushIndent();
+      os << os.Indent() << "for m" << i << " in output." << list << '.' << name << '_' << arity << ":\n";
+      os.PushIndent();
+      os << os.Indent() << "self.consume_" << name << '_' << arity << "(db";
+      for (ParsedParameter param : decl.Parameters()) {
+        os << ", m" << i << "." << param.Name();
+      }
+      if (message.IsDifferential()) {
+        os << ", " << added;
+      }
+      os << ")\n";
+      os.PopIndent();  // for
+      os.PopIndent();  // if
+    };
+
+    os << os.Indent() << "if output.added is not None:\n";
+    os.PushIndent();
+    for (ParsedMessage message : messages) {
+      if (message.IsPublished()) {
+        do_message(message, "added", "True");
+        ++i;
+      }
+    }
+    os.PopIndent();  // if output.added
+
+    if (has_removed_outputs) {
+      os << os.Indent() << "if output.removed is not None:\n";
+      os.PushIndent();
+      for (ParsedMessage message : messages) {
+        if (message.IsPublished()) {
+          do_message(message, "removed", "False");
+          ++i;
+        }
+      }
+      os.PopIndent();  // if output.removed
+    }
+  }
+  os << os.Indent() << "self.end(db)\n\n";
+  os.PopIndent();  // consume
+  os.PopIndent();  // class OutputMesssageConsumer
+
+  os << "class Datalog:\n";
+  os.PushIndent();
+  os << os.Indent() << "_stub: DatalogStub\n\n"
+     << os.Indent() << "def __init__(self, client_name: str, channel: grpc.Channel):\n";
+  os.PushIndent();
+  os << os.Indent() << "self._name = client_name\n"
+     << os.Indent() << "self._stub = DatalogStub(channel)\n\n";
+  os.PopIndent();  // __init__
+
+  os << os.Indent() << "def produce(self, builder: InputMessageBuilder) -> None:\n";
+  os.PushIndent();
+  if (has_inputs) {
+    os << os.Indent() << "message_builder = flatbuffers.Builder(0)\n"
+       << os.Indent() << "message = builder._msg\n"
+       << os.Indent() << "builder._msg = InputMessage()\n"
+       << os.Indent() << "builder._added_msg = None\n";
+    if (has_removed_inputs) {
+      os << os.Indent() << "builder._removed_msg = None\n";
+    }
+    os << os.Indent() << "offset = message.Pack(message_builder)\n"
+       << os.Indent() << "message_builder.Finish(offset)\n"
+       << os.Indent() << "self._stub.Publish(bytes(message_builder.Output()))\n\n";
+  } else {
+    os << os.Indent() << "pass\n\n";
+  }
+  os.PopIndent();  // publish
+
+  // Emit each of the queries.
+  for (ParsedQuery query : queries) {
+    const ParsedDeclaration decl(query);
+    const auto name = query.Name();
+    const auto arity = query.Arity();
+    const auto bp = decl.BindingPattern();
+    os << os.Indent() << "def " << name << '_' << bp << "(self";
+
+    auto has_bound = false;
+    auto has_free = false;
+    for (ParsedParameter param : decl.Parameters()) {
+      if (param.Binding() == ParameterBinding::kBound) {
+        os << ", " << param.Name() << ": " << TypeName(module, param.Type());
+        has_bound = true;
+      } else {
+        has_free = true;
+      }
+    }
+
+    os << ")";
+    if (has_free) {
+      os << " -> Iterator[" << name << '_' << arity << "]:\n";
+    } else {
+      os << " -> Optional[" << name << '_' << arity << "]:\n";
+    }
+    os.PushIndent();
+    os << os.Indent() << "req = " << name << '_' << bp << "()\n";
+    for (ParsedParameter param : decl.Parameters()) {
+      if (param.Binding() == ParameterBinding::kBound) {
+        os << os.Indent() << "req." << param.Name() << " = " << param.Name() << '\n';
+      }
+    }
+    os << os.Indent() << "message_builder = flatbuffers.Builder(0)\n"
+       << os.Indent() << "offset = req.Pack(message_builder)\n"
+       << os.Indent() << "message_builder.Finish(offset)\n"
+       << os.Indent() << "buff = bytes(message_builder.Output())\n"
+       << os.Indent() << "resp = self._stub.Query_" << name << '_' << bp << "(buff)\n";
+
+    // It's a `_MultiThreadedRendezvous`.
+    if (has_free) {
+      os << os.Indent() << "for resp_buff in resp:\n";
+      os.PushIndent();
+      os << os.Indent() << "yield " << name << '_' << arity << ".InitFromBuf(resp_buff, 0)\n";
+      os.PopIndent();
+
+      os << os.Indent() << "del resp\n\n";
+    } else {
+
+    }
+
+    os.PopIndent();
+    os << '\n';
+  }
+
+  os << os.Indent() << "def consume(self, consumer: OutputMessageConsumer) -> None:\n";
+  os.PushIndent();
+  os << os.Indent() << "message_builder = flatbuffer.Builder(0)\n"
+     << os.Indent() << "message = Client()\n"
+     << os.Indent() << "message.name = self._name\n"
+     << os.Indent() << "offset = message.Pack(message_builder)\n"
+     << os.Indent() << "message_builder.Finish(offset)\n"
+     << os.Indent() << "buff = bytes(message_builder.Output())\n"
+     << os.Indent() << "while True:\n";
+  os.PushIndent();
+  os << os.Indent() << "x = self._stub.Subscribe(buff)\n"
+     << os.Indent() << "print(x.__class__)\n"
+     << os.Indent() << "print(dir(x))\n"
+     << os.Indent() << "print(x)\n";
+
+  os.PopIndent();  // while
+  os.PopIndent();  // consume
+
+  os.PopIndent();  // class Datalog
+  os << "\n";
 }
 
 }  // namespace python

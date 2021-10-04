@@ -18,38 +18,6 @@ class ProgramImpl;
 
 class ProgramVisitor;
 
-namespace program {
-
-// A superclass of (most) kinds of IR program nodes.
-template <typename T>
-class ProgramNode {
- public:
-  inline ProgramNode(Node<T> *impl_) : impl(impl_) {}
-
-  inline bool operator==(ProgramNode<T> that) const {
-    return impl == that.impl;
-  }
-
-  inline bool operator!=(ProgramNode<T> that) const {
-    return impl != that.impl;
-  }
-
-  inline bool operator<(ProgramNode<T> that) const {
-    return impl < that.impl;
-  }
-
-  uintptr_t UniqueId(void) const noexcept {
-    return reinterpret_cast<uintptr_t>(impl);
-  }
-
- protected:
-  friend class ::hyde::ProgramImpl;
-
-  Node<T> *impl;
-};
-
-}  // namespace program
-
 class DataColumn;
 class DataIndex;
 class DataTable;
@@ -62,6 +30,7 @@ class ProgramReturnRegion;
 class ProgramTestAndSetRegion;
 class ProgramGenerateRegion;
 class ProgramInductionRegion;
+class ProgramModeSwitchRegion;
 class ProgramLetBindingRegion;
 class ProgramParallelRegion;
 class ProgramProcedure;
@@ -72,8 +41,10 @@ class ProgramVectorClearRegion;
 class ProgramVectorLoopRegion;
 class ProgramVectorSwapRegion;
 class ProgramVectorUniqueRegion;
-class ProgramTransitionStateRegion;
-class ProgramCheckStateRegion;
+class ProgramChangeTupleRegion;
+class ProgramChangeRecordRegion;
+class ProgramCheckTupleRegion;
+class ProgramCheckRecordRegion;
 class ProgramTableJoinRegion;
 class ProgramTableProductRegion;
 class ProgramTableScanRegion;
@@ -81,7 +52,8 @@ class ProgramTupleCompareRegion;
 class ProgramWorkerIdRegion;
 
 // A generic region of code nested inside of a procedure.
-class ProgramRegion : public program::ProgramNode<ProgramRegion> {
+class ProgramRegionImpl;
+class ProgramRegion : public Node<ProgramRegion, ProgramRegionImpl> {
  public:
   // Return the region containing `child`, or `std::nullopt` if this is the
   // topmost region in a procedure.
@@ -92,6 +64,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   ProgramRegion(const ProgramTestAndSetRegion &);
   ProgramRegion(const ProgramGenerateRegion &);
   ProgramRegion(const ProgramInductionRegion &);
+  ProgramRegion(const ProgramModeSwitchRegion &);
   ProgramRegion(const ProgramLetBindingRegion &);
   ProgramRegion(const ProgramParallelRegion &);
   ProgramRegion(const ProgramPublishRegion &);
@@ -101,8 +74,10 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   ProgramRegion(const ProgramVectorLoopRegion &);
   ProgramRegion(const ProgramVectorSwapRegion &);
   ProgramRegion(const ProgramVectorUniqueRegion &);
-  ProgramRegion(const ProgramTransitionStateRegion &);
-  ProgramRegion(const ProgramCheckStateRegion &);
+  ProgramRegion(const ProgramChangeTupleRegion &);
+  ProgramRegion(const ProgramChangeRecordRegion &);
+  ProgramRegion(const ProgramCheckTupleRegion &);
+  ProgramRegion(const ProgramCheckRecordRegion &);
   ProgramRegion(const ProgramTableJoinRegion &);
   ProgramRegion(const ProgramTableProductRegion &);
   ProgramRegion(const ProgramTableScanRegion &);
@@ -121,9 +96,12 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   bool IsVectorClear(void) const noexcept;
   bool IsVectorSwap(void) const noexcept;
   bool IsVectorUnique(void) const noexcept;
+  bool IsModeSwitch(void) const noexcept;
   bool IsLetBinding(void) const noexcept;
-  bool IsTransitionState(void) const noexcept;
-  bool IsCheckState(void) const noexcept;
+  bool IsChangeTuple(void) const noexcept;
+  bool IsChangeRecord(void) const noexcept;
+  bool IsCheckTuple(void) const noexcept;
+  bool IsCheckRecord(void) const noexcept;
   bool IsTableJoin(void) const noexcept;
   bool IsTableProduct(void) const noexcept;
   bool IsTableScan(void) const noexcept;
@@ -141,6 +119,7 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   friend class ProgramTestAndSetRegion;
   friend class ProgramGenerateRegion;
   friend class ProgramInductionRegion;
+  friend class ProgramModeSwitchRegion;
   friend class ProgramLetBindingRegion;
   friend class ProgramParallelRegion;
   friend class ProgramProcedure;
@@ -151,19 +130,22 @@ class ProgramRegion : public program::ProgramNode<ProgramRegion> {
   friend class ProgramVectorLoopRegion;
   friend class ProgramVectorSwapRegion;
   friend class ProgramVectorUniqueRegion;
-  friend class ProgramTransitionStateRegion;
-  friend class ProgramCheckStateRegion;
+  friend class ProgramChangeTupleRegion;
+  friend class ProgramChangeRecordRegion;
+  friend class ProgramCheckTupleRegion;
+  friend class ProgramCheckRecordRegion;
   friend class ProgramTableJoinRegion;
   friend class ProgramTableProductRegion;
   friend class ProgramTableScanRegion;
   friend class ProgramTupleCompareRegion;
   friend class ProgramWorkerIdRegion;
 
-  using program::ProgramNode<ProgramRegion>::ProgramNode;
+  using Node<ProgramRegion, ProgramRegionImpl>::Node;
 };
 
 // A generic sequencing of regions.
-class ProgramSeriesRegion : public program::ProgramNode<ProgramSeriesRegion> {
+class ProgramSeriesRegionImpl;
+class ProgramSeriesRegion : public Node<ProgramSeriesRegion, ProgramSeriesRegionImpl> {
  public:
   static ProgramSeriesRegion From(ProgramRegion) noexcept;
 
@@ -173,12 +155,13 @@ class ProgramSeriesRegion : public program::ProgramNode<ProgramSeriesRegion> {
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramSeriesRegion>::ProgramNode;
+  using Node<ProgramSeriesRegion, ProgramSeriesRegionImpl>::Node;
 };
 
 // A generic representation the two or more regions can execute in parallel.
+class ProgramParallelRegionImpl;
 class ProgramParallelRegion
-    : public program::ProgramNode<ProgramParallelRegion> {
+    : public Node<ProgramParallelRegion, ProgramParallelRegionImpl> {
  public:
   static ProgramParallelRegion From(ProgramRegion) noexcept;
 
@@ -188,7 +171,7 @@ class ProgramParallelRegion
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramParallelRegion>::ProgramNode;
+  using Node<ProgramParallelRegion, ProgramParallelRegionImpl>::Node;
 };
 
 enum class VariableRole : int {
@@ -209,11 +192,13 @@ enum class VariableRole : int {
   kFunctorOutput,
   kMessageOutput,
   kParameter,
-  kWorkerId
+  kWorkerId,
+  kRecordElement
 };
 
 // A variable in the program.
-class DataVariable : public program::ProgramNode<DataVariable> {
+class DataVariableImpl;
+class DataVariable : public Node<DataVariable, DataVariableImpl> {
  public:
   VariableRole DefiningRole(void) const noexcept;
 
@@ -243,7 +228,7 @@ class DataVariable : public program::ProgramNode<DataVariable> {
   unsigned NumUses(void) const noexcept;
 
  private:
-  using program::ProgramNode<DataVariable>::ProgramNode;
+  using Node<DataVariable, DataVariableImpl>::Node;
 };
 
 enum class VectorKind : unsigned {
@@ -268,7 +253,8 @@ enum class VectorKind : unsigned {
 };
 
 // A column in a table.
-class DataColumn : public program::ProgramNode<DataColumn> {
+class DataColumnImpl;
+class DataColumn : public Node<DataColumn, DataColumnImpl> {
  public:
   // Unique ID of this column.
   unsigned Id(void) const noexcept;
@@ -277,7 +263,7 @@ class DataColumn : public program::ProgramNode<DataColumn> {
   unsigned Index(void) const noexcept;
 
   // Type of this column.
-  TypeKind Type(void) const noexcept;
+  TypeLoc Type(void) const noexcept;
 
   // Possible names that can be associated with this column.
   //
@@ -288,11 +274,12 @@ class DataColumn : public program::ProgramNode<DataColumn> {
  private:
   friend class DataTable;
 
-  using program::ProgramNode<DataColumn>::ProgramNode;
+  using Node<DataColumn, DataColumnImpl>::Node;
 };
 
 // An index on a table.
-class DataIndex : public program::ProgramNode<DataIndex> {
+class DataIndexImpl;
+class DataIndex : public Node<DataIndex, DataIndexImpl> {
  public:
   // Unique ID of this index.
   unsigned Id(void) const noexcept;
@@ -306,11 +293,12 @@ class DataIndex : public program::ProgramNode<DataIndex> {
  private:
   friend class DataTable;
 
-  using program::ProgramNode<DataIndex>::ProgramNode;
+  using Node<DataIndex, DataIndexImpl>::Node;
 };
 
 // A persistent table, backed by some kind of data store / database.
-class DataTable : public program::ProgramNode<DataTable> {
+class DataTableImpl;
+class DataTable : public Node<DataTable, DataTableImpl> {
  public:
   static DataTable Containing(DataColumn col) noexcept;
   static DataTable Backing(DataIndex index) noexcept;
@@ -330,12 +318,36 @@ class DataTable : public program::ProgramNode<DataTable> {
   // Apply a function to each user.
   void ForEachUser(std::function<void(ProgramRegion)> cb);
 
+  // Return the list of views associated with this table.
+  const std::vector<QueryView> Views(void) const noexcept;
+
  private:
-  using program::ProgramNode<DataTable>::ProgramNode;
+  using Node<DataTable, DataTableImpl>::Node;
+};
+
+// A record case is a particular instantiation or variant of a record.
+// A record might have multiple cases.
+class DataRecordCaseImpl;
+class DataRecordCase : public Node<DataRecordCase, DataRecordCaseImpl> {
+ public:
+
+ private:
+  using Node<DataRecordCase, DataRecordCaseImpl>::Node;
+};
+
+// A record is an abstraction over a persisted tuple. The storage for the
+// record is implemented in terms of one or more cases.
+class DataRecordImpl;
+class DataRecord : public Node<DataRecord, DataRecordImpl> {
+ public:
+
+ private:
+  using Node<DataRecord, DataRecordImpl>::Node;
 };
 
 // A vector in the program.
-class DataVector : public program::ProgramNode<DataVector> {
+class DataVectorImpl;
+class DataVector : public Node<DataVector, DataVectorImpl> {
  public:
   VectorKind Kind(void) const noexcept;
 
@@ -364,13 +376,14 @@ class DataVector : public program::ProgramNode<DataVector> {
   friend class ProgramVectorSwapRegion;
   friend class ProgramVectorUniqueRegion;
 
-  using program::ProgramNode<DataVector>::ProgramNode;
+  using Node<DataVector, DataVectorImpl>::Node;
 };
 
 // Perform a test-and-set like operation. In practice, this is used to operate
 // one reference counts, or counters that summarize a group of reference counts.
+class ProgramTestAndSetRegionImpl;
 class ProgramTestAndSetRegion
-    : public program::ProgramNode<ProgramTestAndSetRegion> {
+    : public Node<ProgramTestAndSetRegion, ProgramTestAndSetRegionImpl> {
  public:
   static ProgramTestAndSetRegion From(ProgramRegion) noexcept;
 
@@ -395,13 +408,14 @@ class ProgramTestAndSetRegion
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramTestAndSetRegion>::ProgramNode;
+  using Node<ProgramTestAndSetRegion, ProgramTestAndSetRegionImpl>::Node;
 };
 
 // Apply a functor to one or more inputs, yield zero or more outputs. In the
 // zero output case, the output is considered to be a boolean value.
+class ProgramGenerateRegionImpl;
 class ProgramGenerateRegion
-    : public program::ProgramNode<ProgramGenerateRegion> {
+    : public Node<ProgramGenerateRegion, ProgramGenerateRegionImpl> {
  public:
   static ProgramGenerateRegion From(ProgramRegion) noexcept;
 
@@ -445,12 +459,38 @@ class ProgramGenerateRegion
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramGenerateRegion>::ProgramNode;
+  using Node<ProgramGenerateRegion, ProgramGenerateRegionImpl>::Node;
 };
 
+enum class Mode {
+  kBottomUpAddition,
+  kBottomUpRemoval
+};
+
+// A region which semantically tells us we're swithing modes, e.g. to removing
+// data, or to adding data.
+class ProgramModeSwitchRegionImpl;
+class ProgramModeSwitchRegion
+    : public Node<ProgramModeSwitchRegion, ProgramModeSwitchRegionImpl> {
+ public:
+  static ProgramModeSwitchRegion From(ProgramRegion) noexcept;
+
+  // What is the new mode for the code in `Body`?
+  Mode NewMode(void) const noexcept;
+
+  // Return the body to which the lexical scoping of the variables applies.
+  std::optional<ProgramRegion> Body(void) const noexcept;
+
+ private:
+  friend class ProgramRegion;
+  using Node<ProgramModeSwitchRegion, ProgramModeSwitchRegionImpl>::Node;
+};
+
+
 // A let binding is an assignment of variables.
+class ProgramLetBindingRegionImpl;
 class ProgramLetBindingRegion
-    : public program::ProgramNode<ProgramLetBindingRegion> {
+    : public Node<ProgramLetBindingRegion, ProgramLetBindingRegionImpl> {
  public:
   static ProgramLetBindingRegion From(ProgramRegion) noexcept;
 
@@ -462,7 +502,7 @@ class ProgramLetBindingRegion
 
  private:
   friend class ProgramRegion;
-  using program::ProgramNode<ProgramLetBindingRegion>::ProgramNode;
+  using Node<ProgramLetBindingRegion, ProgramLetBindingRegionImpl>::Node;
 };
 
 enum class VectorUsage : unsigned {
@@ -477,8 +517,9 @@ enum class VectorUsage : unsigned {
 };
 
 // Loop over a vector.
+class ProgramVectorLoopRegionImpl;
 class ProgramVectorLoopRegion
-    : public program::ProgramNode<ProgramVectorLoopRegion> {
+    : public Node<ProgramVectorLoopRegion, ProgramVectorLoopRegionImpl> {
  public:
   static ProgramVectorLoopRegion From(ProgramRegion) noexcept;
 
@@ -497,12 +538,13 @@ class ProgramVectorLoopRegion
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramVectorLoopRegion>::ProgramNode;
+  using Node<ProgramVectorLoopRegion, ProgramVectorLoopRegionImpl>::Node;
 };
 
 // Append a tuple to a vector.
+class ProgramVectorAppendRegionImpl;
 class ProgramVectorAppendRegion
-    : public program::ProgramNode<ProgramVectorAppendRegion> {
+    : public Node<ProgramVectorAppendRegion, ProgramVectorAppendRegionImpl> {
  public:
   static ProgramVectorAppendRegion From(ProgramRegion) noexcept;
 
@@ -516,20 +558,20 @@ class ProgramVectorAppendRegion
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramVectorAppendRegion>::ProgramNode;
+  using Node<ProgramVectorAppendRegion, ProgramVectorAppendRegionImpl>::Node;
 };
 
 #define VECTOR_OP(name) \
-  class name : public program::ProgramNode<name> { \
+  class name ## Impl; \
+  class name : public Node<name, name ## Impl> { \
    public: \
     static name From(ProgramRegion) noexcept; \
     VectorUsage Usage(void) const noexcept; \
     DataVector Vector(void) const noexcept; \
     std::optional<DataVariable> WorkerId(void) const; \
-\
    private: \
     friend class ProgramRegion; \
-    using program::ProgramNode<name>::ProgramNode; \
+    using Node<name, name ## Impl>::Node; \
   }
 
 // Clear a vector.
@@ -540,8 +582,9 @@ VECTOR_OP(ProgramVectorUniqueRegion);
 
 #undef VECTOR_OP
 
+class ProgramVectorSwapRegionImpl;
 class ProgramVectorSwapRegion
-    : public program::ProgramNode<ProgramVectorSwapRegion> {
+    : public Node<ProgramVectorSwapRegion, ProgramVectorSwapRegionImpl> {
  public:
   static ProgramVectorSwapRegion From(ProgramRegion) noexcept;
 
@@ -550,7 +593,7 @@ class ProgramVectorSwapRegion
 
  private:
   friend class ProgramRegion;
-  using program::ProgramNode<ProgramVectorSwapRegion>::ProgramNode;
+  using Node<ProgramVectorSwapRegion, ProgramVectorSwapRegionImpl>::Node;
 };
 
 enum class TupleState : unsigned {
@@ -567,10 +610,11 @@ enum class TupleState : unsigned {
 // unknown tuple is one which has been speculatively marked as deleted, and
 // needs to be re-proven in order via alternate means in order for it to be
 // used.
-class ProgramTransitionStateRegion
-    : public program::ProgramNode<ProgramTransitionStateRegion> {
+class ProgramChangeTupleRegionImpl;
+class ProgramChangeTupleRegion
+    : public Node<ProgramChangeTupleRegion, ProgramChangeTupleRegionImpl> {
  public:
-  static ProgramTransitionStateRegion From(ProgramRegion) noexcept;
+  static ProgramChangeTupleRegion From(ProgramRegion) noexcept;
 
   // The body that conditionally executes if the state transition succeeds.
   std::optional<ProgramRegion> BodyIfSucceeded(void) const noexcept;
@@ -594,7 +638,49 @@ class ProgramTransitionStateRegion
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramTransitionStateRegion>::ProgramNode;
+  using Node<ProgramChangeTupleRegion, ProgramChangeTupleRegionImpl>::Node;
+};
+
+// This is similar to a `ProgramChangeTupleRegion`; however, it also
+// creates new definitions for the variables which it is updating. The key
+// idea is that this gets us the "record" associated with some tuple data,
+// rather than us keeping with the tuple data itself.
+class ProgramChangeRecordRegionImpl;
+class ProgramChangeRecordRegion
+    : public Node<ProgramChangeRecordRegion, ProgramChangeRecordRegionImpl> {
+ public:
+  static ProgramChangeRecordRegion From(ProgramRegion) noexcept;
+
+  // The body that conditionally executes if the state transition succeeds.
+  std::optional<ProgramRegion> BodyIfSucceeded(void) const noexcept;
+
+  // The body that conditionally executes if the state transition fails.
+  std::optional<ProgramRegion> BodyIfFailed(void) const noexcept;
+
+  unsigned Arity(void) const noexcept;
+
+  // Returns a unique ID for this region.
+  unsigned Id(void) const noexcept;
+
+  UsedNodeRange<DataVariable> TupleVariables(void) const;
+
+  // The defined record variables. These are defined in both the successful
+  // and failing bodies!
+  DefinedNodeRange<DataVariable> RecordVariables(void) const;
+
+  DataTable Table(void) const;
+
+  // We check if the tuple's current state is this.
+  TupleState FromState(void) const noexcept;
+
+  // If the tuple's prior state matches `FromState()`, then we change the state
+  // to `ToState()`.
+  TupleState ToState(void) const noexcept;
+
+ private:
+  friend class ProgramRegion;
+
+  using Node<ProgramChangeRecordRegion, ProgramChangeRecordRegionImpl>::Node;
 };
 
 // Check the state of a tuple. This is sort of like asking if something exists,
@@ -603,10 +689,11 @@ class ProgramTransitionStateRegion
 // that the tuple is present in the view. The final state is that we are
 // not sure if the tuple is present or absent, because it has been marked
 // as a candidate for deletion, and thus we need to re-prove it.
-class ProgramCheckStateRegion
-    : public program::ProgramNode<ProgramCheckStateRegion> {
+class ProgramCheckTupleRegionImpl;
+class ProgramCheckTupleRegion
+    : public Node<ProgramCheckTupleRegion, ProgramCheckTupleRegionImpl> {
  public:
-  static ProgramCheckStateRegion From(ProgramRegion) noexcept;
+  static ProgramCheckTupleRegion From(ProgramRegion) noexcept;
 
   std::optional<ProgramRegion> IfPresent(void) const noexcept;
   std::optional<ProgramRegion> IfAbsent(void) const noexcept;
@@ -621,13 +708,43 @@ class ProgramCheckStateRegion
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramCheckStateRegion>::ProgramNode;
+  using Node<ProgramCheckTupleRegion, ProgramCheckTupleRegionImpl>::Node;
+};
+
+// This is like `ProgramCheckTupleRegion`, except that it operates on records,
+// i.e. it defines new variables for what is being returned.
+class ProgramCheckRecordRegionImpl;
+class ProgramCheckRecordRegion
+    : public Node<ProgramCheckRecordRegion, ProgramCheckRecordRegionImpl> {
+ public:
+  static ProgramCheckRecordRegion From(ProgramRegion) noexcept;
+
+  std::optional<ProgramRegion> IfPresent(void) const noexcept;
+  std::optional<ProgramRegion> IfAbsent(void) const noexcept;
+  std::optional<ProgramRegion> IfUnknown(void) const noexcept;
+
+  // Returns a unique ID for this region.
+  unsigned Id(void) const noexcept;
+
+  unsigned Arity(void) const noexcept;
+
+  DefinedNodeRange<DataVariable> RecordVariables(void) const;
+
+  UsedNodeRange<DataVariable> TupleVariables(void) const;
+
+  DataTable Table(void) const;
+
+ private:
+  friend class ProgramRegion;
+
+  using Node<ProgramCheckRecordRegion, ProgramCheckRecordRegionImpl>::Node;
 };
 
 // Perform an equi-join between two or more tables, and iterate over the
 // results.
+class ProgramTableJoinRegionImpl;
 class ProgramTableJoinRegion
-    : public program::ProgramNode<ProgramTableJoinRegion> {
+    : public Node<ProgramTableJoinRegion, ProgramTableJoinRegionImpl> {
  public:
   static ProgramTableJoinRegion From(ProgramRegion) noexcept;
 
@@ -668,13 +785,14 @@ class ProgramTableJoinRegion
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramTableJoinRegion>::ProgramNode;
+  using Node<ProgramTableJoinRegion, ProgramTableJoinRegionImpl>::Node;
 };
 
 // Perform an cross-product between two or more tables, and iterate
 // over the results.
+class ProgramTableProductRegionImpl;
 class ProgramTableProductRegion
-    : public program::ProgramNode<ProgramTableProductRegion> {
+    : public Node<ProgramTableProductRegion, ProgramTableProductRegionImpl> {
  public:
   static ProgramTableProductRegion From(ProgramRegion) noexcept;
 
@@ -705,14 +823,15 @@ class ProgramTableProductRegion
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramTableProductRegion>::ProgramNode;
+  using Node<ProgramTableProductRegion, ProgramTableProductRegionImpl>::Node;
 };
 
 // Perform a scan over a table, possibly using an index. If an index is being
 // used the input variables are provided to perform equality matching against
 // column values. The results of the scan fill a vector.
+class ProgramTableScanRegionImpl;
 class ProgramTableScanRegion
-    : public program::ProgramNode<ProgramTableScanRegion> {
+    : public Node<ProgramTableScanRegion, ProgramTableScanRegionImpl> {
  public:
   static ProgramTableScanRegion From(ProgramRegion) noexcept;
 
@@ -753,7 +872,7 @@ class ProgramTableScanRegion
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramTableScanRegion>::ProgramNode;
+  using Node<ProgramTableScanRegion, ProgramTableScanRegionImpl>::Node;
 };
 
 // An inductive area in a program. An inductive area is split up into three
@@ -769,8 +888,9 @@ class ProgramTableScanRegion
 //    2)  The output region, which iterates over all tuples amassed during the
 //        initialization and cyclic regions, and operates on those tuples to
 //        push to the next region of the data flow.
+class ProgramInductionRegionImpl;
 class ProgramInductionRegion
-    : public program::ProgramNode<ProgramInductionRegion> {
+    : public Node<ProgramInductionRegion, ProgramInductionRegionImpl> {
  public:
   static ProgramInductionRegion From(ProgramRegion) noexcept;
 
@@ -790,12 +910,13 @@ class ProgramInductionRegion
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramInductionRegion>::ProgramNode;
+  using Node<ProgramInductionRegion, ProgramInductionRegionImpl>::Node;
 };
 
 // A comparison between two tuples.
+class ProgramTupleCompareRegionImpl;
 class ProgramTupleCompareRegion
-    : public program::ProgramNode<ProgramTupleCompareRegion> {
+    : public Node<ProgramTupleCompareRegion, ProgramTupleCompareRegionImpl> {
  public:
   static ProgramTupleCompareRegion From(ProgramRegion) noexcept;
 
@@ -816,11 +937,12 @@ class ProgramTupleCompareRegion
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramTupleCompareRegion>::ProgramNode;
+  using Node<ProgramTupleCompareRegion, ProgramTupleCompareRegionImpl>::Node;
 };
 
 // Publishes a message to the pub/sub.
-class ProgramPublishRegion : public program::ProgramNode<ProgramPublishRegion> {
+class ProgramPublishRegionImpl;
+class ProgramPublishRegion : public Node<ProgramPublishRegion, ProgramPublishRegionImpl> {
  public:
   static ProgramPublishRegion From(ProgramRegion) noexcept;
 
@@ -838,7 +960,7 @@ class ProgramPublishRegion : public program::ProgramNode<ProgramPublishRegion> {
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramPublishRegion>::ProgramNode;
+  using Node<ProgramPublishRegion, ProgramPublishRegionImpl>::Node;
 };
 
 enum class ProcedureKind : unsigned {
@@ -866,19 +988,14 @@ enum class ProcedureKind : unsigned {
   // the tuple.
   kTupleFinder,
 
-  // Given a tuple as input, this procedure removes it, then tries to prove
-  // everything provable from it, and recursively remove those things. Removal
-  // in this case is really a form of marking, i.e. marking the discovered
-  // tuples as being in an unknown state.
-  kTupleRemover,
-
   // Tests condition variables, returning `true` or `false` if the conditions
   // are all satisfied or if at least one fails, respectively.
   kConditionTester,
 };
 
 // A procedure in the program. All procedures return either `true` or `false`.
-class ProgramProcedure : public program::ProgramNode<ProgramProcedure> {
+class ProgramProcedureImpl;
+class ProgramProcedure : public Node<ProgramProcedure, ProgramProcedureImpl> {
  public:
   // Return the procedure containing another region.
   static ProgramProcedure Containing(ProgramRegion region) noexcept;
@@ -907,13 +1024,14 @@ class ProgramProcedure : public program::ProgramNode<ProgramProcedure> {
  private:
   friend class ProgramCallRegion;
 
-  using program::ProgramNode<ProgramProcedure>::ProgramNode;
+  using Node<ProgramProcedure, ProgramProcedureImpl>::Node;
 };
 
 // Calls another IR procedure. All IR procedures return `true` or `false`. This
 // return value can be tested, and if it is, a body can be conditionally
 // executed based off of the result of that test.
-class ProgramCallRegion : public program::ProgramNode<ProgramCallRegion> {
+class ProgramCallRegionImpl;
+class ProgramCallRegion : public Node<ProgramCallRegion, ProgramCallRegionImpl> {
  public:
   static ProgramCallRegion From(ProgramRegion) noexcept;
 
@@ -938,11 +1056,12 @@ class ProgramCallRegion : public program::ProgramNode<ProgramCallRegion> {
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramCallRegion>::ProgramNode;
+  using Node<ProgramCallRegion, ProgramCallRegionImpl>::Node;
 };
 
 // Returns `true` or `false` from a procedure.
-class ProgramReturnRegion : public program::ProgramNode<ProgramReturnRegion> {
+class ProgramReturnRegionImpl;
+class ProgramReturnRegion : public Node<ProgramReturnRegion, ProgramReturnRegionImpl> {
  public:
   static ProgramReturnRegion From(ProgramRegion) noexcept;
 
@@ -952,12 +1071,13 @@ class ProgramReturnRegion : public program::ProgramNode<ProgramReturnRegion> {
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramReturnRegion>::ProgramNode;
+  using Node<ProgramReturnRegion, ProgramReturnRegionImpl>::Node;
 };
 
 // Computes a worker ID from a set of variables.
+class ProgramWorkerIdRegionImpl;
 class ProgramWorkerIdRegion
-    : public program::ProgramNode<ProgramWorkerIdRegion> {
+    : public Node<ProgramWorkerIdRegion, ProgramWorkerIdRegionImpl> {
  public:
   static ProgramWorkerIdRegion From(ProgramRegion) noexcept;
 
@@ -974,7 +1094,7 @@ class ProgramWorkerIdRegion
  private:
   friend class ProgramRegion;
 
-  using program::ProgramNode<ProgramWorkerIdRegion>::ProgramNode;
+  using Node<ProgramWorkerIdRegion, ProgramWorkerIdRegionImpl>::Node;
 };
 
 // Specifies a relationship between a `#query` declaration, backing storage and
@@ -1016,25 +1136,11 @@ class ProgramQuery {
   ProgramQuery(ProgramQuery &&) noexcept = default;
 };
 
-enum IRFormat {
-
-  // An iterative code format uses induction regions with fixpoint loops over
-  // vectors in order advance the data flow.
-  kIterative,
-
-  // A recursive code format follows Stefan Brass' "push method" of pipelined
-  // bottom-up datalog execute.
-  kRecursive
-};
-
 // A program in its entirety.
 class Program {
  public:
   // Build a program from a query.
-  static std::optional<Program> Build(const Query &query, IRFormat format_);
-
-  // The format of the code in this program.
-  IRFormat Format(void) const;
+  static std::optional<Program> Build(const Query &query);
 
   // All persistent tables needed to store data.
   DefinedNodeRange<DataTable> Tables(void) const;
@@ -1082,16 +1188,13 @@ class Program {
 class ProgramVisitor {
  public:
   virtual ~ProgramVisitor(void);
-  virtual void Visit(DataColumn val);
-  virtual void Visit(DataIndex val);
-  virtual void Visit(DataTable val);
-  virtual void Visit(DataVariable val);
-  virtual void Visit(DataVector val);
+
   virtual void Visit(ProgramCallRegion val);
   virtual void Visit(ProgramReturnRegion val);
   virtual void Visit(ProgramTestAndSetRegion val);
   virtual void Visit(ProgramGenerateRegion val);
   virtual void Visit(ProgramInductionRegion val);
+  virtual void Visit(ProgramModeSwitchRegion val);
   virtual void Visit(ProgramLetBindingRegion val);
   virtual void Visit(ProgramParallelRegion val);
   virtual void Visit(ProgramProcedure val);
@@ -1102,8 +1205,10 @@ class ProgramVisitor {
   virtual void Visit(ProgramVectorLoopRegion val);
   virtual void Visit(ProgramVectorSwapRegion val);
   virtual void Visit(ProgramVectorUniqueRegion val);
-  virtual void Visit(ProgramTransitionStateRegion val);
-  virtual void Visit(ProgramCheckStateRegion val);
+  virtual void Visit(ProgramChangeTupleRegion val);
+  virtual void Visit(ProgramChangeRecordRegion val);
+  virtual void Visit(ProgramCheckTupleRegion val);
+  virtual void Visit(ProgramCheckRecordRegion val);
   virtual void Visit(ProgramTableJoinRegion val);
   virtual void Visit(ProgramTableProductRegion val);
   virtual void Visit(ProgramTableScanRegion val);

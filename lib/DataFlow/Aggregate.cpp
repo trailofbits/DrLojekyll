@@ -7,13 +7,13 @@
 
 namespace hyde {
 
-Node<QueryAggregate>::~Node(void) {}
+QueryAggregateImpl::~QueryAggregateImpl(void) {}
 
-Node<QueryAggregate> *Node<QueryAggregate>::AsAggregate(void) noexcept {
+QueryAggregateImpl *QueryAggregateImpl::AsAggregate(void) noexcept {
   return this;
 }
 
-uint64_t Node<QueryAggregate>::Hash(void) noexcept {
+uint64_t QueryAggregateImpl::Hash(void) noexcept {
   if (hash) {
     return hash;
   }
@@ -43,7 +43,7 @@ uint64_t Node<QueryAggregate>::Hash(void) noexcept {
   return hash;
 }
 
-unsigned Node<QueryAggregate>::Depth(void) noexcept {
+unsigned QueryAggregateImpl::Depth(void) noexcept {
   if (depth) {
     return depth;
   }
@@ -67,14 +67,14 @@ unsigned Node<QueryAggregate>::Depth(void) noexcept {
 
 // Put this aggregate into a canonical form, which will make comparisons and
 // replacements easier.
-bool Node<QueryAggregate>::Canonicalize(QueryImpl *query,
+bool QueryAggregateImpl::Canonicalize(QueryImpl *query,
                                         const OptimizationContext &opt,
                                         const ErrorLog &) {
   if (is_canonical) {
     return false;
   }
 
-  if (is_dead || valid != VIEW::kValid) {
+  if (is_dead || is_unsat || valid != VIEW::kValid) {
     is_canonical = true;
     return false;
   }
@@ -88,6 +88,18 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query,
     valid = VIEW::kInvalidBeforeCanonicalize;
     is_canonical = true;
     return false;
+  }
+
+  // If our predecessor is not satisfiable, then this flow is never reached.
+  if (!is_unsat) {
+    auto incoming_view0 = GetIncomingView(group_by_columns, aggregated_columns);
+    auto incoming_view1 = GetIncomingView(config_columns, aggregated_columns);
+    if ((incoming_view0 && incoming_view0->is_unsat) ||
+        (incoming_view1 && incoming_view1->is_unsat)) {
+      MarkAsUnsatisfiable();
+      is_canonical = true;
+      return true;
+    }
   }
 
   VIEW *guard_tuple = nullptr;
@@ -182,8 +194,8 @@ bool Node<QueryAggregate>::Canonicalize(QueryImpl *query,
 }
 
 // Equality over aggregates is structural.
-bool Node<QueryAggregate>::Equals(EqualitySet &eq,
-                                  Node<QueryView> *that_) noexcept {
+bool QueryAggregateImpl::Equals(EqualitySet &eq,
+                                  QueryViewImpl *that_) noexcept {
 
   if (eq.Contains(this, that_)) {
     return true;

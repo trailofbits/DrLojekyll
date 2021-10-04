@@ -28,12 +28,25 @@ static std::string ColumnSpec(const std::vector<unsigned> &col_ids) {
 
 }  // namespace
 
-Node<DataVariable>::Node(unsigned id_, VariableRole role_)
-    : Def<Node<DataVariable>>(this),
+DataRecordCaseImpl::DataRecordCaseImpl(unsigned id_)
+    : Def<DataRecordCaseImpl>(this),
+      User(this),
+      id(id_),
+      derived_from(this) {}
+
+DataRecordImpl::DataRecordImpl(unsigned id_, TABLE *table_)
+    : Def<DataRecordImpl>(this),
+      User(this),
+      id(id_),
+      cases(this),
+      table(this, table_) {}
+
+DataVariableImpl::DataVariableImpl(unsigned id_, VariableRole role_)
+    : Def<DataVariableImpl>(this),
       role(role_),
       id(id_) {}
 
-TypeLoc Node<DataVariable>::Type(void) const noexcept {
+TypeLoc DataVariableImpl::Type(void) const noexcept {
   switch (role) {
     case VariableRole::kConditionRefCount:
     case VariableRole::kInitGuard:
@@ -55,26 +68,75 @@ TypeLoc Node<DataVariable>::Type(void) const noexcept {
       if (query_column) {
         return query_column->Type();
       }
+      if (query_const) {
+        return query_const->Type();
+      }
   }
   assert(false);
   return TypeKind::kInvalid;
 }
 
-Node<DataColumn>::~Node(void) {}
-Node<DataIndex>::~Node(void) {}
-Node<DataTable>::~Node(void) {}
 
-Node<DataColumn>::Node(unsigned id_, TypeKind type_, Node<DataTable> *table_)
-    : Def<Node<DataColumn>>(this),
+bool DataVariableImpl::IsGlobal(void) const noexcept {
+  switch (role) {
+    case VariableRole::kConditionRefCount:
+    case VariableRole::kInitGuard:
+    case VariableRole::kConstant:
+    case VariableRole::kConstantTag:
+    case VariableRole::kConstantZero:
+    case VariableRole::kConstantOne:
+    case VariableRole::kConstantFalse:
+    case VariableRole::kConstantTrue: return true;
+    default: return false;
+  }
+}
+
+bool DataVariableImpl::IsConstant(void) const noexcept {
+  switch (role) {
+    case VariableRole::kConstant:
+    case VariableRole::kConstantTag:
+    case VariableRole::kConstantZero:
+    case VariableRole::kConstantOne:
+    case VariableRole::kConstantFalse:
+    case VariableRole::kConstantTrue: return true;
+    case VariableRole::kConditionRefCount:
+    case VariableRole::kRecordElement: return false;
+    default:
+      if (query_const.has_value()) {
+        return true;
+      } else if (query_column.has_value() &&
+                 query_column->IsConstantOrConstantRef()) {
+        return true;
+      } else {
+        return false;
+      }
+  }
+}
+
+DataColumnImpl::~DataColumnImpl(void) {}
+DataIndexImpl::~DataIndexImpl(void) {}
+DataTableImpl::~DataTableImpl(void) {}
+
+DataTableImpl::DataTableImpl(unsigned id_)
+    : Def<DataTableImpl>(this),
+      User(this),
+      id(id_),
+      columns(this),
+      indices(this),
+      records(this) {}
+
+DataColumnImpl::DataColumnImpl(unsigned id_, TypeKind type_,
+                               DataTableImpl *table_)
+    : Def<DataColumnImpl>(this),
       User(this),
       id(id_),
       index(table_->columns.Size()),
       type(type_),
       table(this, table_) {}
 
-Node<DataIndex>::Node(unsigned id_, Node<DataTable> *table_,
-                      std::string column_spec_)
-    : Def<Node<DataIndex>>(this),
+DataIndexImpl::DataIndexImpl(unsigned id_, DataTableImpl *table_,
+                             std::string column_spec_)
+    : Def<DataIndexImpl>(this),
       User(this),
       id(id_),
       column_spec(column_spec_),
@@ -83,8 +145,8 @@ Node<DataIndex>::Node(unsigned id_, Node<DataTable> *table_,
       table(this, table_) {}
 
 // Get or create a table in the program.
-Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl, Context &,
-                                              QueryView view) {
+DataTableImpl *DataTableImpl::GetOrCreate(ProgramImpl *impl, Context &,
+                                          QueryView view) {
 
   const auto model = impl->view_to_model[view]->FindAs<DataModel>();
 
@@ -242,7 +304,7 @@ Node<DataTable> *Node<DataTable>::GetOrCreate(ProgramImpl *impl, Context &,
 
 // Get or create an index on the table.
 TABLEINDEX *
-Node<DataTable>::GetOrCreateIndex(ProgramImpl *impl,
+DataTableImpl::GetOrCreateIndex(ProgramImpl *impl,
                                   std::vector<unsigned> col_indexes) {
   SortAndUnique(col_indexes);
 
@@ -277,7 +339,7 @@ Node<DataTable>::GetOrCreateIndex(ProgramImpl *impl,
   return index;
 }
 
-bool Node<DataVector>::IsRead(void) const {
+bool DataVectorImpl::IsRead(void) const {
   auto is_used = false;
   ForEachUse<OP>([&](OP *op, VECTOR *) {
     if (dynamic_cast<VECTORLOOP *>(op) || dynamic_cast<TABLEJOIN *>(op) ||

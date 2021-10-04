@@ -41,7 +41,7 @@ class WeakUseRef;
 template <typename T>
 class Def;
 
-template <typename T>
+template <typename T, typename BaseT=T>
 class UseList;
 
 template <typename T>
@@ -77,7 +77,7 @@ class Use {
   template <typename>
   friend class WeakUseRef;
 
-  template <typename>
+  template <typename, typename>
   friend class UseList;
 
   template <typename>
@@ -140,10 +140,12 @@ class UseListIterator {
 };
 
 // A list of uses.
-template <typename T>
+template <typename T, typename BaseT>
 class UseList {
  public:
-  UseList(UseList<T> &&that) noexcept
+  using Self = UseList<T, BaseT>;
+
+  UseList(Self &&that) noexcept
       : owner(that.owner),
         uses(std::move(that.uses)),
         is_weak(that.is_weak) {}
@@ -156,27 +158,27 @@ class UseList {
     Clear();
   }
 
-  bool operator==(const UseList<T> &that) const {
+  bool operator==(const Self &that) const {
     return uses == that.uses;
   }
 
-  bool operator!=(const UseList<T> &that) const {
+  bool operator!=(const Self &that) const {
     return uses != that.uses;
   }
 
   inline T *operator[](size_t index) const {
-    return uses[index]->def_being_used;
+    return reinterpret_cast<T *>(uses[index]->def_being_used);
   }
 
   UseListIterator<T> begin(void) const {
-    return uses.data();
+    return reinterpret_cast<Use<T> * const *>(uses.data());
   }
 
   UseListIterator<T> end(void) const {
-    return &(uses.data()[uses.size()]);
+    return reinterpret_cast<Use<T> * const *>(&(uses.data()[uses.size()]));
   }
 
-  void AddUse(Def<T> *def);
+  void AddUse(T *def);
 
   unsigned Size(void) const noexcept {
     return static_cast<unsigned>(uses.size());
@@ -193,10 +195,10 @@ class UseList {
 
   template <typename Pred>
   void Sort(Pred pred) noexcept {
-    std::sort(uses.begin(), uses.end(), [&pred] (Use<T> *a, Use<T> *b) {
+    std::sort(uses.begin(), uses.end(), [&pred] (Use<BaseT> *a, Use<BaseT> *b) {
       if (a && b) {
-        const auto a_def = a->get();
-        const auto b_def = b->get();
+        const auto a_def = reinterpret_cast<T *>(a->get());
+        const auto b_def = reinterpret_cast<T *>(b->get());
         if (a_def == b_def) {
           return false;
         } else {
@@ -213,7 +215,7 @@ class UseList {
   void RemoveIf(CB cb) noexcept {
     for (auto &use : uses) {
       if (use) {
-        auto def = use->get();
+        auto def = reinterpret_cast<T *>(use->get());
         if (cb(def)) {
           DeleteUse(use);
           use = nullptr;
@@ -222,7 +224,7 @@ class UseList {
     }
 
     auto it = std::remove_if(uses.begin(), uses.end(),
-                             [](Use<T> *use) { return !use; });
+                             [](Use<BaseT> *use) { return !use; });
 
     uses.erase(it, uses.end());
   }
@@ -247,7 +249,7 @@ class UseList {
 
     RemoveNull();
     std::sort(uses.begin(), uses.end(),
-              [](Use<T> *a, Use<T> *b) { return a->index < b->index; });
+              [](Use<BaseT> *a, Use<BaseT> *b) { return a->index < b->index; });
     Reindex();
   }
 
@@ -255,7 +257,7 @@ class UseList {
     Clear();
   }
 
-  void Swap(UseList<T> &that) {
+  void Swap(Self &that) {
     assert(is_weak == that.is_weak);
 
     const auto t = User::gNextTimestamp++;
@@ -264,13 +266,13 @@ class UseList {
       owner->Update(t);
 
     } else {
-      for (Use<T> *use : uses) {
+      for (Use<BaseT> *use : uses) {
         if (use) {
           assert(use->user == owner);
           use->user = that.owner;
         }
       }
-      for (Use<T> *that_use : that.uses) {
+      for (Use<BaseT> *that_use : that.uses) {
         if (that_use) {
           assert(that_use->user == that.owner);
           that_use->user = owner;
@@ -290,7 +292,7 @@ class UseList {
   }
 
  private:
-  void DeleteUse(Use<T> *use) {
+  void DeleteUse(Use<BaseT> *use) {
     const auto def = use->def_being_used;
     if (def) {
       if (is_weak) {
@@ -320,7 +322,7 @@ class UseList {
     }
   }
 
-  static bool OrderUses(Use<T> *a, Use<T> *b) {
+  static bool OrderUses(Use<BaseT> *a, Use<BaseT> *b) {
     if (a && b) {
       const auto a_def = a->get();
       const auto b_def = b->get();
@@ -334,7 +336,7 @@ class UseList {
     }
   }
 
-  static bool UsesEqual(Use<T> *a, Use<T> *b) {
+  static bool UsesEqual(Use<BaseT> *a, Use<BaseT> *b) {
     if (a == b) {
       return true;
     } else if (a && b) {
@@ -345,7 +347,7 @@ class UseList {
   }
 
   User *owner;
-  std::vector<Use<T> *> uses;
+  std::vector<Use<BaseT> *> uses;
 
   // NOTE(pag): If this is a weak use list, then the list itself owns the memory
   //            of the uses, not the user.
@@ -612,7 +614,7 @@ class Def {
   template <typename>
   friend class WeakUseRef;
 
-  template <typename>
+  template <typename, typename>
   friend class UseList;
 
   template <typename>
@@ -663,13 +665,13 @@ class Def {
   std::vector<Use<T> *> weak_uses;
 };
 
-template <typename T>
-void UseList<T>::Clear(void) {
+template <typename T, typename BaseT>
+void UseList<T, BaseT>::Clear(void) {
   if (uses.empty()) {
     return;
   }
 
-  std::vector<Use<T> *> old_uses;
+  std::vector<Use<BaseT> *> old_uses;
   uses.swap(old_uses);
 
   for (auto use : old_uses) {
@@ -677,14 +679,14 @@ void UseList<T>::Clear(void) {
   }
 }
 
-template <typename T>
-void UseList<T>::AddUse(Def<T> *def) {
+template <typename T, typename BaseT>
+void UseList<T, BaseT>::AddUse(T *def) {
   if (def) {
-    Use<T> *new_use = nullptr;
+    Use<BaseT> *new_use = nullptr;
     if (is_weak) {
-      new_use = def->CreateWeakUse(owner);
+      new_use = reinterpret_cast<Use<BaseT> *>(def->CreateWeakUse(owner));
     } else {
-      new_use = def->CreateUse(owner);
+      new_use = reinterpret_cast<Use<BaseT> *>(def->CreateUse(owner));
     }
     new_use->index = static_cast<unsigned>(uses.size());
     uses.push_back(new_use);
@@ -856,6 +858,15 @@ class DefList {
 
   DefList(User *owner_) : owner(owner_) {}
 
+  void Append(std::unique_ptr<T> def) {
+    defs.emplace_back(std::move(def));
+  }
+
+  template <typename D>
+  void AppendDerived(std::unique_ptr<D> def) {
+    defs.emplace_back(def.release());
+  }
+
   template <typename... Args>
   T *Create(Args &&...args) {
     auto new_def = new T(std::forward<Args>(args)...);
@@ -949,14 +960,21 @@ class DefList {
   std::vector<std::unique_ptr<T>> defs;
 };
 
-template <typename T>
+template <typename PublicT, typename PrivateT>
 class Node;
 
 template <typename T>
 class UsedNodeIterator {
  public:
+
+  using PublicType = typename T::PublicType;
+  using PrivateType = typename T::PrivateType;
+  using NodeType = Node<PublicType, PrivateType>;
+
+  static_assert(std::is_same_v<T, PublicType>);
+
   inline UsedNodeIterator(void) : it(nullptr) {}
-  inline UsedNodeIterator(UseListIterator<Node<T>> it_) : it(it_) {}
+  inline UsedNodeIterator(UseListIterator<PrivateType> it_) : it(it_) {}
 
   inline UsedNodeIterator<T> &operator++(void) noexcept {
     ++it;
@@ -988,13 +1006,18 @@ class UsedNodeIterator {
   }
 
  private:
-  UseListIterator<Node<T>> it;
+  UseListIterator<PrivateType> it;
 };
 
 template <typename T>
 class DefinedNodeIterator {
  public:
-  inline DefinedNodeIterator(DefListIterator<Node<T>> it_) : it(it_) {}
+
+  using PublicType = typename T::PublicType;
+  using PrivateType = typename T::PrivateType;
+  using NodeType = Node<PublicType, PrivateType>;
+
+  inline DefinedNodeIterator(DefListIterator<PrivateType> it_) : it(it_) {}
 
   inline DefinedNodeIterator<T> &operator++(void) noexcept {
     ++it;
@@ -1026,7 +1049,7 @@ class DefinedNodeIterator {
   }
 
  private:
-  DefListIterator<Node<T>> it;
+  DefListIterator<PrivateType> it;
 };
 
 template <typename T>

@@ -7,10 +7,12 @@
 #include <drlojekyll/Lex/Token.h>
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Parse.h>
+#include <drlojekyll/Util/DefUse.h>
 
 #include <cassert>
 #include <filesystem>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -32,44 +34,12 @@ union IdInterpreter {
 
 static_assert(sizeof(IdInterpreter) == 8);
 
-template <typename T>
-using UseList = std::vector<Node<ParsedUse<T>> *>;
-
-// Contextual information relevant to all uses of a logical variable within
-// a clause.
-class VariableContext {
- public:
-  inline explicit VariableContext(Node<ParsedClause> *clause_,
-                                  Node<ParsedVariable> *first_use_)
-      : clause(clause_),
-        first_use(first_use_) {}
-
-  // Clause containing this variable.
-  Node<ParsedClause> *const clause;
-
-  // First use of this variable in `clause`.
-  Node<ParsedVariable> *first_use;
-
-  // List of assignments to this variable.
-  UseList<ParsedAssignment> assignment_uses;
-
-  // List of comparisons against this variable.
-  UseList<ParsedComparison> comparison_uses;
-
-  // List of uses of this variable as an argument.
-  UseList<ParsedPredicate> argument_uses;
-
-  // List of uses of this variable as a parameter.
-  UseList<ParsedClause> parameter_uses;
-
-  // Cached unique identifier.
-  parse::IdInterpreter id;
-};
-
 // Contextual information relevant to all redeclarations.
-class DeclarationContext {
+class DeclarationContext : public User {
  public:
-  inline DeclarationContext(const DeclarationKind kind_) : kind(kind_) {}
+  virtual ~DeclarationContext(void);
+
+  DeclarationContext(const DeclarationKind kind_);
 
   // Cached ID of this declaration.
   parse::IdInterpreter id;
@@ -79,18 +49,20 @@ class DeclarationContext {
 
   // The list of all re-declarations. They may be spread across multiple
   // modules. Some of the redeclarations may have different parameter bindings.
-  std::vector<Node<ParsedDeclaration> *> redeclarations;
+  WeakUseList<ParsedDeclarationImpl> redeclarations;
+
+  // The list of unique redeclarations (in terms of binding parameters).
+  WeakUseList<ParsedDeclarationImpl> unique_redeclarations;
 
   // All clauses associated with a given `DeclarationBase` and each of its
   // redeclarations.
-  std::vector<std::unique_ptr<Node<ParsedClause>>> clauses;
-  std::vector<std::unique_ptr<Node<ParsedClause>>> deletion_clauses;
+  UseList<ParsedClauseImpl> clauses;
 
   // All positive uses of this declaration.
-  std::vector<Node<ParsedPredicate> *> positive_uses;
+  WeakUseList<ParsedPredicateImpl> positive_uses;
 
   // All negative uses of this declaration.
-  std::vector<Node<ParsedPredicate> *> negated_uses;
+  WeakUseList<ParsedPredicateImpl> negated_uses;
 
   bool takes_input{false};
   bool checked_takes_input{false};
@@ -103,51 +75,61 @@ class DeclarationContext {
 
 }  // namespace parse
 
-template <>
-class Node<ParsedLiteral> {
+// A literal constant that appears somewhere in the code. Literal constants
+// are always synthesized as being part of assignments, even if they appear
+// outside of assignments.
+class ParsedLiteralImpl : public Def<ParsedLiteralImpl> {
  public:
-  Node<ParsedLiteral> *next{nullptr};
-  Node<ParsedVariable> *assigned_to{nullptr};
+  virtual ~ParsedLiteralImpl(void);
+  explicit ParsedLiteralImpl(ParsedAssignmentImpl *assignment_);
+
+  ParsedAssignmentImpl * const assignment;
+
   Token literal;
   TypeLoc type;
   std::string data;
-  Node<ParsedForeignType> *foreign_type{nullptr};
-  Node<ParsedForeignConstant> *foreign_constant{nullptr};
+  ParsedForeignTypeImpl *foreign_type{nullptr};
+  ParsedForeignConstantImpl *foreign_constant{nullptr};
 };
 
-class UseBase {
+// A variable. Mostly these are variables that appear in the code, but these
+// also correspond to synthesized variables, i.e. ones that have been invented
+// for assignments to
+class ParsedVariableImpl : public Def<ParsedVariableImpl> {
  public:
-  inline UseBase(UseKind use_kind_, Node<ParsedVariable> *used_var_)
-      : use_kind(use_kind_),
-        used_var(used_var_) {}
+  virtual ~ParsedVariableImpl(void);
 
-  const UseKind use_kind;
-  Node<ParsedVariable> *used_var;
-};
+  ParsedVariableImpl(ParsedClauseImpl *clause_, Token name_,
+                       bool is_parameter_, bool is_argument_);
 
-template <typename T>
-class Node<ParsedUse<T>> : public UseBase {
- public:
-  inline Node(UseKind use_kind_, Node<ParsedVariable> *used_var_,
-              Node<T> *user_)
-      : UseBase(use_kind_, used_var_),
-        user(user_) {}
-
-  const T user;
-  Node<ParsedUse<T>> *next{nullptr};
-};
-
-template <>
-class Node<ParsedVariable> {
- public:
   // Compute the unique identifier for this variable.
   uint64_t Id(void) noexcept;
 
   // Compute the unique identifier for this variable, local to its clause.
   uint64_t IdInClause(void) noexcept;
 
-  Token name;
+  // The clause to which this variable belongs.
+  ParsedClauseImpl *const clause;
+
+  // Name of this variable.
+  const Token name;
+
+  // Whether or not this variable is an parameter to its clause.
+  const bool is_parameter;
+
+  // Whether or not this variable is an argument to a predicate.
+  const bool is_argument;
+
   TypeLoc type;
+
+  // Unique ID of this variable.
+  parse::IdInterpreter id;
+
+  // First appearance of this variable in the clause.
+  ParsedVariableImpl *first_appearance{nullptr};
+
+  // Next appearance of this variable in the clause.
+  ParsedVariableImpl *next_appearance{nullptr};
 
   // What was the order of appearance of this variable? The head variables,
   // even invented ones, have appearance values in the range `[0, N)` if there
@@ -156,89 +138,61 @@ class Node<ParsedVariable> {
   //
   // The function `ParsedVariable::Order` normalizes this value such that if
   // `N < kMaxArity`, then the order numbers range from `[0, N+M)`.
-  unsigned appearance{0};
-
-  // Next variable used in `clause`, which may be a logically different
-  // variable. Variables that are in a clause head are not linked to
-  // variables in a clause body.
-  Node<ParsedVariable> *next{nullptr};
-
-  // Next use of the same logical variable in `clause`.
-  Node<ParsedVariable> *next_use{nullptr};
-
-  // Next variable (not necessarily the same) to be used in an argument list,
-  // if this variable is used in an argument list.
-  Node<ParsedVariable> *next_var_in_arg_list{nullptr};
-
-  // Next group variable in an aggregate.
-  Node<ParsedVariable> *next_group_var{nullptr};
-  Node<ParsedVariable> *next_config_var{nullptr};
-  Node<ParsedVariable> *next_aggregate_var{nullptr};
-
-  std::shared_ptr<parse::VariableContext> context;
-
-  // Whether or not this variable is an parameter to its clause.
-  bool is_parameter{false};
-
-  // Whether or not this variable is an argument to a predicate.
-  bool is_argument{false};
+  unsigned order_of_appearance{0};
 };
 
-template <>
-class Node<ParsedComparison> {
+// Represents a comparison between two variables. If we have a a comparison
+// like `A < 1` then that is turned into an assignment of `1` to a temporary
+// variable, followed by a comparison between `A` and that temporary.
+class ParsedComparisonImpl : public Def<ParsedComparisonImpl>, public User {
  public:
-  inline Node(Node<ParsedVariable> *lhs_, Node<ParsedVariable> *rhs_,
-              Token compare_op_)
-      : lhs(UseKind::kComparisonLHS, lhs_, this),
-        rhs(UseKind::kComparisonRHS, rhs_, this),
-        compare_op(compare_op_) {}
+  virtual ~ParsedComparisonImpl(void);
 
-  // Next in the clause body.
-  Node<ParsedComparison> *next{nullptr};
+  ParsedComparisonImpl(ParsedVariableImpl *lhs_,
+                       ParsedVariableImpl *rhs_,
+                       Token compare_op_);
 
-  Node<ParsedUse<ParsedComparison>> lhs;
-  Node<ParsedUse<ParsedComparison>> rhs;
+  UseRef<ParsedVariableImpl> lhs;
+  UseRef<ParsedVariableImpl> rhs;
   const Token compare_op;
 };
 
-template <>
-class Node<ParsedAssignment> {
+// Represents an assignment of a literal to a variable. This comes up explicitly
+// as a result of things like `A = 1`, but also implicitly due to constant uses
+// like `foo(1)`, which are converted into `foo(A), A = 1`.
+class ParsedAssignmentImpl : public Def<ParsedAssignmentImpl>, public User {
  public:
-  inline Node(Node<ParsedVariable> *lhs_)
-      : lhs(UseKind::kAssignmentLHS, lhs_, this) {}
+  virtual ~ParsedAssignmentImpl(void);
+  ParsedAssignmentImpl(ParsedVariableImpl *lhs_);
 
   // Next in the clause body.
-  Node<ParsedAssignment> *next{nullptr};
+  ParsedAssignmentImpl *next{nullptr};
 
-  Node<ParsedUse<ParsedAssignment>> lhs;
-  Node<ParsedLiteral> rhs;
+  UseRef<ParsedVariableImpl> lhs;
+  ParsedLiteralImpl rhs;
 };
 
-template <>
-class Node<ParsedPredicate> {
+// Represents the application of a predicate, which is any form of declaration
+// (message, export, local, or functor). All arguments to predicates are
+// variables, even if they don't appear as such in the original source code.
+class ParsedPredicateImpl : public Def<ParsedPredicateImpl>, public User {
  public:
-  inline Node(Node<ParsedModule> *module_, Node<ParsedClause> *clause_)
-      : module(module_),
-        clause(clause_) {}
+  virtual ~ParsedPredicateImpl(void);
+
+  ParsedPredicateImpl(ParsedModuleImpl *module_,
+                      ParsedClauseImpl *clause_);
 
   // Compute the identifier for this predicate.
   uint64_t Id(void) const noexcept;
 
   // Module in which this predicate application exists.
-  Node<ParsedModule> *const module;
+  ParsedModuleImpl *const module;
 
   // The clause containing this predicate.
-  Node<ParsedClause> *const clause;
+  ParsedClauseImpl *const clause;
 
   // The declaration associated with this predicate.
-  Node<ParsedDeclaration> *declaration{nullptr};
-
-  // Next parsed predicate in the clause body. Positive predicates never link
-  // to negative predicates, and vice versa.
-  Node<ParsedPredicate> *next{nullptr};
-
-  // The next use this predicate. This use may be in a different clause body.
-  Node<ParsedPredicate> *next_use{nullptr};
+  ParsedDeclarationImpl *declaration{nullptr};
 
   // Location information.
   Token negation;
@@ -246,36 +200,38 @@ class Node<ParsedPredicate> {
   Token rparen;
 
   // The argument variables used in this predicate.
-  std::vector<std::unique_ptr<Node<ParsedUse<ParsedPredicate>>>> argument_uses;
+  UseList<ParsedVariableImpl> argument_uses;
 };
 
-template <>
-class Node<ParsedAggregate> {
+class ParsedAggregateImpl : public User {
  public:
-  // Next in the clause.
-  Node<ParsedAggregate> *next{nullptr};
+  virtual ~ParsedAggregateImpl(void);
+  explicit ParsedAggregateImpl(ParsedClauseImpl *clause_);
+
+  ParsedClauseImpl * const clause;
 
   DisplayRange spelling_range;
-  std::unique_ptr<Node<ParsedPredicate>> functor;
-  std::unique_ptr<Node<ParsedPredicate>> predicate;
 
-  Node<ParsedVariable> *first_group_var{nullptr};
-  Node<ParsedVariable> *first_config_var{nullptr};
-  Node<ParsedVariable> *first_aggregate_var{nullptr};
+  ParsedPredicateImpl functor;
+  ParsedPredicateImpl predicate;
+
+  UseList<ParsedVariableImpl> group_vars;
+  UseList<ParsedVariableImpl> config_vars;
+  UseList<ParsedVariableImpl> aggregate_vars;
 };
 
-template <>
-class Node<ParsedParameter> {
+class ParsedParameterImpl : public Def<ParsedParameterImpl> {
  public:
-  // Next in the declaration head.
-  Node<ParsedParameter> *next{nullptr};
+  inline explicit ParsedParameterImpl(ParsedDeclarationImpl *decl_)
+      : Def<ParsedParameterImpl>(this),
+        decl(decl_) {}
 
-  // Next in the unordered chain.
-  Node<ParsedParameter> *next_unordered{nullptr};
+  // The declaration containing this parameter.
+  ParsedDeclarationImpl * const decl;
 
   // If this parameter is `mutable(func)`, then this points to the functor
   // associated with `func`.
-  Node<ParsedFunctor> *opt_merge{nullptr};
+  ParsedFunctorImpl *opt_merge{nullptr};
 
   // This can be `bound`, `free`, `aggregate`, `summary`, `mutable`, or empty.
   Token opt_binding;
@@ -286,12 +242,10 @@ class Node<ParsedParameter> {
   // The parameter name.
   Token name;
 
-  // Last use of the same-named parameter in an unordered set.
-  Token opt_unordered_name;
-
   // Optional type.
   TypeLoc opt_type;
 
+  // The index of this parameter within its declaration.
   unsigned index{~0u};
 
   // `true` if `opt_type` was produced from parsing, as opposed to type
@@ -299,24 +253,18 @@ class Node<ParsedParameter> {
   bool parsed_opt_type{false};
 };
 
-template <>
-class Node<ParsedClause> {
+class ParsedClauseImpl : public Def<ParsedClauseImpl>, public User {
  public:
-  inline Node(Node<ParsedModule> *module_) : module(module_) {}
+  virtual ~ParsedClauseImpl(void);
+  ParsedClauseImpl(ParsedModuleImpl *module_);
 
   mutable parse::IdInterpreter id;
 
   // The module containing this clause.
-  Node<ParsedModule> *const module;
-
-  // The next clause associated with this `declaration`.
-  Node<ParsedClause> *next{nullptr};
-
-  // The next clause defined in `module`.
-  Node<ParsedClause> *next_in_module{nullptr};
+  ParsedModuleImpl *const module;
 
   // The declaration associated with this clause (definition).
-  Node<ParsedDeclaration> *declaration{nullptr};
+  ParsedDeclarationImpl *declaration{nullptr};
 
   Token negation;
   Token name;
@@ -338,17 +286,19 @@ class Node<ParsedClause> {
   // this clause as being disabled by this token.
   DisplayRange disabled_by;
 
+  // Maps identifiers of the form `parse::IdInterpreter` to uses of those
+  // identifiers in this clause.
+  std::unordered_map<uint64_t, UseList<ParsedVariableImpl>> variables;
+
   // Variables used in this clause.
-  std::vector<std::unique_ptr<Node<ParsedVariable>>> head_variables;
-  std::vector<std::unique_ptr<Node<ParsedVariable>>> body_variables;
+  DefList<ParsedVariableImpl> head_variables;
+  DefList<ParsedVariableImpl> body_variables;
 
-  std::vector<std::unique_ptr<Node<ParsedUse<ParsedClause>>>> parameter_uses;
-
-  std::vector<std::unique_ptr<Node<ParsedComparison>>> comparisons;
-  std::vector<std::unique_ptr<Node<ParsedAssignment>>> assignments;
-  std::vector<std::unique_ptr<Node<ParsedAggregate>>> aggregates;
-  std::vector<std::unique_ptr<Node<ParsedPredicate>>> positive_predicates;
-  std::vector<std::unique_ptr<Node<ParsedPredicate>>> negated_predicates;
+  DefList<ParsedComparisonImpl> comparisons;
+  DefList<ParsedAssignmentImpl> assignments;
+  DefList<ParsedAggregateImpl> aggregates;
+  DefList<ParsedPredicateImpl> positive_predicates;
+  DefList<ParsedPredicateImpl> negated_predicates;
 
   std::unordered_map<unsigned, unsigned> named_var_ids;
   unsigned next_var_id{1};
@@ -360,22 +310,20 @@ class Node<ParsedClause> {
   uint64_t Id(void) const noexcept;
 };
 
-template <>
-class Node<ParsedDeclaration> {
+class ParsedDeclarationImpl : public Def<ParsedDeclarationImpl>, public User {
  public:
-  inline Node(Node<ParsedModule> *module_, const DeclarationKind kind_)
-      : module(module_),
-        context(std::make_shared<parse::DeclarationContext>(kind_)) {
-    context->redeclarations.push_back(this);
-  }
+  virtual ~ParsedDeclarationImpl(void);
 
-  inline Node(Node<ParsedModule> *module_,
-              const std::shared_ptr<parse::DeclarationContext> &context_)
-      : module(module_),
-        context(context_) {
-    assert(!context->redeclarations.empty());
-    context->redeclarations.back()->next_redecl = this;
-    context->redeclarations.push_back(this);
+  ParsedDeclarationImpl(ParsedModuleImpl *module_,
+                        const DeclarationKind kind_);
+
+  ParsedDeclarationImpl(
+        ParsedModuleImpl *module_,
+        const std::shared_ptr<parse::DeclarationContext> &context_);
+
+  inline DisplayRange ParsedRange(void) const {
+    return DisplayRange(parsed_tokens.front().Position(),
+                        parsed_tokens.back().NextPosition());
   }
 
   const char *KindName(void) const;
@@ -383,29 +331,22 @@ class Node<ParsedDeclaration> {
   // Compute a unique identifier for this declaration.
   uint64_t Id(void) const noexcept;
 
-  // Return a list of clauses associated with this declaration.
-  NodeRange<ParsedClause> Clauses(void) const;
-
-  // Return a list of positive uses of this definition.
-  NodeRange<ParsedPredicate> PositiveUses(void) const;
-
-  // Return a list of negative uses of this definition.
-  NodeRange<ParsedPredicate> NegativeUses(void) const;
-
   // The module containing this declaration.
-  Node<ParsedModule> *const module;
+  ParsedModuleImpl *const module;
 
   // The next declaration in this module, possibly unrelated to this one.
-  Node<ParsedDeclaration> *next{nullptr};
+  ParsedDeclarationImpl *next{nullptr};
 
   // The next redeclaration of this declaration. This could be in any module.
-  Node<ParsedDeclaration> *next_redecl{nullptr};
+  ParsedDeclarationImpl *next_redecl{nullptr};
 
   // The context that collects all of the declarations together.
-  const std::shared_ptr<parse::DeclarationContext> context;
+  std::shared_ptr<parse::DeclarationContext> context;
 
   // The position of the declaration.
   DisplayPosition directive_pos;
+
+  std::vector<Token> parsed_tokens;
 
   Token name;
   Token rparen;
@@ -432,63 +373,62 @@ class Node<ParsedDeclaration> {
   // Does this declaration have any `mutable`-attributed parameter?
   bool has_mutable_parameter{false};
 
-  std::vector<std::unique_ptr<Node<ParsedParameter>>> parameters;
+  DefList<ParsedParameterImpl> parameters;
   std::string binding_pattern;
 
  private:
-  Node(void) = delete;
+  ParsedDeclarationImpl(void) = delete;
 };
 
-template <>
-class Node<ParsedQuery> : public Node<ParsedDeclaration> {
+class ParsedQueryImpl : public ParsedDeclarationImpl {
  public:
-  using Node<ParsedDeclaration>::Node;
+  using ParsedDeclarationImpl::ParsedDeclarationImpl;
 };
 
-template <>
-class Node<ParsedExport> : public Node<ParsedDeclaration> {
+class ParsedExportImpl : public ParsedDeclarationImpl {
  public:
-  using Node<ParsedDeclaration>::Node;
+  using ParsedDeclarationImpl::ParsedDeclarationImpl;
 };
 
-template <>
-class Node<ParsedLocal> : public Node<ParsedDeclaration> {
+class ParsedLocalImpl : public ParsedDeclarationImpl {
  public:
-  using Node<ParsedDeclaration>::Node;
+  using ParsedDeclarationImpl::ParsedDeclarationImpl;
 };
 
-template <>
-class Node<ParsedFunctor> : public Node<ParsedDeclaration> {
+class ParsedFunctorImpl : public ParsedDeclarationImpl {
  public:
-  using Node<ParsedDeclaration>::Node;
+  using ParsedDeclarationImpl::ParsedDeclarationImpl;
 };
 
-template <>
-class Node<ParsedMessage> : public Node<ParsedDeclaration> {
+class ParsedMessageImpl : public ParsedDeclarationImpl {
  public:
-  using Node<ParsedDeclaration>::Node;
+  using ParsedDeclarationImpl::ParsedDeclarationImpl;
 };
 
-template <>
-class Node<ParsedImport> {
+class ParsedImportImpl : public Def<ParsedImportImpl> {
  public:
+  inline ParsedImportImpl(void)
+      : Def<ParsedImportImpl>(this) {}
+
   // Next import in this module.
-  Node<ParsedImport> *next{nullptr};
+  ParsedImportImpl *next{nullptr};
 
   DisplayPosition directive_pos;
   Token path;
   Token dot;
   std::filesystem::path resolved_path;
-  Node<ParsedModule> *imported_module{nullptr};
+  ParsedModuleImpl *imported_module{nullptr};
 };
 
-template <>
-class Node<ParsedForeignConstant> {
+class ParsedForeignConstantImpl : public Def<ParsedForeignConstantImpl> {
  public:
+  inline ParsedForeignConstantImpl(void)
+      : Def<ParsedForeignConstantImpl>(this) {}
+
   // The next foreign constant defined on this type for a particular language.
-  Node<ParsedForeignConstant> *next{nullptr};
-  Node<ParsedForeignConstant> *next_with_same_name{nullptr};
-  Node<ParsedForeignType> *parent{nullptr};
+  ParsedForeignConstantImpl *next{nullptr};
+  ParsedForeignConstantImpl *next_with_same_name{nullptr};
+  ParsedForeignTypeImpl *parent{nullptr};
 
   Language lang{Language::kUnknown};
   DisplayRange range;
@@ -499,11 +439,10 @@ class Node<ParsedForeignConstant> {
   bool can_overide{true};
 };
 
-template <>
-class Node<ParsedForeignType> {
+class ParsedForeignTypeImpl : public Def<ParsedForeignTypeImpl>, public User {
  public:
-  // The next foreign type anywhere in the parse.
-  Node<ParsedForeignType> *next{nullptr};
+  virtual ~ParsedForeignTypeImpl(void);
+  ParsedForeignTypeImpl(void);
 
   // The name of this type.
   Token name;
@@ -522,34 +461,54 @@ class Node<ParsedForeignType> {
     bool can_override{true};
     bool is_present{false};
     bool is_transparent{false};
-    std::vector<std::unique_ptr<Node<ParsedForeignConstant>>> constants;
+    std::unique_ptr<UseList<ParsedForeignConstantImpl>> constants;
   } info[kNumLanguages];
 };
 
-template <>
-class Node<ParsedInline> {
+class ParsedInlineImpl : public Def<ParsedInlineImpl> {
  public:
-  inline Node(DisplayRange range_, std::string_view code_, Language language_,
-              bool is_prologue_)
-      : range(range_),
-        code(code_),
+  inline ParsedInlineImpl(
+      DisplayRange range_, std::string_view code_, Language language_,
+      bool is_prologue_)
+      : Def<ParsedInlineImpl>(this),
+        range(range_),
+        code(code_.data(), code_.size()),
         language(language_),
-        is_prologue(is_prologue_) {}
+        location(is_prologue_ ? InlineLocation::kPrologue :
+                    InlineLocation::kEpilogue) {}
 
   // Next inline in this module.
-  Node<ParsedInline> *next{nullptr};
+  ParsedInlineImpl *next{nullptr};
 
   const DisplayRange range;
   const std::string code;
   const Language language;
-  const bool is_prologue;
+  const InlineLocation location;
 };
 
-template <>
-class Node<ParsedModule>
-    : public std::enable_shared_from_this<Node<ParsedModule>> {
+class ParsedDatabaseNameImpl : public Def<ParsedDatabaseNameImpl> {
  public:
-  Node(const DisplayConfiguration &config_) : config(config_) {}
+  inline ParsedDatabaseNameImpl(Token introducer_tok_, Token name_tok_,
+                                Token dot_, std::string name_)
+      : Def<ParsedDatabaseNameImpl>(this),
+        introducer_tok(introducer_tok_),
+        name_tok(name_tok_),
+        dot_tok(dot_),
+        name(std::move(name_)) {}
+
+  const Token introducer_tok;
+  const Token name_tok;
+  const Token dot_tok;
+  const std::string name;
+};
+
+class ParsedModuleImpl
+    : public std::enable_shared_from_this<ParsedModuleImpl>,
+      public User {
+ public:
+
+  ~ParsedModuleImpl(void);
+  ParsedModuleImpl(const DisplayConfiguration &config_);
 
   const DisplayConfiguration config;
 
@@ -562,35 +521,45 @@ class Node<ParsedModule>
   Token first;
   Token last;
 
-  Node<ParsedModule> *root_module{nullptr};
+  ParsedModuleImpl *root_module{nullptr};
 
   // If this is the root module, then `all_modules` contains a list of all
   // modules, starting with the root module itself.
-  std::vector<Node<ParsedModule> *> all_modules;
+  std::vector<ParsedModuleImpl *> all_modules;
 
-  std::vector<std::shared_ptr<Node<ParsedModule>>> non_root_modules;
+  std::vector<std::shared_ptr<ParsedModuleImpl>> non_root_modules;
 
-  std::vector<std::unique_ptr<Node<ParsedImport>>> imports;
-  std::vector<std::unique_ptr<Node<ParsedInline>>> inlines;
-  std::vector<std::unique_ptr<Node<ParsedExport>>> exports;
-  std::vector<std::unique_ptr<Node<ParsedLocal>>> locals;
-  std::vector<std::unique_ptr<Node<ParsedQuery>>> queries;
-  std::vector<std::unique_ptr<Node<ParsedFunctor>>> functors;
-  std::vector<std::unique_ptr<Node<ParsedMessage>>> messages;
-  std::vector<std::unique_ptr<Node<ParsedForeignType>>> types;
+  DefList<ParsedDatabaseNameImpl> names;
+  DefList<ParsedImportImpl> imports;
+  DefList<ParsedInlineImpl> inlines;
+  DefList<ParsedForeignTypeImpl> foreign_types;
+  DefList<ParsedForeignTypeImpl> builtin_types;
+  DefList<ParsedForeignConstantImpl> foreign_constants;
+
+  // All declarations defined in this module, in the order in which they are
+  // defined.
+  DefList<ParsedDeclarationImpl> declarations;
+
+  // Type-specific lists of the declarations within `declarations`. These lists
+  // let us focus on specific subsets of the declarations within the module.
+  UseList<ParsedExportImpl, ParsedDeclarationImpl> exports;
+  UseList<ParsedLocalImpl, ParsedDeclarationImpl> locals;
+  UseList<ParsedQueryImpl, ParsedDeclarationImpl> queries;
+  UseList<ParsedFunctorImpl, ParsedDeclarationImpl> functors;
+  UseList<ParsedMessageImpl, ParsedDeclarationImpl> messages;
+
+  // All clauses defined in this module, in the order in which they are defined.
+  DefList<ParsedClauseImpl> clauses;
 
   // Mapping of identifier IDs to foreign types.
-  std::unordered_map<uint32_t, Node<ParsedForeignType> *> foreign_types;
+  std::unordered_map<uint32_t, ParsedForeignTypeImpl *> id_to_foreign_type;
 
   // Maps identifier IDs to foreign constants.
-  std::unordered_map<uint32_t, Node<ParsedForeignConstant> *> foreign_constants;
-
-  // All clauses defined in this module.
-  std::vector<Node<ParsedClause> *> clauses;
-  std::vector<Node<ParsedClause> *> deletion_clauses;
+  std::unordered_map<uint32_t, ParsedForeignConstantImpl *>
+      id_to_foreign_constant;
 
   // Local declarations, grouped by `id=(name_id, arity)`.
-  std::unordered_map<uint64_t, Node<ParsedDeclaration> *> local_declarations;
+  std::unordered_map<uint64_t, ParsedDeclarationImpl *> local_declarations;
 };
 
 }  // namespace hyde

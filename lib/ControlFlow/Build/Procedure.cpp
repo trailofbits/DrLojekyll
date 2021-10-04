@@ -37,16 +37,47 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
         impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
     parent->AddRegion(loop);
     loop->vector.Emplace(loop, vec);
+    OP *next_parent = loop;
 
-    for (auto col : receive.Columns()) {
-      const auto var = loop->defined_vars.Create(impl->next_id++,
-                                                 VariableRole::kVectorVariable);
-      var->query_column = col;
-      loop->col_id_to_var.emplace(col.Id(), var);
+    DataModel *model = impl->view_to_model[receive]->FindAs<DataModel>();
+    TABLE *table = model->table;
+    CHANGETUPLE *insert = nullptr;
+//    CHANGERECORD *insert = nullptr;
+
+    // If this message receive has a corresponding table, then save it as
+    // a record here.
+    if (table) {
+//      insert = impl->operation_regions.CreateDerived<CHANGERECORD>(
+//          impl->next_id++, loop, TupleState::kAbsent, TupleState::kPresent);
+//      insert->table.Emplace(insert, table);
+//      loop->body.Emplace(loop, insert);
+
+      insert = impl->operation_regions.CreateDerived<CHANGETUPLE>(
+          loop, TupleState::kAbsent, TupleState::kPresent);
+      insert->table.Emplace(insert, table);
+      loop->body.Emplace(loop, insert);
+
+      next_parent = insert;
     }
 
-    BuildEagerInsertionRegions(impl, receive, context, loop,
-                               receive.Successors(), nullptr);
+    for (auto col : receive.Columns()) {
+      VAR * const var = loop->defined_vars.Create(
+          impl->next_id++, VariableRole::kVectorVariable);
+      var->query_column = col;
+      loop->col_id_to_var.emplace(col.Id(), var);
+
+      if (insert) {
+        insert->col_values.AddUse(var);
+//        const auto record_var = insert->record_vars.Create(
+//            impl->next_id++,VariableRole::kRecordElement);
+//        record_var->defining_region = insert;
+//        record_var->query_column = col;
+//        insert->col_id_to_var.emplace(col.Id(), record_var);
+      }
+    }
+
+    BuildEagerInsertionRegions(impl, receive, context, next_parent,
+                               receive.Successors(), table);
   }
 
   if (!removal_vec) {
@@ -66,16 +97,47 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
         impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
     parent->AddRegion(loop);
     loop->vector.Emplace(loop, removal_vec);
+    OP *next_parent = loop;
+
+    DataModel *model = impl->view_to_model[receive]->FindAs<DataModel>();
+    TABLE *table = model->table;
+    CHANGETUPLE *remove = nullptr;
+//    CHANGERECORD *remove = nullptr;
+
+    // If this message receive has a corresponding table, then save it as
+    // a record here.
+    if (table) {
+//      remove = impl->operation_regions.CreateDerived<CHANGERECORD>(
+//          impl->next_id++, loop, TupleState::kPresent, TupleState::kAbsent);
+//      remove->table.Emplace(remove, table);
+//      loop->body.Emplace(loop, remove);
+
+      remove = impl->operation_regions.CreateDerived<CHANGETUPLE>(
+          loop, TupleState::kPresent, TupleState::kAbsent);
+      remove->table.Emplace(remove, table);
+      loop->body.Emplace(loop, remove);
+
+      next_parent = remove;
+    }
 
     for (auto col : receive.Columns()) {
       const auto var = loop->defined_vars.Create(impl->next_id++,
                                                  VariableRole::kVectorVariable);
       var->query_column = col;
       loop->col_id_to_var.emplace(col.Id(), var);
+
+      if (remove) {
+        remove->col_values.AddUse(var);
+//        const auto record_var = remove->record_vars.Create(
+//            impl->next_id++,VariableRole::kRecordElement);
+//        record_var->defining_region = remove;
+//        record_var->query_column = col;
+//        remove->col_id_to_var.emplace(col.Id(), record_var);
+      }
     }
 
-    BuildEagerRemovalRegions(impl, receive, context, loop, receive.Successors(),
-                             nullptr);
+    BuildEagerRemovalRegions(
+        impl, receive, context, next_parent, receive.Successors(), table);
   }
 }
 
@@ -145,8 +207,8 @@ static void ClassifyVector(VECTOR *vec, REGION *region,
 // Create vectors for each published message that is marked as `@differential`.
 // We de-duplicate these, then check that they actually are added/removed (as
 // that can change over the course of some iterations), then publish.
-static void CreateDifferentialMessageVectors(ProgramImpl *impl, Context &context,
-                                      Query query, PROC *proc) {
+static void CreateDifferentialMessageVectors(
+    ProgramImpl *impl, Context &context, Query query, PROC *proc) {
   for (auto io : query.IOs()) {
     const auto transmits = io.Transmits();
     if (!transmits.empty()) {
@@ -273,33 +335,70 @@ static void PublishDifferentialMessageVectors(ProgramImpl *impl, PROC *proc,
       seq, ProgramOperation::kReturnTrueFromProcedure));
 }
 
-static void FixupContainingProcedure(ProgramImpl *impl) {
-  for (auto region : impl->operation_regions) {
-    auto proc = region->Ancestor()->AsProcedure();
-    assert(proc != nullptr);
-    region->containing_procedure = proc;
+
+// Recursively fix a region's containing procedure.
+static void FixupContainingProcedure(REGION *region, REGION *parent) {
+  if (!region) {
+    return;
   }
 
-  for (auto region : impl->series_regions) {
-    auto proc = region->Ancestor()->AsProcedure();
-    assert(proc != nullptr);
-    region->containing_procedure = proc;
-  }
+  assert(region->parent == parent);
+  region->cached_depth = 0;
+  region->parent = parent;
+  region->containing_procedure = parent->containing_procedure;
 
-  for (auto region : impl->parallel_regions) {
-    auto proc = region->Ancestor()->AsProcedure();
-    assert(proc != nullptr);
-    region->containing_procedure = proc;
-  }
+  if (auto op = region->AsOperation(); op) {
+    if (auto gen = op->AsGenerate(); gen) {
+      FixupContainingProcedure(gen->empty_body.get(), region);
 
-  for (auto region : impl->induction_regions) {
-    auto proc = region->Ancestor()->AsProcedure();
-    assert(proc != nullptr);
-    region->containing_procedure = proc;
+    } else if (auto call = op->AsCall(); call) {
+      FixupContainingProcedure(call->false_body.get(), region);
+
+    } else if (auto update = op->AsChangeTuple(); update) {
+      FixupContainingProcedure(update->failed_body.get(), region);
+
+    } else if (auto emplace = op->AsChangeRecord(); emplace) {
+      FixupContainingProcedure(emplace->failed_body.get(), region);
+
+    } else if (auto check = op->AsCheckTuple(); check) {
+      FixupContainingProcedure(check->absent_body.get(), region);
+      FixupContainingProcedure(check->unknown_body.get(), region);
+
+    } else if (auto get = op->AsCheckRecord(); get) {
+      FixupContainingProcedure(get->absent_body.get(), region);
+      FixupContainingProcedure(get->unknown_body.get(), region);
+
+    } else if (auto cmp = op->AsTupleCompare(); cmp) {
+      FixupContainingProcedure(cmp->false_body.get(), region);
+    }
+
+    FixupContainingProcedure(op->body.get(), region);
+
+  } else if (auto induction = region->AsInduction(); induction) {
+    FixupContainingProcedure(induction->init_region.get(), region);
+    FixupContainingProcedure(induction->cyclic_region.get(), region);
+    FixupContainingProcedure(induction->output_region.get(), region);
+
+  } else if (auto par = region->AsParallel(); par) {
+    for (auto sub_region : par->regions) {
+      FixupContainingProcedure(sub_region, region);
+    }
+  } else if (auto series = region->AsSeries(); series) {
+    for (auto sub_region : series->regions) {
+      FixupContainingProcedure(sub_region, series);
+    }
   }
 }
 
 }  // namespace
+
+void FixupContainingProcedure(ProgramImpl *impl) {
+  for (auto proc : impl->procedure_regions) {
+    proc->containing_procedure = proc;
+    proc->parent = proc;
+    FixupContainingProcedure(proc->body.get(), proc);
+  }
+}
 
 // Builds an I/O procedure, which goes and invokes the entry data flow
 // procedure.

@@ -7,6 +7,44 @@
 namespace hyde {
 namespace {
 
+static bool OptimizeImpl(ProgramImpl *prog, MODESWITCH *ms) {
+  if (!ms->IsUsed() || !ms->parent) {
+    return false;
+  }
+
+  if (auto parent_op = ms->parent->AsOperation()) {
+    if (auto parent_ms = parent_op->AsModeSwitch()) {
+      ms->parent = parent_ms->parent;
+      parent_ms->body.Clear();
+      parent_ms->ReplaceAllUsesWith(ms);
+      return true;
+    }
+  }
+
+  auto containing_ms = ms->ContainingModeSwitch();
+
+  // We're switching into the same mode.
+  if (containing_ms && containing_ms->new_mode == ms->new_mode) {
+    if (auto body = ms->body.get()) {
+      ms->body.Clear();
+      ms->ReplaceAllUsesWith(body);
+      return true;
+    }
+  }
+
+  // This mode switch to addition is not itself embedded within another mode
+  // switch, so the default mode is add, so the switch to add is redundant.
+  if (ms->new_mode == Mode::kBottomUpAddition && !containing_ms) {
+    if (auto body = ms->body.get()) {
+      ms->body.Clear();
+      ms->ReplaceAllUsesWith(body);
+      return true;
+    }
+  }
+
+  return false;
+}
+
 // TODO(pag): Find all ending returns in the children of the par, and if there
 //            are any, check that they all match, and if so, create a sequence
 //            that moves the `return <X>` to after the parallel, and also
@@ -761,9 +799,8 @@ static bool OptimizeImpl(ProgramImpl *impl, GENERATOR *gen) {
   return changed;
 }
 
-
 // Try to eliminate unnecessary children of a transition state regions.
-static bool OptimizeImpl(ProgramImpl *impl, CHANGESTATE *transition) {
+static bool OptimizeImpl(ProgramImpl *impl, CHANGETUPLE *transition) {
   auto changed = false;
 
   if (auto done_body = transition->body.get()) {
@@ -793,8 +830,84 @@ static bool OptimizeImpl(ProgramImpl *impl, CHANGESTATE *transition) {
   return changed;
 }
 
+// Try to eliminate unnecessary children of a emplace state regions.
+static bool OptimizeImpl(ProgramImpl *impl, CHANGERECORD *emplace) {
+  auto changed = false;
+
+  if (auto done_body = emplace->body.get()) {
+    assert(done_body->parent == emplace);
+
+    if (done_body->IsNoOp()) {
+      done_body->parent = nullptr;
+      emplace->body.Clear();
+      changed = true;
+    }
+  }
+
+  if (auto failed_body = emplace->failed_body.get()) {
+    assert(failed_body->parent == emplace);
+
+    if (failed_body->IsNoOp()) {
+      failed_body->parent = nullptr;
+      emplace->failed_body.Clear();
+      changed = true;
+    }
+  }
+
+  if (emplace->body && emplace->failed_body) {
+    assert(emplace->body.get() != emplace->failed_body.get());
+  }
+
+  return changed;
+}
+
 // Try to eliminate unnecessary children of a check state region.
-static bool OptimizeImpl(ProgramImpl *impl, CHECKSTATE *check) {
+static bool OptimizeImpl(ProgramImpl *impl, CHECKTUPLE *check) {
+  auto changed = false;
+
+  if (auto present_body = check->body.get()) {
+    assert(present_body->parent == check);
+
+    if (present_body->IsNoOp()) {
+      present_body->parent = nullptr;
+      check->body.Clear();
+      changed = true;
+    }
+  }
+
+  if (auto unknown_body = check->unknown_body.get()) {
+    assert(unknown_body->parent == check);
+
+    if (unknown_body->IsNoOp()) {
+      unknown_body->parent = nullptr;
+      check->unknown_body.Clear();
+      changed = true;
+    }
+  }
+
+  if (auto absent_body = check->absent_body.get()) {
+    assert(absent_body->parent == check);
+
+    if (absent_body->IsNoOp()) {
+      absent_body->parent = nullptr;
+      check->absent_body.Clear();
+      changed = true;
+    }
+  }
+
+  // Dead code eliminate the check state.
+  if (!check->body && !check->unknown_body && !check->absent_body) {
+    auto let = impl->operation_regions.CreateDerived<LET>(check->parent);
+    check->ReplaceAllUsesWith(let);
+    check->parent = nullptr;
+    changed = true;
+  }
+
+  return changed;
+}
+
+// Try to eliminate unnecessary children of a check state / get record region.
+static bool OptimizeImpl(ProgramImpl *impl, CHECKRECORD *check) {
   auto changed = false;
 
   if (auto present_body = check->body.get()) {
@@ -953,12 +1066,24 @@ void ProgramImpl::Optimize(void) {
         changed = OptimizeImpl(this, gen) | changed;
         CheckProcedures(this);
 
-      } else if (auto check = op->AsCheckState(); check) {
+      } else if (auto check = op->AsCheckTuple(); check) {
         changed = OptimizeImpl(this, check) | changed;
         CheckProcedures(this);
 
-      } else if (auto transition = op->AsTransitionState(); transition) {
+      } else if (auto get = op->AsCheckRecord(); get) {
+        changed = OptimizeImpl(this, get) | changed;
+        CheckProcedures(this);
+
+      } else if (auto transition = op->AsChangeTuple(); transition) {
         changed = OptimizeImpl(this, transition) | changed;
+        CheckProcedures(this);
+
+      } else if (auto emplace = op->AsChangeRecord(); emplace) {
+        changed = OptimizeImpl(this, emplace) | changed;
+        CheckProcedures(this);
+
+      } else if (auto ms = op->AsModeSwitch(); ms) {
+        changed = OptimizeImpl(this, ms) | changed;
         CheckProcedures(this);
 
       // All other operations check to see if they are no-ops and if so

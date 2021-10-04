@@ -5,13 +5,14 @@
 namespace hyde {
 
 // Try to parse `sub_range` as a message, adding it to `module` if successful.
-void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
+void ParserImpl::ParseMessage(ParsedModuleImpl *module) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
   }
 
-  assert(tok.Lexeme() == Lexeme::kHashMessageDecl);
+  const Token directive = tok;
+  assert(directive.Lexeme() == Lexeme::kHashMessageDecl);
 
   // State transition diagram for parsing messages.
   //
@@ -23,9 +24,12 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
   //                                     6
 
   int state = 0;
-  std::unique_ptr<Node<ParsedMessage>> message;
-  std::unique_ptr<Node<ParsedParameter>> param;
-  std::vector<std::unique_ptr<Node<ParsedParameter>>> params;
+  ParsedMessageImpl *message = nullptr;
+  ParsedParameterImpl *param = nullptr;
+
+  Token param_type;
+  Token param_name;
+  std::vector<std::pair<Token, Token>> params;
 
   DisplayPosition next_pos;
   Token name;
@@ -57,7 +61,8 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected atom here (lower case identifier) for the name of "
-              << "the #message being declared, got '" << tok << "' instead";
+              << "the " << directive << " being declared, got '" << tok
+              << "' instead";
           return;
         }
 
@@ -70,57 +75,54 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected opening parenthesis here to begin parameter list of "
-              << "#message '" << name << "', but got '" << tok << "' instead";
+              << directive << " '" << name << "', but got '" << tok
+              << "' instead";
           return;
         }
 
       case 2:
         if (tok.IsType()) {
-          param.reset(new Node<ParsedParameter>);
-          param->opt_type = tok;
-          param->parsed_opt_type = true;
+          param_type = tok;
           state = 3;
           continue;
 
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected type name here for parameter in #message '" << name
-              << "', but got '" << tok << "' instead";
+              << "Expected type name here for parameter in " << directive
+              << " '" << name << "', but got '" << tok << "' instead";
           return;
         }
 
       case 3:
         if (Lexeme::kIdentifierVariable == lexeme) {
+          param_name = tok;
           clause_toks.push_back(tok);
-          param->name = tok;
           state = 4;
           continue;
 
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected named variable here (capitalized identifier) as a "
-              << "parameter name of #message '" << name << "', but got '" << tok
-              << "' instead";
+              << "parameter name of " << directive << " '" << name
+              << "', but got '" << tok << "' instead";
           return;
         }
 
       case 4:
 
-        // Add the parameter in.
-        if (!params.empty()) {
-          params.back()->next = param.get();
-
-          if (params.size() == kMaxArity) {
-            const auto err_range = ParsedParameter(param.get()).SpellingRange();
-            context->error_log.Append(scope_range, err_range)
-                << "Too many parameters to #query '" << name
-                << "'; the maximum number of parameters is " << kMaxArity;
-            return;
-          }
+        if (params.size() == kMaxArity) {
+          DisplayRange err_range(param_type.Position(),
+                                   param_name.NextPosition());
+          context->error_log.Append(scope_range, err_range)
+              << "Too many parameters to message '" << name
+              << "'; the maximum number of parameters is " << kMaxArity;
+          return;
         }
 
-        param->index = static_cast<unsigned>(params.size());
-        params.push_back(std::move(param));
+        // Add the parameter in.
+        params.emplace_back(param_type, param_name);
+        param_type = Token();
+        param_name = Token();
 
         if (Lexeme::kPuncComma == lexeme) {
           clause_toks.push_back(tok);
@@ -128,20 +130,30 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
-          clause_toks.push_back(tok);
-          message.reset(AddDecl<ParsedMessage>(
-              module, DeclarationKind::kMessage, name, params.size()));
+          message = AddDecl<ParsedMessageImpl>(
+              module, DeclarationKind::kMessage, name, params.size());
+
           if (!message) {
             return;
-
-          } else {
-            message->rparen = tok;
-            message->name = name;
-            message->parameters.swap(params);
-            message->directive_pos = sub_tokens.front().Position();
-            state = 5;
-            continue;
           }
+
+          clause_toks.push_back(tok);
+
+          module->messages.AddUse(message);
+
+          for (auto [p_type, p_name] : params) {
+            param = message->parameters.Create(message);
+            param->opt_type = p_type;
+            param->parsed_opt_type = param->opt_type.IsValid();
+            param->name = p_name;
+            param->index = message->parameters.Size() - 1u;
+          }
+
+          message->rparen = tok;
+          message->name = name;
+          message->directive_pos = directive.Position();
+          state = 5;
+          continue;
 
         } else {
           context->error_log.Append(scope_range, tok_range)
@@ -159,7 +171,7 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
         } else if (Lexeme::kPragmaDifferential == lexeme) {
           if (message->differential_attribute.IsValid()) {
             auto err = context->error_log.Append(scope_range, tok_range);
-            err << "Unexpected repeat of the '@differential' pragma here";
+            err << "Unexpected repeat of the '" << tok << "' pragma here";
 
             err.Note(scope_range,
                      message->differential_attribute.SpellingRange())
@@ -205,7 +217,8 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
           } else {
             context->error_log.Append(scope_range,
                                       clause_toks.back().NextPosition())
-                << "Declaration of '" << message->name
+                << "Declaration of message '" << message->name
+                << "/" << message->parameters.Size()
                 << "' containing an embedded clause does not end with a period";
             state = 7;
             continue;
@@ -217,8 +230,8 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
         DisplayRange err_range(tok.Position(),
                                sub_tokens.back().NextPosition());
         context->error_log.Append(scope_range, err_range)
-            << "Unexpected tokens following declaration of the '"
-            << message->name << "' message";
+            << "Unexpected tokens following declaration of message '"
+            << message->name << "/" << message->parameters.Size() << "'";
         state = 7;  // Ignore further errors, but add the message in.
         continue;
       }
@@ -229,14 +242,13 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
   if (state != 6) {
     context->error_log.Append(scope_range, next_pos)
         << "Incomplete message declaration; the declaration '" << name
-        << "' must end with a period";
+        << "/" << message->parameters.Size() << "' must end with a period";
 
-    RemoveDecl<ParsedMessage>(std::move(message));
+    RemoveDecl(message);
 
   } else {
-    const auto decl_for_clause = message.get();
-    FinalizeDeclAndCheckConsistency<ParsedMessage>(module->messages,
-                                                   std::move(message));
+    const auto decl_for_clause = message;
+    FinalizeDeclAndCheckConsistency(message);
 
     // If we parsed a `:` after the head of the `#message` then
     // go parse the attached bodies recursively.
@@ -250,7 +262,8 @@ void ParserImpl::ParseMessage(Node<ParsedModule> *module) {
 
     } else if (product.IsValid()) {
       context->error_log.Append(scope_range, product.SpellingRange())
-          << "Superfluous '@product' specified without any accompanying clause";
+          << "Superfluous '" << product
+          << "' specified without any accompanying clause";
     }
   }
 }

@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <filesystem>
 
 namespace hyde {
 
@@ -43,7 +44,10 @@ class Parser {
   ParseStream(std::istream &is, const DisplayConfiguration &config) const;
 
   // Add a directory as a search path for modules.
-  void AddModuleSearchPath(std::string_view path) const;
+  void AddModuleSearchPath(std::filesystem::path path) const;
+
+  // Return a copy of the list of search paths used by the parser.
+  std::vector<std::filesystem::path> SearchPaths(void) const noexcept;
 
  private:
   Parser(void) = delete;

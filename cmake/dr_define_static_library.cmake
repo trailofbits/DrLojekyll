@@ -18,6 +18,12 @@ function(dr_define_static_library libname)
 
     add_library(${PROJECT_NAME}::${libname} ALIAS ${libname})
 
+    if(DRLOJEKYLL_ENABLE_SANITIZERS)
+        target_link_libraries(${libname} PUBLIC
+            drlojekyll_sanitizers
+        )
+    endif()
+
     if(CURLIB_DEPENDENCIES)
         target_link_libraries(${libname}
             PUBLIC ${CURLIB_DEPENDENCIES}
@@ -41,16 +47,19 @@ function(dr_define_static_library libname)
       PRIVATE ${CURLIB_CURDIR}
     )
     string(TOLOWER ${PROJECT_NAME} lower_project_name)
-    install(
-      TARGETS ${libname}
-      EXPORT "${PROJECT_NAME}Targets"
-      RUNTIME
-        DESTINATION "bin"
-      LIBRARY
-        DESTINATION "lib/${lower_project_name}"
-      ARCHIVE
-        DESTINATION "lib/${lower_project_name}"
-      PUBLIC_HEADER
-        DESTINATION "include/${lower_project_name}/${libname}"
-    )
+
+    if(DRLOJEKYLL_ENABLE_INSTALL)
+        install(
+        TARGETS ${libname}
+        EXPORT "${PROJECT_NAME}Targets"
+        RUNTIME
+            DESTINATION "bin"
+        LIBRARY
+            DESTINATION "lib/${lower_project_name}"
+        ARCHIVE
+            DESTINATION "lib/${lower_project_name}"
+        PUBLIC_HEADER
+            DESTINATION "include/${lower_project_name}/${libname}"
+        )
+    endif()
 endfunction()

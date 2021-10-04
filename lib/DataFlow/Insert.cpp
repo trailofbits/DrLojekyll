@@ -6,13 +6,13 @@
 
 namespace hyde {
 
-Node<QueryInsert>::~Node(void) {}
+QueryInsertImpl::~QueryInsertImpl(void) {}
 
-Node<QueryInsert> *Node<QueryInsert>::AsInsert(void) noexcept {
+QueryInsertImpl *QueryInsertImpl::AsInsert(void) noexcept {
   return this;
 }
 
-uint64_t Node<QueryInsert>::Hash(void) noexcept {
+uint64_t QueryInsertImpl::Hash(void) noexcept {
   if (hash) {
     return hash;
   }
@@ -32,7 +32,7 @@ uint64_t Node<QueryInsert>::Hash(void) noexcept {
   return local_hash;
 }
 
-bool Node<QueryInsert>::Canonicalize(QueryImpl *, const OptimizationContext &,
+bool QueryInsertImpl::Canonicalize(QueryImpl *, const OptimizationContext &,
                                      const ErrorLog &) {
   is_canonical = true;
   if (valid == VIEW::kValid && !CheckIncomingViewsMatch(input_columns)) {
@@ -43,8 +43,15 @@ bool Node<QueryInsert>::Canonicalize(QueryImpl *, const OptimizationContext &,
   assert(attached_columns.Empty());
 
   // NOTE(pag): This may update `is_canonical`.
-  (void) PullDataFromBeyondTrivialTuples(GetIncomingView(input_columns),
-                                         input_columns, attached_columns);
+  auto incoming_view = PullDataFromBeyondTrivialTuples(
+      GetIncomingView(input_columns), input_columns, attached_columns);
+
+  // An unsatisfiable INSERT is dropped.
+  if (!is_unsat && incoming_view && incoming_view->is_unsat) {
+    MarkAsUnsatisfiable();
+    PrepareToDelete();
+    return true;
+  }
 
   if (!is_canonical) {
     is_canonical = true;
@@ -55,7 +62,7 @@ bool Node<QueryInsert>::Canonicalize(QueryImpl *, const OptimizationContext &,
 }
 
 // Equality over inserts is structural.
-bool Node<QueryInsert>::Equals(EqualitySet &eq, VIEW *that_) noexcept {
+bool QueryInsertImpl::Equals(EqualitySet &eq, VIEW *that_) noexcept {
 
   if (eq.Contains(this, that_)) {
     return true;

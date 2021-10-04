@@ -117,9 +117,28 @@ const ErrorStream &ErrorStream::operator<<(const Token &token) const {
 }
 
 const ErrorStream &
+ErrorStream::operator<<(const ParsedVariable &var) const {
+  auto token = var.Name();
+  std::string_view token_data;
+
+  // NOTE(pag): We might synthesize variables that map to the range of non-
+  //            variable things, so just double check that the thing looks like
+  //            a variable.
+  if (dm.TryReadData(token.SpellingRange(), &token_data) &&
+      !token_data.empty() &&
+      (token_data[0] == '_' ||
+       (std::isalpha(token_data[0]) && std::isupper(token_data[0])))) {
+    (*os) << token_data;
+  } else {
+    (*os) << "_MissingVar";
+  }
+  return *this;
+}
+
+const ErrorStream &
 ErrorStream::operator<<(const std::optional<ParsedVariable> &maybe_var) const {
   if (maybe_var.has_value()) {
-    return (*this) << *maybe_var;
+    return (*this) << (*maybe_var);
   } else {
     (*os) << "_MissingVar";
     return *this;
@@ -292,6 +311,17 @@ Error::Error(const DisplayManager &dm, const DisplayRange &range,
   return ::hyde::Note(impl->next.get());
 }
 
+// An error message related to a highlighted range of tokens, with a sub-range
+// in particular being referenced.
+::hyde::Note Error::Note(const DisplayRange &range,
+                         const DisplayRange &sub_range,
+                         const DisplayPosition &pos_in_sub_range) const {
+  Error note(impl->display_manager, range, sub_range, pos_in_sub_range);
+  note.impl->next.swap(impl->next);
+  impl->next.swap(note.impl);
+  return ::hyde::Note(impl->next.get());
+}
+
 // Render the formatted error to a stream, along with any attached notes.
 void Error::Render(std::ostream &os,
                    const ErrorColorScheme &color_scheme) const {
@@ -338,6 +368,7 @@ void Error::Render(std::ostream &os,
         if (print_line) {
           ss << '\n';
           BeginColor(ss, color_scheme.line_color);
+          assert(line_num != 4294967295u);
           ss << std::setfill(' ') << std::setw(8) << line_num << " | ";
           print_line = false;
           ++line_num;

@@ -194,6 +194,14 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       : os(os_),
         module(module_) {}
 
+  void Visit(ProgramModeSwitchRegion region) override {
+    if (auto body = region.Body()) {
+      body->Accept(*this);
+    } else {
+      os << os.Indent() << "pass\n";
+    }
+  }
+
   void Visit(ProgramCallRegion region) override {
     os << Comment(os, region, "Program Call Region");
 
@@ -638,8 +646,8 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     }
   }
 
-  void Visit(ProgramTransitionStateRegion region) override {
-    os << Comment(os, region, "Program TransitionState Region");
+  void Visit(ProgramChangeTupleRegion region) override {
+    os << Comment(os, region, "Program ChangeTuple Region");
 
     const auto tuple_vars = region.TupleVariables();
 
@@ -712,7 +720,8 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     //
     // NOTE(pag): The codegen for negations depends upon transitioning from
     //            absent to unknown as a way of preventing race conditions.
-    const auto indices = region.Table().Indices();
+    const auto table = region.Table();
+    const auto indices = table.Indices();
     if (region.ToState() == TupleState::kPresent ||
         region.FromState() == TupleState::kAbsent) {
       os << os.Indent() << "if not present_bit:\n";
@@ -721,7 +730,6 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
       auto has_indices = false;
       for (auto index : indices) {
         const auto key_cols = index.KeyColumns();
-        const auto val_cols = index.ValueColumns();
 
         auto key_prefix = "(";
         auto key_suffix = ")";
@@ -734,20 +742,18 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
         has_indices = true;
         os << os.Indent() << TableIndex(os, index);
 
-        // The index is implemented with a `set`.
-        if (val_cols.empty()) {
-          os << ".add(" << tuple_var << ")\n";
-
-        // The index is implemented with a `defaultdict`.
-        } else {
-          os << "[" << key_prefix;
-          sep = "";
-          for (auto indexed_col : index.KeyColumns()) {
-            os << sep << tuple_var << "[" << indexed_col.Index() << "]";
-            sep = ", ";
+        os << "[" << key_prefix;
+        sep = "";
+        for (auto indexed_col : key_cols) {
+          os << sep << tuple_var;
+          if (1u < table.Columns().size()) {
+            os << "[" << indexed_col.Index() << "]";
           }
-          os << key_suffix << "].append(" << tuple_var << ")\n";
+          sep = ", ";
         }
+        os << key_suffix << "]";
+
+        os << ".append(" << tuple_var << ")\n";
       }
 
       if (!has_indices) {
@@ -773,8 +779,8 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
     }
   }
 
-  void Visit(ProgramCheckStateRegion region) override {
-    os << Comment(os, region, "Program CheckState Region");
+  void Visit(ProgramCheckTupleRegion region) override {
+    os << Comment(os, region, "Program CheckTuple Region");
     const auto table = region.Table();
     const auto vars = region.TupleVariables();
     os << os.Indent() << "state = " << Table(os, table) << "[";
@@ -1200,14 +1206,15 @@ class PythonCodeGenVisitor final : public ProgramVisitor {
 };
 
 static void DeclareFunctor(OutputStream &os, ParsedModule module,
-                           ParsedFunctor func) {
+                           ParsedDeclaration decl) {
+  const auto func = ParsedFunctor::From(decl);
   os << os.Indent() << "def " << func.Name() << '_'
-     << ParsedDeclaration(func).BindingPattern() << "(self";
+     << decl.BindingPattern() << "(self";
 
   std::stringstream return_tuple;
   auto sep_ret = "";
   auto num_ret_types = 0u;
-  for (auto param : func.Parameters()) {
+  for (auto param : decl.Parameters()) {
     if (param.Binding() == ParameterBinding::kBound) {
       os << ", " << param.Name() << ": "
          << TypeName(module, param.Type().Kind());
@@ -1253,9 +1260,9 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
 
   os.PushIndent();
   os << os.Indent() << "return " << func.Name() << '_'
-     << ParsedDeclaration(func).BindingPattern() << "(";
+     << decl.BindingPattern() << "(";
   sep_ret = "";
-  for (auto param : func.Parameters()) {
+  for (auto param : decl.Parameters()) {
     if (param.Binding() == ParameterBinding::kBound) {
       os << sep_ret << param.Name();
       sep_ret = ", ";
@@ -1276,11 +1283,16 @@ static void DeclareFunctors(OutputStream &os, Program program,
   auto has_functors = false;
   for (auto module : ParsedModuleIterator(root_module)) {
     for (auto first_func : module.Functors()) {
-      for (auto func : first_func.Redeclarations()) {
+      ParsedDeclaration func_decl(first_func);
+      if (!func_decl.IsFirstDeclaration()) {
+        continue;
+      }
+
+      for (auto redecl : func_decl.Redeclarations()) {
         std::stringstream ss;
-        ss << func.Id() << ':' << ParsedDeclaration(func).BindingPattern();
+        ss << redecl.Id() << ':' << redecl.BindingPattern();
         if (auto [it, inserted] = seen.emplace(ss.str()); inserted) {
-          DeclareFunctor(os, module, func);
+          DeclareFunctor(os, module, redecl);
           has_functors = true;
           (void) it;
         }
@@ -1299,7 +1311,8 @@ static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
   os << os.Indent() << "def " << message.Name() << "_" << message.Arity()
      << "(self";
 
-  for (auto param : message.Parameters()) {
+  const ParsedDeclaration decl(message);
+  for (auto param : decl.Parameters()) {
     os << ", " << param.Name() << ": " << TypeName(module, param.Type());
   }
 

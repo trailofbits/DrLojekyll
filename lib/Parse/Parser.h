@@ -12,6 +12,7 @@
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/Parser.h>
+#include <drlojekyll/Util/DefUse.h>
 
 #include <cassert>
 #include <cstring>
@@ -42,13 +43,13 @@ class SharedParserContext {
   std::vector<std::filesystem::path> import_search_paths;
 
   // All parsed modules.
-  Node<ParsedModule> *root_module{nullptr};
+  ParsedModuleImpl *root_module{nullptr};
 
   // Mapping of display IDs to parsed modules. This exists to prevent the same
   // module from being parsed multiple times.
   //
   // NOTE(pag): Cyclic module imports are valid.
-  std::unordered_map<unsigned, std::weak_ptr<Node<ParsedModule>>>
+  std::unordered_map<unsigned, std::weak_ptr<ParsedModuleImpl>>
       parsed_modules;
 
   const DisplayManager display_manager;
@@ -56,13 +57,13 @@ class SharedParserContext {
   const StringPool string_pool;
 
   // Keeps track of the global locals. All parsed modules shared this.
-  std::unordered_map<uint64_t, Node<ParsedDeclaration> *> declarations;
+  std::unordered_map<uint64_t, ParsedDeclarationImpl *> declarations;
 
   // Maps identifier IDs to foreign types.
-  std::unordered_map<uint32_t, Node<ParsedForeignType> *> foreign_types;
+  std::unordered_map<uint32_t, ParsedForeignTypeImpl *> foreign_types;
 
   // Maps identifier IDs to foreign constants.
-  std::unordered_map<uint32_t, Node<ParsedForeignConstant> *> foreign_constants;
+  std::unordered_map<uint32_t, ParsedForeignConstantImpl *> foreign_constants;
 };
 
 class ParserImpl {
@@ -87,7 +88,7 @@ class ParserImpl {
   DisplayRange scope_range;
 
   // Set of previously named variables in the current clause.
-  std::unordered_map<unsigned, Node<ParsedVariable> *> prev_named_var;
+  std::unordered_map<unsigned, ParsedVariableImpl *> prev_named_var;
 
   // The index of the next token to read from `tokens`.
   size_t next_tok_index{0};
@@ -115,53 +116,49 @@ class ParserImpl {
 
   // Add a declaration or redeclaration to the module.
   template <typename T>
-  Node<T> *AddDecl(Node<ParsedModule> *module, DeclarationKind kind, Token name,
-                   size_t arity);
+  T *AddDecl(ParsedModuleImpl *module, DeclarationKind kind, Token name,
+             size_t arity);
 
   // Remove a declaration.
-  template <typename T>
-  void RemoveDecl(std::unique_ptr<Node<T>> decl);
+  void RemoveDecl(ParsedDeclarationImpl *decl);
 
-  template <typename T>
-  void FinalizeDeclAndCheckConsistency(
-      std::vector<std::unique_ptr<Node<T>>> &decl_list,
-      std::unique_ptr<Node<T>> decl);
+  void FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl);
 
   // Try to parse an inline predicate.
-  bool ParseAggregatedPredicate(Node<ParsedModule> *module,
-                                Node<ParsedClause> *clause,
-                                std::unique_ptr<Node<ParsedPredicate>> functor,
+  bool ParseAggregatedPredicate(ParsedModuleImpl *module,
+                                ParsedClauseImpl *clause,
+                                ParsedAggregateImpl *agg,
                                 Token &tok, DisplayPosition &next_pos);
 
   // Try to parse all of the tokens.
-  void ParseAllTokens(Node<ParsedModule> *module);
+  void ParseAllTokens(ParsedModuleImpl *module);
 
   // Try to parse `sub_range` as a functor, adding it to `module` if successful.
-  void ParseFunctor(Node<ParsedModule> *module);
+  void ParseFunctor(ParsedModuleImpl *module);
 
   // Try to parse `sub_range` as a query, adding it to `module` if successful.
-  void ParseQuery(Node<ParsedModule> *module);
+  void ParseQuery(ParsedModuleImpl *module);
 
   // Try to parse `sub_range` as a message, adding it to `module` if successful.
-  void ParseMessage(Node<ParsedModule> *module);
+  void ParseMessage(ParsedModuleImpl *module);
 
   // Try to parse `sub_range` as a local or export rule, adding it to `module`
   // if successful.
-  template <typename NodeType, DeclarationKind kDeclKind,
+  template <typename NodeTypeImpl, DeclarationKind kDeclKind,
             Lexeme kIntroducerLexeme>
-  void ParseLocalExport(Node<ParsedModule> *module,
-                        std::vector<std::unique_ptr<Node<NodeType>>> &out_vec);
+  void ParseLocalExport(ParsedModuleImpl *module,
+                        UseList<NodeTypeImpl, ParsedDeclarationImpl> &out_vec);
 
   // Try to parse `sub_range` as a foreign type declaration, adding it to
   // module if successful.
-  void ParseForeignTypeDecl(Node<ParsedModule> *module);
+  void ParseForeignTypeDecl(ParsedModuleImpl *module);
 
   // Try to parse `sub_range` as a foreign constant declaration, adding it to
   // module if successful.
-  void ParseForeignConstantDecl(Node<ParsedModule> *module);
+  void ParseForeignConstantDecl(ParsedModuleImpl *module);
 
   // Try to parse `sub_range` as an import.
-  void ParseImport(Node<ParsedModule> *module);
+  void ParseImport(ParsedModuleImpl *module);
 
   // Try to resolve the given path to a file on the filesystem, searching the
   // provided directories in order.
@@ -173,31 +170,36 @@ class ParserImpl {
 
   // Try to parse `sub_range` as an inlining of of C/C++ code into the Datalog
   // module.
-  void ParseInlineCode(Node<ParsedModule> *module);
+  void ParseInlineCode(ParsedModuleImpl *module);
+
+  // Try to parse `sub_range` as a database name declaration.
+  void ParseDatabase(ParsedModuleImpl *module);
 
   // Try to match a clause with a declaration.
-  bool TryMatchClauseWithDecl(Node<ParsedModule> *module,
-                              Node<ParsedClause> *clause);
+  bool TryMatchClauseWithDecl(ParsedModuleImpl *module,
+                              ParsedClauseImpl *clause);
 
   // Try to match a predicate with a declaration.
-  bool TryMatchPredicateWithDecl(Node<ParsedModule> *module,
-                                 Node<ParsedPredicate> *pred);
+  ParsedDeclarationImpl *TryMatchPredicateWithDecl(
+      ParsedModuleImpl *module, Token pred_name,
+      const std::vector<ParsedVariableImpl *> &pred_vars,
+      Token pred_end_tok);
 
   // Try to parse `sub_range` as a clause.
-  void ParseClause(Node<ParsedModule> *module,
-                   Node<ParsedDeclaration> *decl = nullptr);
+  void ParseClause(ParsedModuleImpl *module,
+                   ParsedDeclarationImpl *decl = nullptr);
 
   // Create a variable.
-  Node<ParsedVariable> *CreateVariable(Node<ParsedClause> *clause, Token name,
+  ParsedVariableImpl *CreateVariable(ParsedClauseImpl *clause, Token name,
                                        bool is_param, bool is_arg);
 
   // Create a variable to name a literal.
-  Node<ParsedVariable> *CreateLiteralVariable(Node<ParsedClause> *clause,
+  ParsedVariableImpl *CreateLiteralVariable(ParsedClauseImpl *clause,
                                               Token tok, bool is_param,
                                               bool is_arg);
 
   // Perform type checking/assignment. Returns `false` if there was an error.
-  bool AssignTypes(Node<ParsedModule> *module);
+  bool AssignTypes(ParsedModuleImpl *module);
 
   // Parse a display, returning the parsed module.
   //
@@ -207,16 +209,11 @@ class ParserImpl {
                                            const DisplayConfiguration &config);
 };
 
-#if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wconversion"
-#endif
-
 // Add a declaration or redeclaration to the module. This makes sure that
 // all locals in a redecl list have the same kind.
 template <typename T>
-Node<T> *ParserImpl::AddDecl(Node<ParsedModule> *module, DeclarationKind kind,
-                             Token name, size_t arity) {
+T *ParserImpl::AddDecl(ParsedModuleImpl *module, DeclarationKind kind,
+                       Token name, size_t arity) {
   const auto scope_range = SubTokenRange();
 
   if (arity > kMaxArity) {
@@ -226,16 +223,23 @@ Node<T> *ParserImpl::AddDecl(Node<ParsedModule> *module, DeclarationKind kind,
     return nullptr;
   }
 
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wconversion"
+#endif
   parse::IdInterpreter interpreter = {};
   interpreter.info.atom_name_id = name.IdentifierId();
   interpreter.info.arity = arity;
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
 
   const auto id = interpreter.flat;
   auto first_decl_it = context->declarations.find(id);
 
   // This is the first time we've seen this declaration.
   if (first_decl_it == context->declarations.end()) {
-    auto decl = new Node<T>(module, kind);
+    auto decl = module->declarations.CreateDerived<T>(module, kind);
     context->declarations.emplace(id, decl);
     return decl;
 
@@ -244,6 +248,8 @@ Node<T> *ParserImpl::AddDecl(Node<ParsedModule> *module, DeclarationKind kind,
     const auto first_decl = first_decl_it->second;
 
     const auto &decl_context = first_decl->context;
+
+    // This is a re-declaration of the wrong kind.
     if (decl_context->kind != kind) {
       auto err = context->error_log.Append(scope_range, name.SpellingRange());
       err << "Cannot re-declare '" << first_decl->name << "' as a "
@@ -255,205 +261,11 @@ Node<T> *ParserImpl::AddDecl(Node<ParsedModule> *module, DeclarationKind kind,
 
       return nullptr;
 
+    // This is a valid re-declaration.
     } else {
-      return new Node<T>(module, decl_context);
+      return module->declarations.CreateDerived<T>(module, decl_context);
     }
   }
-}
-
-// Remove a declaration.
-template <typename T>
-void ParserImpl::RemoveDecl(std::unique_ptr<Node<T>> decl) {
-  if (!decl) {
-    return;
-  }
-
-  parse::IdInterpreter interpreter = {};
-  interpreter.info.atom_name_id = decl->name.IdentifierId();
-  interpreter.info.arity = decl->parameters.size();
-  const auto id = interpreter.flat;
-
-  assert(decl.get() == decl->context->redeclarations.back());
-  decl->context->redeclarations.pop_back();
-
-  if (!decl->context->redeclarations.empty()) {
-    decl->context->redeclarations.back()->next_redecl = nullptr;
-
-  } else {
-    context->declarations.erase(id);
-  }
-}
-
-#if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic pop
-#endif
-
-// Add `decl` to the end of `decl_list`, and make sure `decl` is consistent
-// with any prior declarations of the same name.
-template <typename T>
-void ParserImpl::FinalizeDeclAndCheckConsistency(
-    std::vector<std::unique_ptr<Node<T>>> &decl_list,
-    std::unique_ptr<Node<T>> decl) {
-
-  const auto scope_range = SubTokenRange();
-  const auto num_params = decl->parameters.size();
-
-  const parse::DeclarationContext *decl_context = decl->context.get();
-  auto &redecls = decl_context->redeclarations;
-
-  if (1 < redecls.size()) {
-    const auto prev_decl = reinterpret_cast<Node<T> *>(redecls.front());
-    assert(prev_decl->parameters.size() == num_params);
-
-    // The first usage of a functor in a `mutable` attribute marks it as
-    // being a merge functor and forces a `1:1` range.
-    if (prev_decl->range != decl->range &&
-        prev_decl->range == FunctorRange::kOneToOne && prev_decl->is_merge) {
-      assert(!decl->is_merge);
-      decl->is_merge = true;
-      decl->range = FunctorRange::kOneToOne;
-    }
-
-    // Different differential attributes.
-    if (prev_decl->differential_attribute.IsValid() !=
-        decl->differential_attribute.IsValid()) {
-
-      if (decl->differential_attribute.IsValid()) {
-        auto err = context->error_log.Append(
-            scope_range, decl->differential_attribute.SpellingRange());
-        err << "Message is marked as differential, but prior declaration isn't";
-
-        auto note = err.Note(T(prev_decl).SpellingRange());
-        note << "Previous declaration is here";
-
-      } else {
-        auto err = context->error_log.Append(
-            T(prev_decl).SpellingRange(),
-            prev_decl->differential_attribute.SpellingRange());
-        err << "Message is marked as differential, but redeclaration isn't";
-
-        auto note = err.Note(scope_range);
-        note << "Redeclaration is here";
-      }
-    }
-
-    // The inferred range specifications don't match.
-    if (prev_decl->range != decl->range &&
-        (ParsedDeclaration(prev_decl).BindingPattern() ==
-         ParsedDeclaration(decl.get()).BindingPattern())) {
-      DisplayRange prev_range_spec(prev_decl->range_begin_opt.Position(),
-                                   prev_decl->range_end_opt.NextPosition());
-
-      DisplayRange curr_range_spec(decl->range_begin_opt.Position(),
-                                   decl->range_end_opt.NextPosition());
-
-      // Examine the concrete syntax to produce a meaningful error message.
-      if (prev_decl->range_begin_opt.IsValid() &&
-          decl->range_begin_opt.IsValid()) {
-        auto err = context->error_log.Append(scope_range, curr_range_spec);
-        err << "Functor range specifier differs from prior range specifier";
-
-        auto note = err.Note(T(prev_decl).SpellingRange(), prev_range_spec);
-        note << "Previous range specifier is here";
-
-      } else if (prev_decl->range_begin_opt.IsValid()) {
-        auto err = context->error_log.Append(scope_range);
-        err << "Functor uses default zero-or-more range specifier, but prior "
-            << "declaration explicitly changes the range";
-
-        auto note = err.Note(T(prev_decl).SpellingRange(), prev_range_spec);
-        note << "Previous range specifier is here";
-
-      } else if (decl->range_begin_opt.IsValid()) {
-        auto err = context->error_log.Append(scope_range, curr_range_spec);
-        err << "Functor explicitly specifies a non-default range specifier "
-            << "that is different than the implicit zero-or-more specification";
-
-        auto note = err.Note(T(prev_decl).SpellingRange());
-        note << "Previous declaration uses the implicit zero-or-more range "
-             << "specification";
-
-      // Neither functor has explicit `range` syntax, and they disagree.
-      } else {
-        auto err = context->error_log.Append(scope_range);
-        err << "Inferred functor range differs from prior inferred range";
-
-        auto note = err.Note(T(prev_decl).SpellingRange());
-        note << "Previous declaration is here";
-      }
-
-      RemoveDecl(std::move(decl));
-      return;
-    }
-
-    // Make sure all parameters bindings, types, merge declarations, etc. match
-    // across all re-declarations.
-    for (size_t i = 0; i < num_params; ++i) {
-      const auto prev_param = prev_decl->parameters[i].get();
-      const auto curr_param = decl->parameters[i].get();
-      if ((prev_param->opt_binding.Lexeme() !=
-           curr_param->opt_binding.Lexeme()) &&
-          prev_decl->context->kind != DeclarationKind::kFunctor &&
-          prev_decl->context->kind != DeclarationKind::kQuery) {
-        auto err = context->error_log.Append(
-            scope_range, curr_param->opt_binding.SpellingRange());
-        err << "Parameter binding attribute differs";
-
-        auto note = err.Note(T(prev_decl).SpellingRange(),
-                             prev_param->opt_binding.SpellingRange());
-        note << "Previous parameter binding attribute is here";
-
-        RemoveDecl(std::move(decl));
-        return;
-      }
-
-      if (prev_param->opt_merge != curr_param->opt_merge) {
-        auto err = context->error_log.Append(
-            scope_range, curr_param->opt_binding.SpellingRange());
-        err << "Mutable parameter's merge operator differs";
-
-        auto note = err.Note(T(prev_decl).SpellingRange(),
-                             prev_param->opt_binding.SpellingRange());
-        note << "Previous mutable attribute declaration is here";
-
-        RemoveDecl(std::move(decl));
-        return;
-      }
-
-      if (prev_param->opt_type.Kind() != curr_param->opt_type.Kind()) {
-        auto err = context->error_log.Append(
-            scope_range, curr_param->opt_type.SpellingRange());
-        err << "Parameter type specification differs";
-
-        auto note = err.Note(T(prev_decl).SpellingRange(),
-                             prev_param->opt_type.SpellingRange());
-        note << "Previous type specification is here";
-
-        RemoveDecl(std::move(decl));
-        return;
-      }
-    }
-
-    // Make sure this inline attribute matches the prior one.
-    if (prev_decl->inline_attribute.Lexeme() !=
-        decl->inline_attribute.Lexeme()) {
-      auto err = context->error_log.Append(
-          scope_range, decl->inline_attribute.SpellingRange());
-      err << "Inline attribute differs";
-
-      auto note = err.Note(T(prev_decl).SpellingRange(),
-                           prev_decl->inline_attribute.SpellingRange());
-      note << "Previous inline attribute is here";
-      RemoveDecl(std::move(decl));
-      return;
-    }
-  }
-
-  // We've made it without errors; add it in.
-  if (!decl_list.empty()) {
-    decl_list.back()->next = decl.get();
-  }
-  decl_list.emplace_back(std::move(decl));
 }
 
 }  // namespace hyde

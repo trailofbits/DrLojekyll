@@ -7,113 +7,35 @@
 
 namespace hyde {
 
-template <typename T>
-class Node;
-
-template <typename T>
-class NodeIterator;
-
-template <typename T>
-class NodeRange;
-
-// Used for traversing nodes that are arranged in a list. Class based so that
-// the use of `Next` and `Prev` are privileged.
-class NodeTraverser {
- private:
-  template <typename T>
-  friend class NodeIterator;
-
-  static void *Next(void *, intptr_t);
-};
-
-// Iterator over a chain of nodes.
-template <typename T>
-class NodeIterator {
+template <typename PublicT, typename PrivateT>
+class Node {
  public:
-  NodeIterator(const NodeIterator<T> &) noexcept = default;
-  NodeIterator(NodeIterator<T> &&) noexcept = default;
+  using PublicType = PublicT;
+  using PrivateType = PrivateT;
 
-  NodeIterator<T> &operator=(const NodeIterator<T> &) noexcept = default;
-  NodeIterator<T> &operator=(NodeIterator<T> &&) noexcept = default;
+  inline Node(PrivateT *impl_) : impl(impl_) {}
 
-  T operator*(void) const {
-    return T(impl);
-  }
-
-  T operator->(void) const = delete;
-
-  bool operator==(NodeIterator<T> that) const {
+  inline bool operator==(const PublicT &that) const noexcept {
     return impl == that.impl;
   }
 
-  bool operator!=(NodeIterator<T> that) const {
+  inline bool operator!=(const PublicT &that) const noexcept {
     return impl != that.impl;
   }
 
-  inline NodeIterator<T> &operator++(void) {
-    impl = reinterpret_cast<Node<T> *>(NodeTraverser::Next(impl, offset));
-    return *this;
+  inline bool operator<(const PublicT &that) const noexcept {
+    return impl < that.impl;
   }
 
-  inline NodeIterator<T> operator++(int) const {
-    auto ret = *this;
-    impl = reinterpret_cast<Node<T> *>(NodeTraverser::Next(impl, offset));
-    return ret;
+  uintptr_t UniqueId(void) const noexcept {
+    return reinterpret_cast<uintptr_t>(impl);
   }
 
- private:
-  friend class NodeRange<T>;
-
-  inline explicit NodeIterator(Node<T> *impl_, intptr_t offset_)
-      : impl(impl_),
-        offset(offset_) {}
-
-  NodeIterator(void) = default;
-
-  Node<T> *impl{nullptr};
-  intptr_t offset{0};
-};
-
-template <typename T>
-class NodeRange {
- public:
-  NodeRange(void) = default;
-
-  inline explicit NodeRange(Node<T> *impl_, intptr_t offset_)
-      : impl(impl_),
-        offset(offset_) {}
-
-#if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Winvalid-offsetof"
-#endif
-  template <typename U>
-  inline explicit NodeRange(Node<U> *impl_)
-      : impl(impl_),
-        offset(static_cast<intptr_t>(__builtin_offsetof(Node<U>, next))) {}
-
-#if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic pop
-#endif
-
-  inline NodeIterator<T> begin(void) const {
-    return NodeIterator<T>(impl, offset);
+  inline uint64_t Hash(void) const {
+    return reinterpret_cast<uintptr_t>(impl);
   }
 
-  inline NodeIterator<T> end(void) const {
-    return {};
-  }
-
-  inline bool empty(void) const noexcept {
-    return impl == nullptr;
-  }
-
- private:
-  template <typename U>
-  friend class Node;
-
-  Node<T> *impl{nullptr};
-  intptr_t offset{0};
+  PrivateT *impl;
 };
 
 }  // namespace hyde

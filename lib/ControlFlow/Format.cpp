@@ -12,7 +12,7 @@ namespace hyde {
 namespace {
 
 static OutputStream &Type(OutputStream &os, ParsedModule module,
-                          TypeKind kind) {
+                          TypeLoc kind) {
   if (auto type = module.ForeignType(kind); type) {
     os << type->Name();
   } else {
@@ -322,7 +322,8 @@ OutputStream &operator<<(OutputStream &os, ProgramGenerateRegion region) {
   auto i = 0u;
   auto input_vars = region.InputVariables();
 
-  for (auto param : functor.Parameters()) {
+  ParsedDeclaration decl(functor);
+  for (ParsedParameter param : decl.Parameters()) {
     if (param.Binding() == ParameterBinding::kFree) {
       os << sep << '_';
     } else {
@@ -385,6 +386,28 @@ OutputStream &operator<<(OutputStream &os, ProgramLetBindingRegion region) {
     }
   } else {
     os << os.Indent() << "empty-let";
+  }
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ProgramModeSwitchRegion region) {
+  if (auto maybe_body = region.Body(); maybe_body) {
+    if (region.NewMode() == Mode::kBottomUpAddition) {
+      os << os.Indent() << "mode-switch-to-add\n";
+      os.PushIndent();
+      os << (*maybe_body);
+      os.PopIndent();
+    } else if (region.NewMode() == Mode::kBottomUpRemoval) {
+      os << os.Indent() << "mode-switch-to-remove\n";
+      os.PushIndent();
+      os << (*maybe_body);
+      os.PopIndent();
+    } else {
+      assert(false);
+      os << (*maybe_body);
+    }
+  } else {
+    os << os.Indent() << "empty-mode-switch";
   }
   return os;
 }
@@ -461,9 +484,9 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorSwapRegion region) {
 }
 
 OutputStream &operator<<(OutputStream &os,
-                         ProgramTransitionStateRegion region) {
+                         ProgramChangeTupleRegion region) {
 
-  os << os.Indent() << "transition-state {";
+  os << os.Indent() << "change-tuple {";
 
   auto sep = "";
   for (auto var : region.TupleVariables()) {
@@ -508,9 +531,104 @@ OutputStream &operator<<(OutputStream &os,
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os, ProgramCheckStateRegion region) {
-  os << os.Indent() << "check-state {";
+OutputStream &operator<<(OutputStream &os,
+                         ProgramChangeRecordRegion region) {
+
+  os << os.Indent();
+  auto sep = "{";
+  for (auto var : region.RecordVariables()) {
+    os << sep << var;
+    sep = ", ";
+  }
+  os << "} = change-record {";
+
+  sep = "";
+  for (auto var : region.TupleVariables()) {
+    os << sep << var;
+    sep = ", ";
+  }
+  os << "} in " << region.Table() << " from ";
+
+  switch (region.FromState()) {
+    case TupleState::kPresent: os << "present to "; break;
+    case TupleState::kAbsent: os << "absent to "; break;
+    case TupleState::kUnknown: os << "unknown to "; break;
+    case TupleState::kAbsentOrUnknown: os << "absent|unknown to "; break;
+  }
+
+  switch (region.ToState()) {
+    case TupleState::kPresent: os << "present"; break;
+    case TupleState::kAbsent: os << "absent"; break;
+    case TupleState::kUnknown:
+    case TupleState::kAbsentOrUnknown: os << "unknown"; break;
+  }
+
+  if (auto maybe_body = region.BodyIfSucceeded(); maybe_body) {
+    os << '\n';
+    os.PushIndent();
+    os << os.Indent() << "if-transitioned\n";
+    os.PushIndent();
+    os << (*maybe_body);
+    os.PopIndent();
+    os.PopIndent();
+  }
+
+  if (auto maybe_failed_body = region.BodyIfFailed(); maybe_failed_body) {
+    os << '\n';
+    os.PushIndent();
+    os << os.Indent() << "if-failed\n";
+    os.PushIndent();
+    os << (*maybe_failed_body);
+    os.PopIndent();
+    os.PopIndent();
+  }
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ProgramCheckTupleRegion region) {
+  os << os.Indent() << "check-tuple {";
   auto sep = "";
+  for (auto var : region.TupleVariables()) {
+    os << sep << var;
+    sep = ", ";
+  }
+  os << "} in " << region.Table();
+
+  os.PushIndent();
+  if (auto maybe_body = region.IfPresent(); maybe_body) {
+    os << '\n';
+    os << os.Indent() << "if-present\n";
+    os.PushIndent();
+    os << (*maybe_body);
+    os.PopIndent();
+  }
+  if (auto maybe_body = region.IfAbsent(); maybe_body) {
+    os << '\n';
+    os << os.Indent() << "if-absent\n";
+    os.PushIndent();
+    os << (*maybe_body);
+    os.PopIndent();
+  }
+  if (auto maybe_body = region.IfUnknown(); maybe_body) {
+    os << '\n';
+    os << os.Indent() << "if-unknown\n";
+    os.PushIndent();
+    os << (*maybe_body);
+    os.PopIndent();
+  }
+  os.PopIndent();
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ProgramCheckRecordRegion region) {
+  auto sep = "{";
+  os << os.Indent();
+  for (auto var : region.RecordVariables()) {
+    os << sep << var;
+    sep = ", ";
+  }
+  os << "} = check-record {";
+  sep = "";
   for (auto var : region.TupleVariables()) {
     os << sep << var;
     sep = ", ";
@@ -745,6 +863,7 @@ class FormatDispatcher final : public ProgramVisitor {
   MAKE_VISITOR(ProgramTestAndSetRegion)
   MAKE_VISITOR(ProgramGenerateRegion)
   MAKE_VISITOR(ProgramInductionRegion)
+  MAKE_VISITOR(ProgramModeSwitchRegion)
   MAKE_VISITOR(ProgramLetBindingRegion)
   MAKE_VISITOR(ProgramParallelRegion)
   MAKE_VISITOR(ProgramProcedure)
@@ -755,8 +874,10 @@ class FormatDispatcher final : public ProgramVisitor {
   MAKE_VISITOR(ProgramVectorLoopRegion)
   MAKE_VISITOR(ProgramVectorSwapRegion)
   MAKE_VISITOR(ProgramVectorUniqueRegion)
-  MAKE_VISITOR(ProgramTransitionStateRegion)
-  MAKE_VISITOR(ProgramCheckStateRegion)
+  MAKE_VISITOR(ProgramChangeTupleRegion)
+  MAKE_VISITOR(ProgramCheckTupleRegion)
+  MAKE_VISITOR(ProgramChangeRecordRegion)
+  MAKE_VISITOR(ProgramCheckRecordRegion)
   MAKE_VISITOR(ProgramTableJoinRegion)
   MAKE_VISITOR(ProgramTableProductRegion)
   MAKE_VISITOR(ProgramTableScanRegion)
@@ -790,7 +911,6 @@ OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
       }
       break;
     case ProcedureKind::kTupleFinder: os << "^find:"; break;
-    case ProcedureKind::kTupleRemover: os << "^remove:"; break;
     case ProcedureKind::kConditionTester: os << "^test:"; break;
   }
   os << proc.Id();
@@ -812,7 +932,8 @@ OutputStream &operator<<(OutputStream &os, Program program) {
       default:
         if (auto const_val = var.Value()) {
           if (const_val->IsTag()) {
-            os << " = " << QueryTag::From(*const_val).Value();
+            os << " = " << QueryTag::From(*const_val).Value()
+               << " ; Optimization tag";
 
           } else if (auto lit = const_val->Literal(); lit) {
             os << " = " << *lit;

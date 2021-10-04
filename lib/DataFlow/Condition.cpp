@@ -4,7 +4,7 @@
 
 namespace hyde {
 
-Node<QueryCondition>::~Node(void) {
+QueryConditionImpl::~QueryConditionImpl(void) {
   is_dead = true;
 
   for (auto setter : setters) {
@@ -32,8 +32,8 @@ Node<QueryCondition>::~Node(void) {
 
 // An anonymous, not-user-defined condition that is instead inferred based
 // off of optmizations.
-Node<QueryCondition>::Node(void)
-    : Def<Node<QueryCondition>>(this),
+QueryConditionImpl::QueryConditionImpl(void)
+    : Def<QueryConditionImpl>(this),
       User(this),
       positive_users(this),
       negative_users(this),
@@ -41,8 +41,8 @@ Node<QueryCondition>::Node(void)
 
 // An explicit, user-defined condition. Usually associated with there-exists
 // checks or configuration options.
-Node<QueryCondition>::Node(ParsedExport decl_)
-    : Def<Node<QueryCondition>>(this),
+QueryConditionImpl::QueryConditionImpl(ParsedExport decl_)
+    : Def<QueryConditionImpl>(this),
       User(this),
       declaration(decl_),
       positive_users(this),
@@ -50,8 +50,8 @@ Node<QueryCondition>::Node(ParsedExport decl_)
       setters(this) {}
 
 // Is this a trivial condition?
-bool Node<QueryCondition>::IsTrivial(
-    std::unordered_map<Node<QueryView> *, bool> &conditional_views) {
+bool QueryConditionImpl::IsTrivial(
+    std::unordered_map<QueryViewImpl *, bool> &conditional_views) {
   if (in_trivial_check) {
     assert(false);  // Suggests a condition is dependent on itself.
     return true;
@@ -71,13 +71,13 @@ bool Node<QueryCondition>::IsTrivial(
 }
 
 // Is this a trivial condition?
-bool Node<QueryCondition>::IsTrivial(void) {
-  std::unordered_map<Node<QueryView> *, bool> conditional_views;
+bool QueryConditionImpl::IsTrivial(void) {
+  std::unordered_map<QueryViewImpl *, bool> conditional_views;
   return this->IsTrivial(conditional_views);
 }
 
 // Are the `positive_users` and `negative_users` lists consistent?
-bool Node<QueryCondition>::UsersAreConsistent(void) const {
+bool QueryConditionImpl::UsersAreConsistent(void) const {
   auto consistent = true;
   for (auto view : positive_users) {
     if (view) {
@@ -109,7 +109,7 @@ bool Node<QueryCondition>::UsersAreConsistent(void) const {
 }
 
 // Are the setters of this condition consistent?
-bool Node<QueryCondition>::SettersAreConsistent(void) const {
+bool QueryConditionImpl::SettersAreConsistent(void) const {
   for (VIEW *setter : setters) {
     if (setter->sets_condition.get() != this) {
       return false;
