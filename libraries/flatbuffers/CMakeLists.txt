@@ -53,10 +53,27 @@ if(NOT library_root)
   message(FATAL_ERROR "Failed to locate the flatbuffers library root")
 endif()
 
+set(replacement_file_list
+  # Removed, because there is no matching file under "${CMAKE_CURRENT_SOURCE_DIR}/patches"
+  flatc_main.cpp
+
+  # Added, because it does not exist in the original target
+  disable_logger.cpp
+
+  # Replaced, because we have a matching file under "${CMAKE_CURRENT_SOURCE_DIR}/patches"
+  idl_gen_python.cpp
+  idl_parser.cpp
+)
+
+foreach(replacement_file ${replacement_file_list})
+  set(replacement_file_path "${CMAKE_CURRENT_SOURCE_DIR}/${replacement_file}")
+  if(EXISTS "${replacement_file_path}")
+    list(APPEND patched_file_list "${replacement_file_path}")
+  endif()
+endforeach()
+
 add_library(flatc_internals
-  patches/disable_logger.cpp
-  patches/idl_gen_python.cpp
-  patches/idl_parser.cpp
+  ${patched_file_list}
 )
 
 target_link_libraries(flatc_internals PRIVATE
@@ -119,7 +136,8 @@ foreach(property_name ${property_name_list})
 
   elseif(property_name STREQUAL "SOURCES")
     foreach(source_file_path ${property_value})
-      if(source_file_path MATCHES "flatc_main.c")
+      get_filename_component(source_file_name "${source_file_path}" NAME)
+      if("${source_file_name}" IN_LIST replacement_file_list)
         continue()
       endif()
 
