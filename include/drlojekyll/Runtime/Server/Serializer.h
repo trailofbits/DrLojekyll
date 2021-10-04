@@ -15,6 +15,7 @@
 
 #include <drlojekyll/Runtime/Endian.h>
 #include <drlojekyll/Runtime/Int.h>
+
 #include "Reference.h"
 #include "Util.h"
 

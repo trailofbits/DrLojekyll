@@ -4,6 +4,7 @@ set(Runtime_PUBLIC_H
 
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Endian.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Int.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Reference.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Result.h"
 
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Client/Connection.h"

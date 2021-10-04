@@ -5,6 +5,7 @@
 #include <cassert>
 #include <functional>
 #include <optional>
+#include <sstream>
 #include <unordered_set>
 
 #include "EquivalenceSet.h"
@@ -581,6 +582,52 @@ std::optional<ParsedVariable> QueryColumn::Variable(void) const noexcept {
 // Unique identifier for columns.
 unsigned QueryColumn::Id(void) const noexcept {
   return impl->id;
+}
+
+// Comma separated list of all column ids in forwards column taint set
+std::string QueryColumn::ForwardsTaintIds(void) const {
+  if (!impl->forwards_col_taints || impl->forwards_col_taints->Empty()) {
+    return "";
+  }
+
+  std::stringstream ss;
+  for (auto col : *impl->forwards_col_taints) {
+    ss << col->id << ", ";
+  }
+
+  return ss.str().substr(0, ss.str().length() - 2);
+}
+
+// Comma separated list of all column ids in backwards column taint set
+std::string QueryColumn::BackwardsTaintIds(void) const {
+  if (!impl->backwards_col_taints || impl->backwards_col_taints->Empty()) {
+    return "";
+  }
+
+  std::stringstream ss;
+  for (auto col : *impl->backwards_col_taints) {
+    ss << col->id << ", ";
+  }
+
+  return ss.str().substr(0, ss.str().length() - 2);
+}
+
+// Forwards column taint set
+UsedNodeRange<QueryColumn> QueryColumn::ForwardsColumnTaints(void) const {
+  if (!impl->forwards_col_taints || impl->forwards_col_taints->Empty()) {
+    return {};
+  }
+  return {UsedNodeIterator<QueryColumn>(impl->forwards_col_taints->begin()),
+          UsedNodeIterator<QueryColumn>(impl->forwards_col_taints->end())};
+}
+
+// Backwards column taint set
+UsedNodeRange<QueryColumn> QueryColumn::BackwardsColumnTaints(void) const {
+  if (!impl->backwards_col_taints || impl->backwards_col_taints->Empty()) {
+    return {};
+  }
+  return {UsedNodeIterator<QueryColumn>(impl->backwards_col_taints->begin()),
+          UsedNodeIterator<QueryColumn>(impl->backwards_col_taints->end())};
 }
 
 // Index of this column in its defining view. Returns nothing if this column

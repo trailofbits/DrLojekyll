@@ -76,6 +76,14 @@ class QueryColumn : public Node<QueryColumn, QueryColumnImpl> {
   // Unique identifier for columns.
   unsigned Id(void) const noexcept;
 
+  // Comma separated list of all column ids in this columns taint set
+  std::string ForwardsTaintIds(void) const;
+  std::string BackwardsTaintIds(void) const;
+
+  // Taint Sets
+  UsedNodeRange<QueryColumn> ForwardsColumnTaints(void) const;
+  UsedNodeRange<QueryColumn> BackwardsColumnTaints(void) const;
+
   // Index of this column in its defining view. Returns nothing if this column
   // is a constant.
   std::optional<unsigned> Index(void) const noexcept;
