@@ -48,6 +48,9 @@ class ParsedLiteral : public Node<ParsedLiteral, ParsedLiteralImpl> {
   // Is this a foreign constant?
   bool IsConstant(void) const noexcept;
 
+  // Is this an enumeration constant?
+  bool IsEnumerator(void) const noexcept;
+
   // Is this a numeric immediate literal? This could encompass both integral
   // and floating point values, including integers of hexadecimal, octal, and
   // binary representations.
@@ -69,6 +72,7 @@ class ParsedLiteral : public Node<ParsedLiteral, ParsedLiteralImpl> {
  protected:
   friend class ParsedVariable;
   friend class ParsedForeignConstant;
+  friend class ParsedForeignType;
 
   using Node<ParsedLiteral, ParsedLiteralImpl>::Node;
 };
@@ -726,6 +730,7 @@ class ParsedMessage : public Node<ParsedMessage, ParsedMessageImpl> {
 
 class ParsedForeignConstant;
 class ParsedForeignType;
+class ParsedEnumType;
 class ParsedImport;
 class ParsedInline;
 class ParsedModuleIterator;
@@ -774,6 +779,10 @@ class ParsedModule {
   // NOTE(pag): This returns the list of /all/ foreign types, as they are
   //            globally visible.
   DefinedNodeRange<ParsedForeignType> ForeignTypes(void) const;
+
+  // NOTE(pag): This returns the list of /all/ enum types, as they are
+  //            globally visible.
+  DefinedNodeRange<ParsedEnumType> EnumTypes(void) const;
 
   // NOTE(pag): This returns the list of /all/ foreign constants, as they are
   //            globally visible.
@@ -848,6 +857,7 @@ class ParsedForeignConstant : public Node<ParsedForeignConstant, ParsedForeignCo
 
   // Name of this constant.
   Token Name(void) const noexcept;
+  std::string_view NameAsString(void) const noexcept;
 
   ::hyde::Language Language(void) const noexcept;
 
@@ -897,17 +907,23 @@ class ParsedForeignConstant : public Node<ParsedForeignConstant, ParsedForeignCo
 class ParsedForeignTypeImpl;
 class ParsedForeignType : public Node<ParsedForeignType, ParsedForeignTypeImpl> {
  public:
+  static ParsedForeignType Of(ParsedForeignConstant that);
+  static std::optional<ParsedForeignType> Of(ParsedLiteral that);
+
   // A representation of this foreign type as a `TypeLoc`.
   TypeLoc Type(void) const noexcept;
 
-  // A representation of this foreign type as a `TypeKind`.
-  ::hyde::TypeKind TypeKind(void) const noexcept;
-
-  // Type name of this token.
+  // Name of this type.
   Token Name(void) const noexcept;
+
+  // Name of this type.
+  std::string_view NameAsString(void) const noexcept;
 
   // Is this type actually built-in?
   bool IsBuiltIn(void) const noexcept;
+
+  // Is this type actually an enumeration type?
+  bool IsEnum(void) const noexcept;
 
   std::optional<DisplayRange> SpellingRange(Language lang) const noexcept;
 
@@ -932,8 +948,36 @@ class ParsedForeignType : public Node<ParsedForeignType, ParsedForeignTypeImpl> 
 
  protected:
   friend class ParsedModule;
+  friend class ParsedEnumType;
 
   using Node<ParsedForeignType, ParsedForeignTypeImpl>::Node;
+};
+
+class ParsedEnumTypeImpl;
+class ParsedEnumType : public Node<ParsedEnumType, ParsedEnumTypeImpl> {
+ public:
+  static std::optional<ParsedEnumType> From(ParsedForeignType type);
+
+  // A representation of this enumeration type as a `TypeLoc`.
+  TypeLoc Type(void) const noexcept;
+
+  // A representation of this foreign type's underlying integral type
+  // as a `TypeLoc`.
+  TypeLoc UnderlyingType(void) const noexcept;
+
+  // Name of this type.
+  Token Name(void) const noexcept;
+  std::string_view NameAsString(void) const noexcept;
+
+  DisplayRange SpellingRange(void) const noexcept;
+
+  // List of constants defined on this type for a particular language.
+  UsedNodeRange<ParsedForeignConstant> Enumerators(void) const noexcept;
+
+ protected:
+  friend class ParsedModule;
+
+  using Node<ParsedEnumType, ParsedEnumTypeImpl>::Node;
 };
 
 // Represents a parsed `#prologue` or `#epilogue` statement, that lets us write

@@ -1305,6 +1305,28 @@ struct Serializer<Reader, Writer, Address<DataT>>
   HYDE_RT_DEFINE_UNSAFE_SERIALIZER_PRIV(type); \
   HYDE_RT_SERIALIZER_NAMESPACE_END
 
+#define DRLOJEKYLL_MAKE_ENUM_SERIALIZER(type, cast_type) \
+  HYDE_RT_SERIALIZER_NAMESPACE_BEGIN \
+  template <typename Reader, typename Writer> \
+  struct Serializer<Reader, Writer, type> \
+      : public Serializer<Reader, Writer, cast_type> { \
+    using Parent = Serializer<Reader, Writer, cast_type>; \
+    static constexpr bool kIsFixedSize = Parent::kIsFixedSize; \
+    HYDE_RT_FLATTEN HYDE_RT_INLINE static uint8_t *Write(Writer &writer, \
+                                                         type data) { \
+      return Parent::Write(writer, static_cast<cast_type>(data)); \
+    } \
+    HYDE_RT_FLATTEN HYDE_RT_INLINE static void Read(Reader &reader, \
+                                                    type &out) { \
+      Parent::Read(reader, reinterpret_cast<cast_type &>(out)); \
+    } \
+    static constexpr uint32_t SizeInBytes(void) noexcept { \
+      return Parent::SizeInBytes(); \
+    } \
+  }; \
+  HYDE_RT_DEFINE_UNSAFE_SERIALIZER_PRIV(type); \
+  HYDE_RT_SERIALIZER_NAMESPACE_END
+
 template <typename T>
 static constexpr bool kCanReadWriteUnsafely = false;
 

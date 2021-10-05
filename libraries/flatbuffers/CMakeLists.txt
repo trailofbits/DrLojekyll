@@ -61,9 +61,6 @@ set(removed_file_list
 
 set(replacement_file_list
 
-  # Added, because it does not exist in the original target
-  disable_logger.cpp
-
   # Replaced, because we have a matching file under "${CMAKE_CURRENT_SOURCE_DIR}/patches"
   idl_gen_python.cpp
   idl_parser.cpp
@@ -78,6 +75,9 @@ endforeach()
 
 add_library(flatc_internals
   ${patched_file_list}
+  
+  # Added, because it does not exist in the original target
+  "${CMAKE_CURRENT_SOURCE_DIR}/patches/disable_logger.cpp"
 )
 
 target_link_libraries(flatc_internals PRIVATE

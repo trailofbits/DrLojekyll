@@ -8,7 +8,6 @@ compile_datalog(
   LIBRARY_NAME mini_disassembler
   SERVICE_NAME mini_disassembler_server
   CXX_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}"
-  PY_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}"
   DOT_OUTPUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/database.dot"
   IR_OUTPUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/database.ir"
   FB_OUTPUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/database.fbs"

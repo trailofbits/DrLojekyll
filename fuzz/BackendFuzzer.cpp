@@ -313,6 +313,10 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module,
     os << type << "\n";
   }
 
+  for (auto type : Shuffled(module.EnumTypes(), gen)) {
+    os << type << "\n";
+  }
+
   for (auto cv : Shuffled(module.ForeignConstants(), gen)) {
     os << cv << "\n";
   }

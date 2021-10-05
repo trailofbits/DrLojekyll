@@ -264,9 +264,22 @@ OutputStream &operator<<(OutputStream &os, ParsedInline code_) {
   return os;
 }
 
+OutputStream &operator<<(OutputStream &os, ParsedEnumType type) {
+  os << "#enum " << type.Name();
+  if (auto ut = type.UnderlyingType(); ut.IsValid()) {
+    os << ' ' << ut;
+  }
+  os << '.';
+  return os;
+}
+
 OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
 
   if (type.IsBuiltIn()) {
+    return os;
+
+  } else if (auto maybe_enum = ParsedEnumType::From(type)) {
+    os << (*maybe_enum);
     return os;
   }
 
@@ -307,7 +320,11 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
 }
 
 OutputStream &operator<<(OutputStream &os, ParsedForeignConstant constant) {
-  os << "#constant " << constant.Type() << ' ' << constant.Name() << " ```";
+  auto is_enum = ParsedForeignType::Of(constant).IsEnum();
+  const char *ticks = is_enum ? "" : "```";
+  os << "#constant " << constant.Type() << ' ' << constant.Name() << ' '
+     << ticks;
+
   switch (constant.Language()) {
     case Language::kUnknown: break;
     case Language::kCxx: os << "c++ "; break;
@@ -315,7 +332,7 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignConstant constant) {
     case Language::kFlatBuffer: os << "flat "; break;
   }
 
-  os << constant.Constructor() << "```";
+  os << constant.Constructor() << ticks;
   if (constant.IsUnique()) {
     os << " @unique";
   }
@@ -348,6 +365,11 @@ OutputStream &operator<<(OutputStream &os, ParsedModule module) {
     if (!type.IsBuiltIn()) {
       os << type << "\n";
     }
+  }
+
+  // First, declare the foreign types. They may be used by the functors.
+  for (ParsedEnumType type : module.EnumTypes()) {
+    os << type << "\n";
   }
 
   for (ParsedForeignConstant cv : module.ForeignConstants()) {

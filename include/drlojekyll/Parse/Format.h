@@ -28,6 +28,7 @@ OutputStream &operator<<(OutputStream &os, ParsedClauseHead clause);
 OutputStream &operator<<(OutputStream &os, ParsedClauseBody clause);
 OutputStream &operator<<(OutputStream &os, ParsedClause clause);
 OutputStream &operator<<(OutputStream &os, ParsedInline code);
+OutputStream &operator<<(OutputStream &os, ParsedEnumType type);
 OutputStream &operator<<(OutputStream &os, ParsedForeignType type);
 OutputStream &operator<<(OutputStream &os, ParsedForeignConstant constant);
 OutputStream &operator<<(OutputStream &os, ParsedDatabaseName name);

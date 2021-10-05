@@ -672,6 +672,9 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             ident.Store<lex::Id>(string_pool.LiteralFalseId());
             ident.Store<TypeKind>(TypeKind::kBoolean);
             return true;
+
+          } else if (impl->data == "#enum") {
+            tentative_lexeme = Lexeme::kHashEnum;
           }
           break;
         case 6:

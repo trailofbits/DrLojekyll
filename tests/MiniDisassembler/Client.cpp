@@ -53,9 +53,6 @@ TEST(MiniDisassembler, ServerConnectionWorks) {
 
   auto updates = db.Subscribe("MiniDisassemblerTest");
 
-  constexpr uint8_t FALL_THROUGH = 0;
-  constexpr uint8_t CALL = 1;
-
   database::DatalogMessageBuilder builder;
 
   // Start with a few instructions, with no control-flow between them.
@@ -85,11 +82,11 @@ TEST(MiniDisassembler, ServerConnectionWorks) {
 
   // Now we add the fall-through edges, and 10 is the only instruction with
   // no predecessor, so its the function head.
-  builder.raw_transfer_3(10, 11, FALL_THROUGH);
-  builder.raw_transfer_3(11, 12, FALL_THROUGH);
-  builder.raw_transfer_3(12, 13, FALL_THROUGH);
-  builder.raw_transfer_3(13, 14, FALL_THROUGH);
-  builder.raw_transfer_3(14, 15, FALL_THROUGH);
+  builder.raw_transfer_3(10, 11, database::EdgeType::FALL_THROUGH);
+  builder.raw_transfer_3(11, 12, database::EdgeType::FALL_THROUGH);
+  builder.raw_transfer_3(12, 13, database::EdgeType::FALL_THROUGH);
+  builder.raw_transfer_3(13, 14, database::EdgeType::FALL_THROUGH);
+  builder.raw_transfer_3(14, 15, database::EdgeType::FALL_THROUGH);
   db.Publish(builder);
 
   dump(db, updates);
@@ -133,7 +130,7 @@ TEST(MiniDisassembler, ServerConnectionWorks) {
   // Now add a fall-through between 9 and 10. 10 now has a successor, so it's
   // not a function head anymore, so all of the function instructions transfer
   // over to function 9.
-  builder.raw_transfer_3(9, 10, FALL_THROUGH);
+  builder.raw_transfer_3(9, 10, database::EdgeType::FALL_THROUGH);
   db.Publish(builder);
 
   dump(db, updates);
@@ -155,7 +152,7 @@ TEST(MiniDisassembler, ServerConnectionWorks) {
   // Now add a function call between 10 and 14. That makes 14 look like
   // a function head, and so now that 14 is a function head, it's no longer
   // part of function 9.
-  builder.raw_transfer_3(10, 14, CALL);
+  builder.raw_transfer_3(10, 14, database::EdgeType::CALL);
   db.Publish(builder);
 
   dump(db, updates);

@@ -1174,7 +1174,7 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
       args.push_back(param);
     } else {
       ++num_ret_types;
-      return_tuple << sep_ret << TypeName(module, param.Type().Kind());
+      return_tuple << sep_ret << TypeName(module, param.Type());
       sep_ret = ", ";
     }
   }
@@ -1569,16 +1569,25 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 
 // Emits C++ code for the given program to `os`.
 void GenerateDatabaseCode(const Program &program, OutputStream &os) {
-  os << "/* Auto-generated file */\n\n"
-     << "#pragma once\n\n"
-     << "#include <drlojekyll/Runtime/Server/Runtime.h>\n\n"
-     << "#ifndef __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n"
-     << "#  define __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n";
   const auto module = program.ParsedModule();
-
+  std::string file_name = "datalog";
   std::string ns_name;
   if (const auto db_name = module.DatabaseName()) {
     ns_name = db_name->NameAsString();
+    file_name = ns_name;
+  }
+
+  os << "/* Auto-generated file */\n\n"
+     << "#pragma once\n\n"
+     << "#include <drlojekyll/Runtime/Server/Runtime.h>\n\n"
+     << "#include \"" << file_name << "_generated.h\"\n"
+     << "#ifndef __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n"
+     << "#  define __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n";
+
+  for (ParsedEnumType type : module.EnumTypes()) {
+    os << "DRLOJEKYLL_MAKE_ENUM_SERIALIZER("
+       << TypeName(module, type.Type()) << ", "
+       << TypeName(module, type.UnderlyingType()) << ")\n";
   }
 
   const auto inlines = Inlines(module, Language::kCxx);

@@ -90,6 +90,8 @@ void ParserImpl::ParseForeignTypeDecl(ParsedModuleImpl *module) {
             alloc_type = module->root_module->foreign_types.Create();
             found_type = alloc_type;
             found_type->name = tok.AsForeignType();
+            context->display_manager.TryReadData(
+                tok_range, &(found_type->name_view));
 
             module->root_module->id_to_foreign_type.emplace(id, found_type);
 
@@ -384,6 +386,7 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
   DisplayRange tok_range;
   std::string_view code;
 
+  Token initializer;
   ParsedForeignTypeImpl *type = nullptr;
   ParsedForeignConstantImpl * const alloc_const =
       module->root_module->foreign_constants.Create();
@@ -441,6 +444,8 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
               // Recover.
               found_type = module->root_module->builtin_types.Create();
               found_type->name = tok;
+              context->display_manager.TryReadData(
+                  tok_range, &(found_type->name_view));
 
               module->root_module->id_to_foreign_type.emplace(
                   tok.IdentifierId(), found_type);
@@ -465,7 +470,10 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
             if (!found_type) {
               found_type = module->root_module->builtin_types.Create();
               found_type->name = tok;
+              found_type->builtin_type = tok;
               found_type->is_built_in = true;
+              context->display_manager.TryReadData(
+                  tok_range, &(found_type->name_view));
             }
 
             type = found_type;
@@ -492,6 +500,8 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
             Lexeme::kIdentifierConstant == lexeme) {
 
           alloc_const->name = tok.AsForeignConstant(alloc_const->type.Kind());
+          (void) context->display_manager.TryReadData(
+              tok_range, &(alloc_const->name_view));
           state = 2;
           continue;
 
@@ -506,6 +516,8 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
       // Value of the foreign constant.
       case 2:
         if (Lexeme::kLiteralCxxCode == lexeme) {
+          initializer = tok;
+
           alloc_const->lang = Language::kCxx;
           alloc_const->can_overide = false;
           const auto code_id = tok.CodeId();
@@ -520,6 +532,8 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
           }
 
         } else if (Lexeme::kLiteralFlatBufferCode == lexeme) {
+          initializer = tok;
+
           alloc_const->lang = Language::kFlatBuffer;
           alloc_const->can_overide = false;
           const auto code_id = tok.CodeId();
@@ -534,6 +548,8 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
           }
 
         } else if (Lexeme::kLiteralPythonCode == lexeme) {
+          initializer = tok;
+
           alloc_const->lang = Language::kPython;
           alloc_const->can_overide = false;
           const auto code_id = tok.CodeId();
@@ -548,6 +564,8 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
           }
 
         } else if (Lexeme::kLiteralCode == lexeme) {
+          initializer = tok;
+
           alloc_const->lang = Language::kUnknown;
           alloc_const->can_overide = true;
 
@@ -563,6 +581,8 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
           }
 
         } else if (Lexeme::kLiteralString == lexeme) {
+          initializer = tok;
+
           alloc_const->lang = Language::kUnknown;
           alloc_const->can_overide = true;
 
@@ -597,6 +617,8 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
 
         // Named number; basically like an enumerator.
         } else if (Lexeme::kLiteralNumber == lexeme) {
+          initializer = tok;
+
           alloc_const->lang = Language::kUnknown;
           alloc_const->can_overide = true;
 
@@ -619,6 +641,8 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
         // Named Boolean; a bit weird, but maybe people want `yes` and `no`.
         } else if (Lexeme::kLiteralTrue == lexeme ||
                    Lexeme::kLiteralFalse == lexeme) {
+          initializer = tok;
+
           alloc_const->lang = Language::kUnknown;
           alloc_const->can_overide = true;
 
@@ -712,7 +736,17 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
     if (code.empty()) {
       context->error_log.Append(scope_range, sub_tokens.back().NextPosition())
           << "Named constants on built-in types must be have an initializer";
-      return;
+    }
+
+  } else if (type->is_enum) {
+    if (initializer.IsInvalid()) {
+      context->error_log.Append(scope_range, sub_tokens.back().NextPosition())
+          << "Named constants on enumeration types must be have an initializer";
+
+    } else if (initializer.Lexeme() != Lexeme::kLiteralNumber) {
+      context->error_log.Append(scope_range, sub_tokens.back().NextPosition())
+          << "Named constants on enumeration types be initialized with "
+          << "numeric values";
     }
   }
 

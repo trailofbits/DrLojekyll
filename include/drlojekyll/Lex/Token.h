@@ -132,7 +132,7 @@ enum class Lexeme : uint8_t {
 
   // Used to declare a foreign constant of a particular foreign type.
   //
-  //    #constant <foreign type> ```<lang> value```
+  //    #constant <foreign type> <constant name> ```<lang> value```
   //
   // Foreign constants can be used to translate things like `sizeof` expressions
   // from C++, enumeration constants, global variables, etc. Realistically, one
@@ -170,6 +170,24 @@ enum class Lexeme : uint8_t {
   // disambiguate different auto-generated code, e.g. via `namespace foo`
   // in C++.
   kHashDatabase,
+
+  // Used to name an enumeration type. For example:
+  //
+  //    #enum Foo.
+  //
+  // This declares that there will be an `Foo` enum. A specific underlying
+  // integral type can also be specified, e.g.:
+  //
+  //    #enum Foo u8.
+  //
+  // To add enumerators to the enum, one uses `#constant`:
+  //
+  //    #constant Foo BAR 10.
+  //    #constant Foo BAZ 20.
+  //
+  // If no value is provided for `BAR`, then it takes on a default-assigned
+  // value.
+  kHashEnum,
 
   // Boolean type.
   kTypeBoolean,
