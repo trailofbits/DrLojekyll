@@ -128,7 +128,7 @@ function(compile_datalog)
     endif()
     
     if(NOT TARGET flatbuffers)
-      find_package(flatbuffers CONFIG REQUIRED)
+      message(FATAL_ERROR "Missing flatbuffers target")
     endif()
   endif()
   
