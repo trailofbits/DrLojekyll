@@ -121,6 +121,17 @@ function(compile_datalog)
     DEPENDS ${DR_DRLOJEKYLL_CC}
             ${DR_SOURCES})
   
+  if(DR_LIBRARY_NAME OR DR_SERVICE_NAME)
+    
+    if(NOT TARGET gRPC::grpc++)
+      find_package(gRPC CONFIG REQUIRED)
+    endif()
+    
+    if(NOT TARGET flatbuffers)
+      find_package(flatbuffers CONFIG REQUIRED)
+    endif()
+  endif()
+  
   # Generate a library that we can use to link against the generated C++ code,
   # e.g. to make custom instances of the database.
   if(DR_LIBRARY_NAME)
@@ -148,18 +159,6 @@ function(compile_datalog)
   # Generate an executable that we can set up as a standalone service that will
   # run the database as a server.
   if(DR_SERVICE_NAME)
-    if(NOT TARGET gRPC::grpc++)
-      find_package(gRPC CONFIG REQUIRED)
-    endif()
-  
-    if(NOT TARGET flatbuffers)
-      # Since we are using a custom modded flatbuffers, we should
-      # probably change the name and take care of the install(EXPORT)
-      # for it
-      # find_package(flatbuffers CONFIG REQUIRED)
-
-      message(FATAL_ERROR "Failed to locate the flatbuffers fork")
-    endif()
     
     add_executable(${DR_SERVICE_NAME}
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.server.cpp"
