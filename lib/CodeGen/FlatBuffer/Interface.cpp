@@ -39,10 +39,14 @@ static void DeclareType(ParsedModule module, TypeLoc type,
     case TypeKind::kBytes: os << "[ubyte]"; break;
     case TypeKind::kForeignType:
       if (auto ft = module.ForeignType(type); ft) {
-        if (auto code = ft->CodeToInline(Language::kFlatBuffer); code) {
-          os << (*code);
-        } else {
+        if (ft->IsEnum()) {
           os << ft->Name();
+        } else {
+          if (auto code = ft->CodeToInline(Language::kFlatBuffer); code) {
+            os << (*code);
+          } else {
+            os << ft->Name();
+          }
         }
       } else {
         assert(false);
@@ -128,6 +132,28 @@ static void DeclareMessages(ParsedModule module,
   bool any_differential_outputs = false;
   bool any_inputs = false;
   bool any_differential_inputs = false;
+
+  for (ParsedEnumType type : module.EnumTypes()) {
+    os << os.Indent() << "enum " << type.Name();
+    if (auto ut = type.UnderlyingType(); ut.IsValid()) {
+      os << " : ";
+      DeclareType(module, ut, os);
+    }
+    os << " {";
+    os.PushIndent();
+
+    auto sep = "\n";
+    for (ParsedForeignConstant enumerator : type.Enumerators()) {
+      os << sep << os.Indent() << enumerator.Name();
+      if (auto val = enumerator.Constructor(); !val.empty()) {
+        os << " = " << val;
+      }
+      sep = ",\n";
+    }
+    os << "\n";
+    os.PopIndent();
+    os << "}\n\n";
+  }
 
   // Declare each message as a structure.
   for (ParsedMessage message : messages) {

@@ -56,9 +56,6 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   DatabaseStorage storage;
   Database db(storage, log, functors);
 
-  constexpr uint8_t FALL_THROUGH = 0;
-  constexpr uint8_t CALL = 1;
-
   // Start with a few instructions, with no control-flow between them.
   Vector<uint64_t> instructions(storage, 0);
   instructions.Add(10);
@@ -80,13 +77,13 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
 
   // Now we add the fall-through edges, and 10 is the only instruction with
   // no predecessor, so its the function head.
-  Vector<uint64_t, uint64_t, uint8_t> transfers(storage, 0);
+  Vector<uint64_t, uint64_t, database::EdgeType> transfers(storage, 0);
 
-  transfers.Add(10, 11, FALL_THROUGH);
-  transfers.Add(11, 12, FALL_THROUGH);
-  transfers.Add(12, 13, FALL_THROUGH);
-  transfers.Add(13, 14, FALL_THROUGH);
-  transfers.Add(14, 15, FALL_THROUGH);
+  transfers.Add(10, 11, database::EdgeType::FALL_THROUGH);
+  transfers.Add(11, 12, database::EdgeType::FALL_THROUGH);
+  transfers.Add(12, 13, database::EdgeType::FALL_THROUGH);
+  transfers.Add(13, 14, database::EdgeType::FALL_THROUGH);
+  transfers.Add(14, 15, database::EdgeType::FALL_THROUGH);
   db.raw_transfer_3(std::move(transfers));
 
   dump(db);
@@ -117,8 +114,8 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   // Now add a fall-through between 9 and 10. 10 now has a successor, so it's
   // not a function head anymore, so all of the function instructions transfer
   // over to function 9.
-  Vector<uint64_t, uint64_t, uint8_t> transfers2(storage, 0);
-  transfers2.Add(9, 10, FALL_THROUGH);
+  Vector<uint64_t, uint64_t, database::EdgeType> transfers2(storage, 0);
+  transfers2.Add(9, 10, database::EdgeType::FALL_THROUGH);
   db.raw_transfer_3(std::move(transfers2));
 
   dump(db);
@@ -133,8 +130,8 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   // Now add a function call between 10 and 14. That makes 14 look like
   // a function head, and so now that 14 is a function head, it's no longer
   // part of function 9.
-  Vector<uint64_t, uint64_t, uint8_t> transfers3(storage, 0);
-  transfers3.Add(10, 14, CALL);
+  Vector<uint64_t, uint64_t, database::EdgeType> transfers3(storage, 0);
+  transfers3.Add(10, 14, database::EdgeType::CALL);
   db.raw_transfer_3(std::move(transfers3));
 
   dump(db);

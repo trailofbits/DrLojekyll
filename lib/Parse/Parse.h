@@ -434,6 +434,7 @@ class ParsedForeignConstantImpl : public Def<ParsedForeignConstantImpl> {
   DisplayRange range;
   std::string code;
   Token name;
+  std::string_view name_view;
   Token unique;
   TypeLoc type;
   bool can_overide{true};
@@ -446,12 +447,19 @@ class ParsedForeignTypeImpl : public Def<ParsedForeignTypeImpl>, public User {
 
   // The name of this type.
   Token name;
+  std::string_view name_view;
+
+  // The underlying builtin type of this foreign type, if any.
+  Token builtin_type;
 
   // Display ranges for all declarations.
   std::vector<DisplayRange> decls;
 
   // Is this a built-in type?
   bool is_built_in{false};
+
+  // Is this an enumeration type?
+  bool is_enum{false};
 
   struct Info {
     DisplayRange range;
@@ -463,6 +471,11 @@ class ParsedForeignTypeImpl : public Def<ParsedForeignTypeImpl>, public User {
     bool is_transparent{false};
     std::unique_ptr<UseList<ParsedForeignConstantImpl>> constants;
   } info[kNumLanguages];
+};
+
+class ParsedEnumTypeImpl : public ParsedForeignTypeImpl {
+ public:
+  virtual ~ParsedEnumTypeImpl(void);
 };
 
 class ParsedInlineImpl : public Def<ParsedInlineImpl> {
@@ -533,6 +546,7 @@ class ParsedModuleImpl
   DefList<ParsedImportImpl> imports;
   DefList<ParsedInlineImpl> inlines;
   DefList<ParsedForeignTypeImpl> foreign_types;
+  DefList<ParsedEnumTypeImpl> enum_types;
   DefList<ParsedForeignTypeImpl> builtin_types;
   DefList<ParsedForeignConstantImpl> foreign_constants;
 

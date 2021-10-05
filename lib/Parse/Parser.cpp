@@ -1103,6 +1103,14 @@ void ParserImpl::ParseAllTokens(ParsedModuleImpl *module) {
     next_sub_tok_index = 0;
 
     switch (tok.Lexeme()) {
+      case Lexeme::kHashEnum:
+        ReadStatement();
+        ParseEnum(module);
+        if (first_non_import.IsInvalid()) {
+          first_non_import = SubTokenRange();
+        }
+        break;
+
       case Lexeme::kHashFunctorDecl:
         ReadStatement();
         ParseFunctor(module);

@@ -102,6 +102,12 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     ns_name = db_name->NameAsString();
   }
 
+  for (ParsedEnumType type : module.EnumTypes()) {
+    os << "DRLOJEKYLL_MAKE_ENUM_SERIALIZER("
+       << TypeName(module, type.Type()) << ", "
+       << TypeName(module, type.UnderlyingType()) << ")\n";
+  }
+
   // Output prologue code.
   auto inlines = Inlines(module, Language::kCxx);
   for (auto code : inlines) {
@@ -271,7 +277,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
 
     ParsedDeclaration decl(message);
     for (auto param : decl.Parameters()) {
-      os << sep << TypeName(module, param.Type().Kind());
+      os << sep << TypeName(module, param.Type());
       sep = ", ";
     }
     os << ">;\n\n"

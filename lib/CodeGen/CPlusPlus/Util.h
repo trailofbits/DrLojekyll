@@ -50,10 +50,10 @@ inline static OutputStream &Vector(OutputStream &os, const DataVector vec) {
 }
 
 // CPlusPlus representation of TypeKind
-const std::string_view TypeName(ParsedForeignType type);
+std::string TypeName(ParsedForeignType type);
 
 // CPlusPlus representation of TypeKind
-std::string_view TypeName(ParsedModule module, TypeLoc kind);
+std::string TypeName(ParsedModule module, TypeLoc kind);
 
 const char *OperatorString(ComparisonOperator op);
 

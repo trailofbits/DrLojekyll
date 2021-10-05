@@ -142,6 +142,8 @@ ParsedForeignTypeImpl::~ParsedForeignTypeImpl(void) {
   }
 }
 
+ParsedEnumTypeImpl::~ParsedEnumTypeImpl(void) {}
+
 ParsedForeignTypeImpl::ParsedForeignTypeImpl(void)
     : Def<ParsedForeignTypeImpl>(this),
       User(this) {
@@ -420,7 +422,13 @@ ParsedLiteral::Spelling(Language lang) const noexcept {
 
 // Is this a foreign constant?
 bool ParsedLiteral::IsConstant(void) const noexcept {
-  return impl->literal.Lexeme() == Lexeme::kIdentifierConstant;
+  return impl->foreign_constant != nullptr;
+}
+
+// Is this an enumeration constant?
+bool ParsedLiteral::IsEnumerator(void) const noexcept {
+  return impl->foreign_constant &&
+         impl->foreign_type->is_enum;
 }
 
 bool ParsedLiteral::IsNumber(void) const noexcept {
@@ -1196,6 +1204,7 @@ DEFINED_RANGE(ParsedModule, Imports, ParsedImport, imports)
 DEFINED_RANGE(ParsedModule, Inlines, ParsedInline, inlines)
 DEFINED_RANGE(ParsedModule, Clauses, ParsedClause, clauses)
 DEFINED_RANGE(ParsedModule, ForeignTypes, ParsedForeignType, root_module->foreign_types)
+DEFINED_RANGE(ParsedModule, EnumTypes, ParsedEnumType, root_module->enum_types)
 DEFINED_RANGE(ParsedModule, ForeignConstants, ParsedForeignConstant, root_module->foreign_constants)
 
 // Try to return the foreign type associated with a particular type location
@@ -1246,24 +1255,41 @@ std::filesystem::path ParsedImport::ImportedPath(void) const noexcept {
   return impl->resolved_path;
 }
 
+ParsedForeignType ParsedForeignType::Of(ParsedForeignConstant that) {
+  return ParsedForeignType(that.impl->parent);
+}
+
+std::optional<ParsedForeignType> ParsedForeignType::Of(ParsedLiteral that) {
+  if (that.impl->foreign_type) {
+    return ParsedForeignType(that.impl->foreign_type);
+  } else {
+    return std::nullopt;
+  }
+}
+
 // A representation of this foreign type as a `TypeLoc`.
 TypeLoc ParsedForeignType::Type(void) const noexcept {
   return TypeLoc(impl->name);
 }
 
-// A representation of this foreign type as a `TypeKind`.
-::hyde::TypeKind ParsedForeignType::TypeKind(void) const noexcept {
-  return impl->name.TypeKind();
-}
-
-// Type name of this token.
+// Name of this type.
 Token ParsedForeignType::Name(void) const noexcept {
   return impl->name;
+}
+
+// Name of this type.
+std::string_view ParsedForeignType::NameAsString(void) const noexcept {
+  return impl->name_view;
 }
 
 // Is this type actually built-in?
 bool ParsedForeignType::IsBuiltIn(void) const noexcept {
   return impl->is_built_in;
+}
+
+// Is this type actually an enumeration type?
+bool ParsedForeignType::IsEnum(void) const noexcept {
+  return impl->is_enum;
 }
 
 std::optional<DisplayRange>
@@ -1299,8 +1325,12 @@ bool ParsedForeignType::IsSpecialized(Language lang_) const noexcept {
 // identity. This is the case for trivial types, e.g. integers.
 bool ParsedForeignType::IsReferentiallyTransparent(
     Language lang_) const noexcept {
-  const auto lang = static_cast<unsigned>(lang_);
-  return impl->is_built_in || impl->info[lang].is_transparent;
+  if (impl->is_enum) {
+    return true;
+  } else {
+    const auto lang = static_cast<unsigned>(lang_);
+    return impl->is_built_in || impl->info[lang].is_transparent;
+  }
 }
 
 // Return the prefix and suffix for construction for this language.
@@ -1325,6 +1355,47 @@ ParsedForeignType::Constants(Language lang_) const noexcept {
   return {info.constants->begin(), info.constants->end()};
 }
 
+std::optional<ParsedEnumType> ParsedEnumType::From(ParsedForeignType type) {
+  if (auto new_impl = dynamic_cast<ParsedEnumTypeImpl *>(type.impl)) {
+    return ParsedEnumType(new_impl);
+  } else {
+    return std::nullopt;
+  }
+}
+
+// A representation of this enumeration type as a `TypeLoc`.
+TypeLoc ParsedEnumType::Type(void) const noexcept {
+  return TypeLoc(impl->name);
+}
+
+// A representation of this enumeration type as a `TypeLoc`.
+TypeLoc ParsedEnumType::UnderlyingType(void) const noexcept {
+  return TypeLoc(impl->builtin_type);
+}
+
+// Name of this type.
+Token ParsedEnumType::Name(void) const noexcept {
+  return impl->name;
+}
+
+// Name of this type.
+std::string_view ParsedEnumType::NameAsString(void) const noexcept {
+  return impl->name_view;
+}
+
+// Name of this type.
+DisplayRange ParsedEnumType::SpellingRange(void) const noexcept {
+  return impl->decls.front();
+}
+
+// List of constants defined on this type for a particular language.
+UsedNodeRange<ParsedForeignConstant>
+ParsedEnumType::Enumerators(void) const noexcept {
+  const auto lang = static_cast<unsigned>(Language::kUnknown);
+  const auto &info = impl->info[lang];
+  return {info.constants->begin(), info.constants->end()};
+}
+
 ParsedForeignConstant ParsedForeignConstant::From(const ParsedLiteral &lit) {
   assert(lit.impl->foreign_constant != nullptr);
   return ParsedForeignConstant(lit.impl->foreign_constant);
@@ -1337,6 +1408,10 @@ TypeLoc ParsedForeignConstant::Type(void) const noexcept {
 // Name of this constant.
 Token ParsedForeignConstant::Name(void) const noexcept {
   return impl->name;
+}
+
+std::string_view ParsedForeignConstant::NameAsString(void) const noexcept {
+  return impl->name_view;
 }
 
 ::hyde::Language ParsedForeignConstant::Language(void) const noexcept {

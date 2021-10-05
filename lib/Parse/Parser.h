@@ -133,6 +133,9 @@ class ParserImpl {
   // Try to parse all of the tokens.
   void ParseAllTokens(ParsedModuleImpl *module);
 
+  // Parse an enumeration declaration type.
+  void ParseEnum(ParsedModuleImpl *module);
+
   // Try to parse `sub_range` as a functor, adding it to `module` if successful.
   void ParseFunctor(ParsedModuleImpl *module);
 

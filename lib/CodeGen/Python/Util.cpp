@@ -48,7 +48,10 @@ OutputStream &Procedure(OutputStream &os, ProgramProcedure proc) {
 
 // Python representation of TypeKind
 const std::string_view TypeName(ParsedForeignType type) {
-  if (auto code = type.CodeToInline(Language::kPython)) {
+  if (type.IsEnum()) {
+    return type.NameAsString();
+
+  } else if (auto code = type.CodeToInline(Language::kPython)) {
     return *code;
   }
   assert(false);

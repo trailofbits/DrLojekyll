@@ -249,6 +249,10 @@ decl: message_decl ;
 decl: query_decl ;
 decl: foreign_decl ;
 decl: constant_decl ;
+decl: database_decl ;
+
+database_decl: "#database" atom "." ;
+database_decl: "#database" named_var "." ;
 
 message_decl: "#message" atom "(" param_list_0 ")" maybe_differential "." ;
 export_decl: "#export" atom "(" param_list_1 ")" finish_decl_or_start_clause ;

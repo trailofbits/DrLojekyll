@@ -49,16 +49,13 @@ OutputStream &Procedure(OutputStream &os, ProgramProcedure proc) {
 }
 
 // CPlusPlus representation of TypeKind
-const std::string_view TypeName(ParsedForeignType type) {
-  if (auto code = type.CodeToInline(Language::kCxx)) {
-    return *code;
-  }
+std::string TypeName(ParsedForeignType type) {
   assert(false);
   return "::hyde::rt::Any";
 }
 
 // CPlusPlus representation of TypeKind
-std::string_view TypeName(ParsedModule module, TypeLoc kind) {
+std::string TypeName(ParsedModule module, TypeLoc kind) {
   switch (kind.UnderlyingKind()) {
     case TypeKind::kBoolean: return "bool";
     case TypeKind::kSigned8: return "int8_t";
@@ -74,7 +71,17 @@ std::string_view TypeName(ParsedModule module, TypeLoc kind) {
     case TypeKind::kBytes: return "::hyde::rt::Bytes";
     case TypeKind::kForeignType:
       if (auto type = module.ForeignType(kind); type) {
-        return TypeName(*type);
+        if (type->IsEnum()) {
+          std::stringstream ss;
+          if (auto ns_name = module.DatabaseName()) {
+            ss << ns_name->NameAsString() << "::";
+          }
+          ss << type->NameAsString();
+          return ss.str();
+
+        } else if (auto code = type->CodeToInline(Language::kCxx)) {
+          return std::string{*code};
+        }
       }
       [[clang::fallthrough]];
     default: assert(false); return "::hyde::rt::Any";
@@ -150,11 +157,20 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
   value << "{" << prefix;
   auto has_val = false;
   if (val) {
-    if (auto lit = val->Literal()) {
-      if (auto spelling_cxx = lit->Spelling(Language::kCxx)) {
-        value << *spelling_cxx;
+    if (std::optional<ParsedLiteral> lit = val->Literal()) {
+      if (lit->IsEnumerator()) {
+        auto type = ParsedForeignType::Of(*lit);
+        auto enumerator = ParsedForeignConstant::From(*lit);
+        value << type->NameAsString() << "::" << enumerator.NameAsString();
         has_val = true;
+
+      } else if (lit->IsConstant()) {
+        if (auto spelling_cxx = lit->Spelling(Language::kCxx)) {
+          value << *spelling_cxx;
+          has_val = true;
+        }
       }
+
     }
   }
 
