@@ -4,7 +4,7 @@ function(compile_datalog)
   set(one_val_args LIBRARY_NAME SERVICE_NAME DATABASE_NAME CXX_OUTPUT_DIR
                    PY_OUTPUT_DIR DOT_OUTPUT_FILE DR_OUTPUT_FILE IR_OUTPUT_FILE
                    DRLOJEKYLL_CC DRLOJEKYLL_RT FB_OUTPUT_FILE WORKING_DIRECTORY)
-  set(multi_val_args SOURCES)
+  set(multi_val_args SOURCES LIBRARIES)
   cmake_parse_arguments(DR "" "${one_val_args}" "${multi_val_args}" ${ARGN})
   
   # Allow the caller to change the path of the Dr. Lojekyll compiler that
@@ -137,7 +137,8 @@ function(compile_datalog)
     target_link_libraries(${DR_LIBRARY_NAME} PUBLIC
       ${DR_DRLOJEKYLL_RT}
       gRPC::grpc++
-      flatbuffers)
+      flatbuffers
+      ${DR_LIBRARIES})
 
     target_include_directories(${DR_LIBRARY_NAME} PUBLIC
       "${DR_CXX_OUTPUT_DIR}")
@@ -170,7 +171,8 @@ function(compile_datalog)
     target_link_libraries(${DR_SERVICE_NAME} PRIVATE
       ${DR_DRLOJEKYLL_RT}
       gRPC::grpc++
-      flatbuffers)
+      flatbuffers
+      ${DR_LIBRARIES})
   endif()
   
 endfunction(compile_datalog)
