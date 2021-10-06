@@ -3,6 +3,7 @@
 #include "Connection.h"
 
 #include <grpcpp/grpcpp.h>
+#include <grpcpp/impl/grpc_library.h>
 #include <grpcpp/impl/codegen/client_unary_call.h>
 
 #include "Serialize.h"
@@ -13,6 +14,8 @@ namespace rt {
 namespace {
 
 static const auto kOneMillisecond = std::chrono::milliseconds(1);
+
+[[gnu::used]] const ::grpc::internal::GrpcLibraryInitializer kInitGRPC;
 
 }  // namespace
 
@@ -25,9 +28,23 @@ void BackendConnection::PumpActiveStreams(void) const {
   std::unique_lock<std::mutex> locker(impl->pending_streams_lock);
 
   bool timed_out = false;
-  for (auto made_progress = true; made_progress && !timed_out; ) {
-    made_progress = false;
-    for (auto stream = impl->pending_streams; stream; stream = stream->next) {
+  auto made_progress = true;
+  auto has_non_empty = false;
+  for (auto stream = impl->pending_streams; stream && !timed_out;
+       stream = stream->next) {
+    if (stream->queued_responses.empty()) {
+      if (stream->Pump(deadline, &timed_out)) {
+        made_progress = true;
+      }
+    } else  {
+      has_non_empty = true;
+    }
+  }
+
+  // If we didn't get anything, pump the them all.
+  if (!made_progress && has_non_empty) {
+    for (auto stream = impl->pending_streams; stream && !timed_out;
+         stream = stream->next) {
       if (stream->Pump(deadline, &timed_out)) {
         made_progress = true;
       }

@@ -9,8 +9,7 @@
 
 #include "Connection.h"
 
-[[gnu::noinline]]
-extern "C" void pumped(void) {}
+#include <iostream>
 
 namespace hyde {
 namespace rt {
@@ -30,6 +29,8 @@ BackendResultStreamImpl::BackendResultStreamImpl(
           true,
           reinterpret_cast<void *>(RequestTag::kStartCall))) {
 
+  std::cerr << "A " << reinterpret_cast<const void *>(this) << " making stream\n";
+
   // Link it into the cache.
   std::unique_lock<std::mutex> locker(conn->pending_streams_lock);
   if (conn->pending_streams) {
@@ -47,13 +48,16 @@ BackendResultStreamImpl::~BackendResultStreamImpl(void) {
   if (!is_finished && !sent_finished && reader) {
     sent_finished = true;
     reader->Finish(&status, kFinishTag);
+    std::cerr << "B " << reinterpret_cast<const void *>(this) << " finishing stream\n";
   }
 
   if (!is_shut_down && !sent_shut_down && reader) {
+    std::cerr << "C " << reinterpret_cast<const void *>(this) << " shutting cq\n";
     completion_queue.Shutdown();
   }
 
   reader.reset();
+  std::cerr << "C " << reinterpret_cast<const void *>(this) << " reset reader\n";
 }
 
 // Unlink this stream from the cache.
@@ -93,11 +97,13 @@ bool BackendResultStreamImpl::Pump(
       reader.reset();
       is_finished = true;
       is_shut_down = true;
+      std::cerr << "D " << reinterpret_cast<const void *>(this) << " shut down\n";
       return false;
 
     // We timed out, that's OK, because we're just trying to pull stuff off
     // of the completion queue while we're being asked to do something else.
     case grpc::CompletionQueue::TIMEOUT:
+      std::cerr << "E " << reinterpret_cast<const void *>(this) << " timeout\n";
       *timed_out = true;
       return false;
 
@@ -106,9 +112,9 @@ bool BackendResultStreamImpl::Pump(
       switch (static_cast<RequestTag>(reinterpret_cast<uintptr_t>(tag))) {
         case RequestTag::kStartCall:
           if (!succeeded) {
-            Unlink();
             sent_finished = true;
             reader->Finish(&status, kFinishTag);
+            std::cerr << "F " << reinterpret_cast<const void *>(this) << " finishing\n";
             return false;
 
           // Schedule us to read `pending_response`.
@@ -126,9 +132,9 @@ bool BackendResultStreamImpl::Pump(
             return true;
 
           } else {
-            Unlink();
             sent_finished = true;
             reader->Finish(&status, kFinishTag);
+            std::cerr << "G " << reinterpret_cast<const void *>(this) << " finishing\n";
             return false;
           }
 
@@ -137,6 +143,8 @@ bool BackendResultStreamImpl::Pump(
           is_finished = true;
           sent_shut_down = true;
           completion_queue.Shutdown();
+          reader.reset();
+          std::cerr << "H " << reinterpret_cast<const void *>(this) << " finished\n";
           return false;
       }
     }
@@ -151,6 +159,7 @@ bool BackendResultStreamImpl::Next(grpc::Slice *out) {
 
   // We've got some queued responses.
   if (!queued_responses.empty()) {
+    std::cerr << "H " << reinterpret_cast<const void *>(this) << " unqueueing\n";
     *out = std::move(queued_responses.front());
     queued_responses.pop_front();
     return true;
@@ -168,10 +177,11 @@ bool BackendResultStreamImpl::Next(grpc::Slice *out) {
     bool succeeded = false;
     if (!completion_queue.Next(&tag, &succeeded)) {
       Unlink();
-
+      completion_queue.Shutdown();
       reader.reset();
       is_finished = true;
       is_shut_down = true;
+      std::cerr << "I " << reinterpret_cast<const void *>(this) << " finished\n";
       return false;
     }
 
@@ -181,6 +191,7 @@ bool BackendResultStreamImpl::Next(grpc::Slice *out) {
         if (!succeeded) {
           sent_finished = true;
           reader->Finish(&status, kFinishTag);
+          std::cerr << "J " << reinterpret_cast<const void *>(this) << " sent finish\n";
           return false;
 
         } else {
@@ -201,14 +212,17 @@ bool BackendResultStreamImpl::Next(grpc::Slice *out) {
         } else {
           sent_finished = true;
           reader->Finish(&status, kFinishTag);
+          std::cerr << "K " << reinterpret_cast<const void *>(this) << " sent finish\n";
           return false;
         }
 
       case RequestTag::kFinish:
         Unlink();
+        completion_queue.Shutdown();
+        reader.reset();
         is_finished = true;
         sent_shut_down = true;
-        completion_queue.Shutdown();
+        std::cerr << "L " << reinterpret_cast<const void *>(this) << " finished\n";
         return false;
     }
   }

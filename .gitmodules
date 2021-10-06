@@ -1,22 +1,13 @@
-[submodule "vendor/flatbuffers/src"]
+[submodule "libraries/flatbuffers/src"]
 	path = libraries/flatbuffers/src
 	url = https://github.com/google/flatbuffers
-[submodule "vendor/googletest/src"]
-	path = vendor/googletest/src
-	url = https://github.com/google/googletest
-[submodule "vendor/grpc/src"]
-	path = vendor/grpc/src
-	url = https://github.com/grpc/grpc
 [submodule "vendor/rapidcheck/src"]
 	path = vendor/rapidcheck/src
 	url = https://github.com/emil-e/rapidcheck
 [submodule "vendor/reproc/src"]
 	path = vendor/reproc/src
 	url = https://github.com/DaanDeMeyer/reproc.git
-
 [submodule "vendor/concurrentqueue/src"]
 	path = vendor/concurrentqueue/src
 	url = https://github.com/cameron314/concurrentqueue.git
-[submodule "vendor/abseil/src"]
-	path = vendor/abseil/src
-	url = https://github.com/abseil/abseil-cpp
+

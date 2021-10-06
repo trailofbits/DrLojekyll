@@ -32,7 +32,7 @@ class BackendConnection {
 
   // Send data to the backend.
   bool Publish(const grpc::internal::RpcMethod &method,
-               const const grpc::Slice &data) const;
+               const grpc::Slice &data) const;
 
   // Invoke an RPC that returns a single value.
   void Call(const grpc::internal::RpcMethod &method,

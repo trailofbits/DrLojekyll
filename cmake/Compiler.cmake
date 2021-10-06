@@ -127,9 +127,13 @@ function(compile_datalog)
       find_package(gRPC CONFIG REQUIRED)
     endif()
     
-    if(NOT TARGET flatbuffers)
-      message(FATAL_ERROR "Missing flatbuffers target")
+    set(gRPC_libraries gRPC::gpr gRPC::upb gRPC::grpc gRPC::grpc++)
+    
+    if(NOT TARGET flatbuffers::flatbuffers)
+      find_package(Flatbuffers CONFIG REQUIRED)
     endif()
+
+    set(fb_libraries flatbuffers::flatbuffers)
   endif()
   
   # Generate a library that we can use to link against the generated C++ code,
@@ -147,8 +151,8 @@ function(compile_datalog)
 
     target_link_libraries(${DR_LIBRARY_NAME} PUBLIC
       ${DR_DRLOJEKYLL_RT}
-      gRPC::grpc++
-      flatbuffers
+      ${gRPC_libraries}
+      ${fb_libraries}
       ${DR_LIBRARIES})
 
     target_include_directories(${DR_LIBRARY_NAME} PUBLIC
@@ -169,8 +173,8 @@ function(compile_datalog)
     
     target_link_libraries(${DR_SERVICE_NAME} PRIVATE
       ${DR_DRLOJEKYLL_RT}
-      gRPC::grpc++
-      flatbuffers
+      ${gRPC_libraries}
+      ${fb_libraries}
       ${DR_LIBRARIES})
   endif()
   

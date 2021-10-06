@@ -1,5 +1,9 @@
 # Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 set(enabled_option_list
   FLATBUFFERS_BUILD_FLATLIB
   FLATBUFFERS_BUILD_CPP17

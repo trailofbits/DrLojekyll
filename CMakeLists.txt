@@ -1,5 +1,11 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
+if(NOT DEFINED VCPKG_ROOT)
+  message(FATAL_ERROR "Must build with VCPKG")
+endif()
+
+include(cmake/vcpkg_helper.cmake)
+
 cmake_minimum_required(VERSION 3.17)
 project(DrLojekyll LANGUAGES C CXX)
 
