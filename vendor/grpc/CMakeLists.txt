@@ -20,7 +20,6 @@ set(disabled_option_list
 )
 
 set(module_library_list
-  gRPC_ABSL_PROVIDER
   gRPC_CARES_PROVIDER
   gRPC_PROTOBUF_PROVIDER
   gRPC_RE2_PROVIDER
@@ -29,6 +28,7 @@ set(module_library_list
 
 set(package_library_list
   gRPC_SSL_PROVIDER
+  gRPC_ABSL_PROVIDER
 )
 
 set(library_target_list

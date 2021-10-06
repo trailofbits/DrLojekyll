@@ -19,6 +19,20 @@ to operating on tuples.
 Dr. Lojekyll can be built on macOS, Linux, or Windows, using CMake and a
 C++17-compliant toolchain.
 
+**Speeding up rebuilds:**
+
+macOS:
+
+```bash
+brew install ccache
+```
+
+Linux:
+
+```bash
+sudo apt install -y ccache
+```
+
 **Cloning the source code:**
 ```bash
 git clone --recursive git@github.com:trailofbits/drlojekyll.git

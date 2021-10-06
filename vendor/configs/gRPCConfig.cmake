@@ -1,6 +1,6 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
-if(NOT TARGET gRPC::grpc++)
+if(NOT TARGET grpc)
   add_subdirectory(
     "${CMAKE_CURRENT_LIST_DIR}/../grpc"
     "${CMAKE_BINARY_DIR}/vendor/grpc"

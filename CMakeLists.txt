@@ -7,6 +7,7 @@ include("cmake/options.cmake")
 include("cmake/add_sanitizer_settings.cmake")
 include("cmake/dr_define_static_library.cmake")
 include("cmake/utils.cmake")
+include("cmake/ccache.cmake")
 
 if(DRLOJEKYLL_ENABLE_SANITIZERS)
   defineSanitizersTarget()
@@ -148,6 +149,10 @@ install(
 # --------------------------------------------
 # targets ------------------------------------
 # --------------------------------------------
+
+# Test: remove me!
+find_package(absl REQUIRED CONFIG)
+
 add_subdirectory(lib)
 add_subdirectory(bin)
 
