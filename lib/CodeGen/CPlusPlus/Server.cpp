@@ -191,7 +191,7 @@ static void DefineQuery(ParsedQuery query, OutputStream &os) {
        << "if (num_generated) {\n";
     os.PushIndent();
     os << os.Indent() << "flatbuffers::grpc::Message<" <<  query.Name() << "_"
-        << decl.Arity() << "> message(request->BorrowSlice(), true);\n"
+        << decl.Arity() << "> message(request->BorrowSlice());\n"
         << "*response = std::move(message);\n"
         << "status = grpc::StatusCode::OK;\n";
     os.PopIndent();

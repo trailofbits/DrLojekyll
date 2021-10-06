@@ -33,7 +33,7 @@ class BackendResultStreamImpl
 
   BackendResultStreamImpl(const std::shared_ptr<BackendConnectionImpl> &conn,
                           const grpc::internal::RpcMethod &method,
-                          const grpc_slice &request);
+                          const grpc::Slice &request);
 
   // If this stream is cached, then this points at the lock of the cache.
   // This is an aliasing shared pointer, whose refcount is the connection
@@ -47,16 +47,16 @@ class BackendResultStreamImpl
   grpc::ClientContext context;
   grpc::CompletionQueue completion_queue;
 
-  grpc_slice pending_response;
+  grpc::Slice pending_response;
 
-  std::unique_ptr<grpc::ClientAsyncReader<grpc_slice>> reader;
+  std::unique_ptr<grpc::ClientAsyncReader<grpc::Slice>> reader;
   bool sent_finished{false};
   bool is_finished{false};
   bool sent_shut_down{false};
   bool is_shut_down{false};
 
   grpc::Status status;
-  std::list<grpc_slice> queued_responses;
+  std::list<grpc::Slice> queued_responses;
 
   // Unlink this stream from the cache.
   void Unlink(void);
@@ -65,7 +65,7 @@ class BackendResultStreamImpl
   bool Pump(std::chrono::system_clock::time_point deadline, bool *timed_out);
 
   // Get the next thing.
-  bool Next(grpc_slice *out_);
+  bool Next(grpc::Slice *out_);
 };
 
 }  // namespace rt

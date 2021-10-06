@@ -5,6 +5,26 @@
 namespace grpc {
 namespace hyde {
 
+
+Status SliceSerializer::Serialize(const Slice &msg,
+                                  grpc_byte_buffer **buffer,
+                                  bool *own_buffer) {
+  auto slice = msg.c_slice();
+  auto ret = Serialize(slice, buffer, own_buffer);
+  grpc_slice_unref(slice);
+  return ret;
+}
+
+Status SliceSerializer::Deserialize(ByteBuffer *buf, Slice *msg) {
+  grpc_slice slice;
+  auto ret = Deserialize(buf, &slice);
+  if (ret.error_code() == StatusCode::OK) {
+    Slice cxx_slice(std::move(slice), Slice::StealRef::STEAL_REF);
+    *msg = std::move(cxx_slice);
+  }
+  return ret;
+}
+
 Status SliceSerializer::Serialize(const grpc_slice &msg,
                                   grpc_byte_buffer **buffer,
                                   bool *own_buffer) {

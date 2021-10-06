@@ -42,29 +42,23 @@ BackendConnection::~BackendConnection(void) {
 
 // Send data to the backend.
 bool BackendConnection::Publish(const grpc::internal::RpcMethod &method,
-                                const grpc_slice &data) const {
+                                const grpc::Slice &data) const {
   grpc::ClientContext context;
-  grpc_slice ret_data = grpc_empty_slice();
+  grpc::Slice ret_data;
   grpc::Status status =
-      ::grpc::internal::BlockingUnaryCall<grpc_slice, grpc_slice>(
+      ::grpc::internal::BlockingUnaryCall<grpc::Slice, grpc::Slice>(
           impl->channel.get(), method, &context, data, &ret_data);
-  grpc_slice_unref(ret_data);
   return status.error_code() == grpc::StatusCode::OK;
 }
 
 // Invoke an RPC that returns a single value.
 void BackendConnection::Call(
     const grpc::internal::RpcMethod &method,
-    const grpc_slice &data, grpc_slice &ret_data) const {
+    const grpc::Slice &data, grpc::Slice &ret_data) const {
   grpc::ClientContext context;
   grpc::Status status =
-      ::grpc::internal::BlockingUnaryCall<grpc_slice, grpc_slice>(
+      ::grpc::internal::BlockingUnaryCall<grpc::Slice, grpc::Slice>(
           impl->channel.get(), method, &context, data, &ret_data);
-
-  if (status.error_code() != grpc::StatusCode::OK) {
-    grpc_slice_unref(ret_data);
-    ret_data = grpc_empty_slice();
-  }
 }
 
 }  // namespace rt

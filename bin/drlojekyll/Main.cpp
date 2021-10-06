@@ -108,7 +108,6 @@ static void GenerateFlatBufferOutput(const Parser &dr_parser,
 
   if (gCxxOutDir) {
     auto out_dir = std::filesystem::path(std::string(gCxxOutDir) + "/").lexically_normal().generic_string();
-    parser.opts.lang = flatbuffers::IDLOptions::kCpp;
     auto ret1 = flatbuffers::GenerateCPP(parser, out_dir.c_str(),
                                          gDatabaseName);
     auto ret2 = flatbuffers::GenerateCppGRPC(parser, out_dir.c_str(),
@@ -133,7 +132,6 @@ static void GenerateFlatBufferOutput(const Parser &dr_parser,
       std::filesystem::create_directories(gDatabaseName);
     }
 
-    parser.opts.lang = flatbuffers::IDLOptions::kPython;
     parser.opts.generate_object_based_api = true;
     auto ret1 = flatbuffers::GeneratePython(parser, out_dir_str.c_str(),
                                             gDatabaseName);

@@ -32,15 +32,16 @@ class BackendConnection {
 
   // Send data to the backend.
   bool Publish(const grpc::internal::RpcMethod &method,
-               const grpc_slice &data) const;
+               const const grpc::Slice &data) const;
 
   // Invoke an RPC that returns a single value.
   void Call(const grpc::internal::RpcMethod &method,
-            const grpc_slice &data, grpc_slice &output_data) const;
+            const grpc::Slice &data,
+            grpc::Slice &output_data) const;
 
   template <typename T>
   inline BackendResult<T> CallResult(const grpc::internal::RpcMethod &method,
-                                     const grpc_slice &data) const {
+                                     const grpc::Slice &data) const {
     BackendResult<T> ret;
     Call(method, data, ret.message);
     return ret;

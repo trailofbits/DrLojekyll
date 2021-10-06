@@ -20,54 +20,31 @@ class BackendResult {
   template <typename>
   friend class BackendResultStreamIterator;
 
-  grpc_slice message;
+  grpc::Slice message;
 
-  inline BackendResult(grpc_slice message_)
-      : message(message_) {
-    grpc_slice_ref(message);
-  }
+  inline BackendResult(grpc::Slice message_)
+      : message(std::move(message_)) {}
 
  public:
-  inline ~BackendResult(void) {
-    grpc_slice_unref(message);
-  }
-
-  BackendResult(void)
-      : message(grpc_empty_slice()) {}
-
-  BackendResult(BackendResult<T> &&that) noexcept
-      : message(that.message) {
-    that.message = grpc_empty_slice();
-  }
-
-  BackendResult(const BackendResult<T> &that)
-      : message(that.message) {
-    grpc_slice_ref(message);
-  }
-
-  inline BackendResult<T> &operator=(BackendResult<T> &&that) noexcept {
-    message = std::move(that.message);
-    that.message = grpc_empty_slice();
-    return *this;
-  }
-
-  inline BackendResult<T> &operator=(const BackendResult<T> &that) {
-    BackendResult<T> copy(that.message);
-    return this->operator=(std::move(copy));
-  }
+  ~BackendResult(void) = default;
+  BackendResult(void) = default;
+  BackendResult(const BackendResult<T> &) = default;
+  BackendResult(BackendResult<T> &&) noexcept = default;
+  BackendResult<T> &operator=(const BackendResult<T> &) = default;
+  BackendResult &operator=(BackendResult<T> &&) noexcept = default;
 
   inline operator const T *(void) const noexcept {
-    return GRPC_SLICE_LENGTH(message) ?
-           flatbuffers::GetRoot<T>(GRPC_SLICE_START_PTR(message)) :
+    return message.size() ?
+           flatbuffers::GetRoot<T>(message.begin()) :
            nullptr;
   }
 
   inline const T *operator->(void) const noexcept {
-    return flatbuffers::GetRoot<T>(GRPC_SLICE_START_PTR(message));
+    return flatbuffers::GetRoot<T>(message.begin());
   }
 
   inline const T &operator*(void) const noexcept {
-    return *flatbuffers::GetRoot<T>(GRPC_SLICE_START_PTR(message));
+    return *flatbuffers::GetRoot<T>(message.begin());
   }
 };
 
