@@ -11,5 +11,3 @@ list(APPEND CMAKE_PREFIX_PATH
 )
 
 set(CMAKE_PREFIX_PATH "${CMAKE_PREFIX_PATH}" PARENT_SCOPE)
-
-add_subdirectory("concurrentqueue")
