@@ -250,10 +250,9 @@ std::shared_ptr<ClientResultStreamImpl> RequestStream(
 }
 
 bool NextOpaque(ClientResultStreamImpl &impl,
-                const std::shared_ptr<uint8_t> &out,
+                std::shared_ptr<uint8_t> &out,
                 size_t align, size_t min_size) {
-  return impl.Next(const_cast<std::shared_ptr<uint8_t> *>(&out),
-                   align, min_size);
+  return impl.Next(&out, align, min_size);
 }
 
 }  // namespace internal
