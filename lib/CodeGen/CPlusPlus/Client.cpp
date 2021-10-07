@@ -352,6 +352,8 @@ void GenerateClientHeader(Program program, ParsedModule module,
   // Declare the message builder, which accumulates messages for publication.
   DefineMessageBuilder(module, messages, os);
 
+  os << "using DatalogClientMessagePtr = std::shared_ptr<DatalogClientMessage>;\n\n";
+
   // Declare the client interface to the database.
   os << "class DatalogClientImpl;\n"
      << "class DatalogClient final : public hyde::rt::ClientConnection {\n";
