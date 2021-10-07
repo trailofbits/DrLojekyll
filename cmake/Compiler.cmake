@@ -149,7 +149,7 @@ function(compile_datalog)
       ${runtime_libs})
 
     target_include_directories(${DR_LIBRARY_NAME} PUBLIC
-      "${DR_CXX_OUTPUT_DIR}")
+      $<BUILD_INTERFACE:${DR_CXX_OUTPUT_DIR}>)
   
   endif()
   
@@ -162,7 +162,8 @@ function(compile_datalog)
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.grpc.fb.h"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.grpc.fb.cc")
     
-    target_include_directories(${DR_SERVICE_NAME} INTERFACE "${DR_CXX_OUTPUT_DIR}")
+    target_include_directories(${DR_SERVICE_NAME} PRIVATE
+      $<BUILD_INTERFACE:${DR_CXX_OUTPUT_DIR}>)
     
     target_link_libraries(${DR_SERVICE_NAME} PRIVATE
       ${runtime_libs})
