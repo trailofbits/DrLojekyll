@@ -39,7 +39,7 @@ static void DefineOutboxes(OutputStream &os) {
      << os.Indent() << "std::string name;\n"
      << os.Indent() << "hyde::rt::Semaphore messages_sem;\n"
      << os.Indent() << "std::mutex messages_lock;\n"
-     << os.Indent() << "std::vector<std::shared_ptr<flatbuffers::grpc::Message<OutputMessage>>> messages;\n\n"
+     << os.Indent() << "std::vector<std::shared_ptr<flatbuffers::grpc::Message<DatalogOutputMessage>>> messages;\n\n"
      << os.Indent() << "inline Outbox(void) {\n";
   os.PushIndent();
   os << os.Indent() << "messages.reserve(4u);\n";
@@ -102,7 +102,7 @@ static void DeclareServiceMethods(const std::vector<ParsedQuery> &queries,
      << os.Indent() << "::grpc::Status Publish(\n";
   os.PushIndent();
   os << os.Indent() << "::grpc::ServerContext *context,\n"
-     << os.Indent() << "const flatbuffers::grpc::Message<InputMessage> *request,\n"
+     << os.Indent() << "const flatbuffers::grpc::Message<DatalogInputMessage> *request,\n"
      << os.Indent() << "flatbuffers::grpc::Message<Empty> *response) final;";
   os.PopIndent();
 
@@ -111,7 +111,7 @@ static void DeclareServiceMethods(const std::vector<ParsedQuery> &queries,
   os.PushIndent();
   os << os.Indent() << "::grpc::ServerContext *context,\n"
      << os.Indent() << "const flatbuffers::grpc::Message<Client> *request,\n"
-     << os.Indent() << "::grpc::ServerWriter<flatbuffers::grpc::Message<OutputMessage>> *writer) final;\n";
+     << os.Indent() << "::grpc::ServerWriter<flatbuffers::grpc::Message<DatalogOutputMessage>> *writer) final;\n";
   os.PopIndent();
 }
 
@@ -240,7 +240,7 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
   os.PushIndent();
   os << os.Indent() << "::grpc::ServerContext *context,\n"
      << os.Indent() << "const flatbuffers::grpc::Message<Client> *request,\n"
-     << os.Indent() << "::grpc::ServerWriter<flatbuffers::grpc::Message<OutputMessage>> *writer) {\n\n";
+     << os.Indent() << "::grpc::ServerWriter<flatbuffers::grpc::Message<DatalogOutputMessage>> *writer) {\n\n";
 
   os << os.Indent() << "const auto client = request->GetRoot();\n"
      << os.Indent() << "if (!client) {\n";
@@ -261,7 +261,7 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
      << os.Indent() << "std::cerr << \"Client '\" << outbox.name << \"' connected\" << std::endl;\n";
   os.PopIndent();
   os << os.Indent() << "}\n\n"
-     << os.Indent() << "alignas(64) std::vector<std::shared_ptr<flatbuffers::grpc::Message<OutputMessage>>> messages;\n"
+     << os.Indent() << "alignas(64) std::vector<std::shared_ptr<flatbuffers::grpc::Message<DatalogOutputMessage>>> messages;\n"
      << os.Indent() << "messages.reserve(4u);\n\n"
      << os.Indent() << "{\n";
   os.PushIndent();
@@ -341,7 +341,7 @@ static void DefinePublishMethod(const std::vector<ParsedMessage> &messages,
   os << "\n\n::grpc::Status DatalogService::Publish(\n";
   os.PushIndent();
   os << os.Indent() << "::grpc::ServerContext *context,\n"
-     << os.Indent() << "const flatbuffers::grpc::Message<InputMessage> *request,\n"
+     << os.Indent() << "const flatbuffers::grpc::Message<DatalogInputMessage> *request,\n"
      << os.Indent() << "flatbuffers::grpc::Message<Empty> *response) {\n\n"
      << os.Indent() << "const auto req_msg = request->GetRoot();\n"
      << os.Indent() << "if (!req_msg) {\n";
@@ -454,7 +454,7 @@ static void DefineDatabaseLogBuild(const std::vector<ParsedMessage> &messages,
     }
   }
 
-  os << os.Indent() << "flatbuffers::grpc::Message<OutputMessage> Build(void) {\n";
+  os << os.Indent() << "flatbuffers::grpc::Message<DatalogOutputMessage> Build(void) {\n";
   os.PushIndent();
 
   auto do_message = [&os] (ParsedMessage message, const char *suffix) {
@@ -526,7 +526,7 @@ static void DefineDatabaseLogBuild(const std::vector<ParsedMessage> &messages,
   if (has_removed) {
     os << os.Indent() << "has_removed = false;\n";
   }
-  os << os.Indent() << "mb.Finish(CreateOutputMessage(mb";
+  os << os.Indent() << "mb.Finish(CreateDatalogOutputMessage(mb";
   if (has_added) {
     os << ", added_offset";
   }
@@ -534,7 +534,7 @@ static void DefineDatabaseLogBuild(const std::vector<ParsedMessage> &messages,
     os << ", removed_offset";
   }
   os << "));\n"
-     << os.Indent() << "return mb.ReleaseMessage<OutputMessage>();\n";
+     << os.Indent() << "return mb.ReleaseMessage<DatalogOutputMessage>();\n";
   os.PopIndent();
   os << os.Indent() << "}";
 }
@@ -708,7 +708,7 @@ static void DefineDatabaseThread(const std::vector<ParsedMessage> &messages,
   os.PopIndent();
 
   os << os.Indent() << "}\n\n"
-     << os.Indent() << "auto output = std::make_shared<flatbuffers::grpc::Message<OutputMessage>>(gDatabaseLog.Build());\n"
+     << os.Indent() << "auto output = std::make_shared<flatbuffers::grpc::Message<DatalogOutputMessage>>(gDatabaseLog.Build());\n"
      << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
      << os.Indent() << "for (auto outbox = gFirstOutbox; outbox;) {\n";
   os.PushIndent();

@@ -6,7 +6,7 @@
 
 template <typename DB>
 void dump(DB &db,
-          ::hyde::rt::ClientResultStream<database::OutputMessage> &updates,
+          ::hyde::rt::ClientResultStream<database::DatalogOutputMessage> &updates,
           bool wait=true) {
   if (wait) {
 
