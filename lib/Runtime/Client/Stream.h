@@ -72,7 +72,11 @@ class ClientResultStreamImpl
   bool Pump(std::chrono::system_clock::time_point deadline, bool *timed_out);
 
   // Get the next thing.
-  bool Next(grpc::Slice *out_);
+  bool Next(std::shared_ptr<uint8_t> *out, size_t align, size_t min_size);
+
+  static void Allocate(std::shared_ptr<uint8_t> *out,
+                       size_t align, size_t min_size,
+                       grpc::Slice slice);
 };
 
 }  // namespace rt

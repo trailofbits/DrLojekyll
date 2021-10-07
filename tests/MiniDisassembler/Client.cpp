@@ -12,7 +12,7 @@ void dump(DB &db,
 
     // Pluck one update off of what the server published.
     std::cerr << "Awaiting convergence\n";
-    for (const auto &res : updates) {
+    for (auto res : updates) {
       std::cerr << "Converged\n\n";
       break;
     }
@@ -21,8 +21,9 @@ void dump(DB &db,
   std::cout << "Dump:\n";
 
   for (auto func_ea = 0; func_ea < 50; func_ea++) {
-    for (const auto &inst : db.function_instructions_bf(func_ea)) {
-      std::cout << "  FuncEA=" << inst.FuncEA() << " InstEA=" << inst.InstEA() << "\n";
+    for (auto inst : db.function_instructions_bf(func_ea)) {
+      std::cout << "  FuncEA=" << inst->FuncEA()
+                << " InstEA=" << inst->InstEA() << "\n";
     }
   }
 
@@ -32,8 +33,8 @@ void dump(DB &db,
 template <typename DB>
 size_t NumFunctionInstructions(DB &db, uint64_t func_ea) {
   std::vector<uint64_t> eas;
-  for (const auto &inst : db.function_instructions_bf(func_ea)) {
-    eas.push_back(inst.InstEA());
+  for (auto inst : db.function_instructions_bf(func_ea)) {
+    eas.push_back(inst->InstEA());
   }
 
   std::sort(eas.begin(), eas.end());

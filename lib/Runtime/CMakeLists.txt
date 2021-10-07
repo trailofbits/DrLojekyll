@@ -11,7 +11,6 @@ set(Runtime_PUBLIC_H
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Result.h"
 
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/ClientConnection.h"
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/ClientResult.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/ClientResultStream.h"
   
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/xxhash.h"

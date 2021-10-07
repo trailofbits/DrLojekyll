@@ -1137,6 +1137,7 @@ void ProgramImpl::Optimize(void) {
       if (dead[i]) {
         continue;
       }
+
       PROC *&i_proc = procs[i];
 
       eq.Clear();

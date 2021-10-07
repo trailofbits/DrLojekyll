@@ -300,7 +300,7 @@ static void DeclareQuery(ParsedModule module, ParsedQuery query,
   os << os.Indent();
 
   if (AllParametersAreBound(decl)) {
-    os << "::hyde::rt::ClientResult<" << decl.Name() << "_" << decl.Arity()
+    os << "std::shared_ptr<" << decl.Name() << "_" << decl.Arity()
        << "> ";
   } else {
 
@@ -342,7 +342,6 @@ void GenerateClientHeader(Program program, ParsedModule module,
      << "#include <flatbuffers/flatbuffers.h>\n"
      << "#include <flatbuffers/grpc.h>\n"
      << "#include <drlojekyll/Runtime/ClientConnection.h>\n"
-     << "#include <drlojekyll/Runtime/ClientResult.h>\n"
      << "#include <drlojekyll/Runtime/ClientResultStream.h>\n"
      << "#include \"" << file_name << "_generated.h\"\n\n";
 

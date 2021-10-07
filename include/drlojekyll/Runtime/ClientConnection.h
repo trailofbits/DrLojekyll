@@ -4,11 +4,10 @@
 
 #include <chrono>
 #include <cstdint>
+#include <flatbuffers/flatbuffers.h>
 #include <grpcpp/grpcpp.h>
 #include <string>
 #include <memory>
-
-#include "ClientResult.h"
 
 namespace hyde {
 namespace rt {
@@ -35,16 +34,16 @@ class ClientConnection {
                const grpc::Slice &data) const;
 
   // Invoke an RPC that returns a single value.
-  void Call(const grpc::internal::RpcMethod &method,
+  std::shared_ptr<uint8_t> Call(const grpc::internal::RpcMethod &method,
             const grpc::Slice &data,
-            grpc::Slice &output_data) const;
+            size_t min_size, size_t align) const;
 
   template <typename T>
-  inline ClientResult<T> CallResult(const grpc::internal::RpcMethod &method,
-                                     const grpc::Slice &data) const {
-    ClientResult<T> ret;
-    Call(method, data, ret.message);
-    return ret;
+  inline std::shared_ptr<T> CallResult(const grpc::internal::RpcMethod &method,
+                                       const grpc::Slice &data) const {
+    auto ret = Call(method, data, sizeof(T), alignof(T));
+    std::shared_ptr<T> new_ret(ret, flatbuffers::GetMutableRoot<T>(ret.get()));
+    return new_ret;
   }
 
  public:

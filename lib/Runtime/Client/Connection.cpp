@@ -69,13 +69,22 @@ bool ClientConnection::Publish(const grpc::internal::RpcMethod &method,
 }
 
 // Invoke an RPC that returns a single value.
-void ClientConnection::Call(
+std::shared_ptr<uint8_t> ClientConnection::Call(
     const grpc::internal::RpcMethod &method,
-    const grpc::Slice &data, grpc::Slice &ret_data) const {
+    const grpc::Slice &data, size_t min_size, size_t align) const {
   grpc::ClientContext context;
+  grpc::Slice slice;
   grpc::Status status =
       ::grpc::internal::BlockingUnaryCall<grpc::Slice, grpc::Slice>(
-          impl->channel.get(), method, &context, data, &ret_data);
+          impl->channel.get(), method, &context, data, &slice);
+
+  auto size = std::max<size_t>(slice.size(), min_size);
+  std::shared_ptr<uint8_t> out(
+      new (std::align_val_t{align}) uint8_t[size],
+      [](uint8_t *p ){ delete [] p; });
+
+  memcpy(out.get(), slice.begin(), slice.size());
+  return out;
 }
 
 }  // namespace rt

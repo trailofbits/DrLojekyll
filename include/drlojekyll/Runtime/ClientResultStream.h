@@ -22,7 +22,9 @@ std::shared_ptr<ClientResultStreamImpl> RequestStream(
     const grpc::Slice &request);
 
 // Try to get the next value from the request.
-bool NextOpaque(ClientResultStreamImpl &impl, const grpc::Slice &);
+bool NextOpaque(ClientResultStreamImpl &impl,
+                const std::shared_ptr<uint8_t> &,
+                size_t align, size_t min_size);
 
 }  // namespace internal
 
@@ -33,7 +35,7 @@ template <typename Response>
 class ClientResultStreamIterator {
  private:
   std::shared_ptr<ClientResultStreamImpl> impl;
-  grpc::Slice message;
+  std::shared_ptr<uint8_t> message;
 
   ClientResultStreamIterator(
       const ClientResultStreamIterator<Response> &) = delete;
@@ -45,27 +47,22 @@ class ClientResultStreamIterator {
   // Implicit construction from an opaque stream.
   ClientResultStreamIterator(
       const std::shared_ptr<ClientResultStreamImpl> &impl_) {
-    if (internal::NextOpaque(*impl_, message)) {
-      assert(flatbuffers::Verifier(
-          message.begin(), message.size()).VerifyBuffer<Response>(nullptr));
+    if (internal::NextOpaque(*impl_, message, alignof(Response),
+                             sizeof(Response))) {
       impl = impl_;
     }
   }
 
-  inline const Response &operator*(void) const noexcept {
-    return *(flatbuffers::GetRoot<Response>(message.begin()));
-  }
-
-  inline const Response *operator->(void) const noexcept {
-    return flatbuffers::GetRoot<Response>(message.begin());
+  inline std::shared_ptr<Response> operator*(void) const noexcept {
+    std::shared_ptr<Response> ret(
+        message, flatbuffers::GetMutableRoot<Response>(message.get()));
+    return ret;
   }
 
   inline ClientResultStreamIterator<Response> &operator++(void) noexcept {
-    if (!internal::NextOpaque(*impl, message)) {
+    if (!internal::NextOpaque(*impl, message, alignof(Response),
+                              sizeof(Response))) {
       impl.reset();
-    } else {
-      assert(flatbuffers::Verifier(
-          message.begin(), message.size()).VerifyBuffer<Response>(nullptr));
     }
     return *this;
   }

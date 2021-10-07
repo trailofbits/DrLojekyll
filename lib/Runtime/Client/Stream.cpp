@@ -3,6 +3,8 @@
 #include "Stream.h"
 
 #include <atomic>
+#include <new>
+
 #include <grpcpp/impl/codegen/async_stream.h>
 #include <grpcpp/impl/codegen/status.h>
 #include <grpcpp/impl/codegen/status_code_enum.h>
@@ -158,13 +160,26 @@ bool ClientResultStreamImpl::Pump(
   return false;
 }
 
+void ClientResultStreamImpl::Allocate(std::shared_ptr<uint8_t> *out,
+                                      size_t align, size_t min_size,
+                                      grpc::Slice slice) {
+  auto size = std::max<size_t>(slice.size(), min_size);
+  std::shared_ptr<uint8_t> new_out(
+      new (std::align_val_t{align}) uint8_t[size],
+      [](uint8_t *p ){ delete [] p; });
+
+  memcpy(new_out.get(), slice.begin(), slice.size());
+  out->swap(new_out);
+}
+
 // Get the next thing.
-bool ClientResultStreamImpl::Next(grpc::Slice *out) {
+bool ClientResultStreamImpl::Next(std::shared_ptr<uint8_t> *out,
+                                  size_t align, size_t min_size) {
 
   // We've got some queued responses.
   if (!queued_responses.empty()) {
     // std::cerr << "H " << reinterpret_cast<const void *>(this) << " unqueueing\n";
-    *out = std::move(queued_responses.front());
+    Allocate(out, align, min_size, std::move(queued_responses.front()));
     queued_responses.pop_front();
     return true;
   }
@@ -201,9 +216,7 @@ bool ClientResultStreamImpl::Next(grpc::Slice *out) {
 
       case RequestTag::kRead:
         if (succeeded) {
-
-          // Take the refcount from `pending_response`.
-          *out = std::move(pending_response);
+          Allocate(out, align, min_size, std::move(pending_response));
 
           // Schedule the next one to be read.
           reader->Read(&pending_response, kReadTag);
@@ -236,8 +249,11 @@ std::shared_ptr<ClientResultStreamImpl> RequestStream(
   return std::make_shared<ClientResultStreamImpl>(conn, method, request);
 }
 
-bool NextOpaque(ClientResultStreamImpl &impl, const grpc::Slice &out) {
-  return impl.Next(const_cast<grpc::Slice *>(&out));
+bool NextOpaque(ClientResultStreamImpl &impl,
+                const std::shared_ptr<uint8_t> &out,
+                size_t align, size_t min_size) {
+  return impl.Next(const_cast<std::shared_ptr<uint8_t> *>(&out),
+                   align, min_size);
 }
 
 }  // namespace internal
