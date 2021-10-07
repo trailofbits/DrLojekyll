@@ -227,8 +227,8 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
 
   os.PushIndent();
   os << os.Indent() << "size = 0u;\n"
-     << os.Indent() << "db_.proc_" << entry_proc->Id();
-  auto sep = "_(";
+     << os.Indent() << "db_." << Procedure(os, *entry_proc) << "(";
+  auto sep = "";
   for (auto [vec, message, added] : message_vecs) {
     os << sep << "std::move(vec_" << vec.Id() << ")";
     sep = ", ";
