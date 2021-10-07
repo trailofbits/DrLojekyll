@@ -17,7 +17,10 @@ to operating on tuples.
 ## Quick Start
 
 Dr. Lojekyll can be built on macOS, Linux, or Windows, using CMake and a
-C++17-compliant toolchain.
+C++17-compliant toolchain. Dr. Lojekyll requires that you build using Microsoft
+vcpkg, and we recommend using [cxx-common](https://github.com/lifting-bits/cxx-common)
+in order to ensure that dependencies such as gRPC and FlatBuffers are at the
+correct versions.
 
 **Speeding up rebuilds:**
 
@@ -45,15 +48,20 @@ git submodule update --init --recursive
 ```
 
 **Developer debug build on Linux:**
-```bash
-$ cmake -B build -DCMAKE_CXX_COMPILER=clang++-10 -DDRLOJEKYLL_ENABLE_SANITIZERS=ON -DCMAKE_BUILD_TYPE=Debug -DDRLOJEKYLL_WARNINGS_AS_ERRORS=ON -DCMAKE_INSTALL_PREFIX="$PWD"/install
-$ cmake --build build
-$ cmake --install build
-```
+
+TODO
 
 **Developer debug build on macOS:**
 ```bash
-$ cmake -B build -DDRLOJEKYLL_ENABLE_SANITIZERS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX="$PWD"/install
+$ cmake \                                          
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DDRLOJEKYLL_ENABLE_SANITIZERS=ON \
+  -DCMAKE_INSTALL_PREFIX="$PWD"/install \
+  -DVCPKG_ROOT=/path/to/cxx-common/vcpkg-12-release \
+  -DVCPKG_TARGET_TRIPLET=x64-osx-rel \
+  -DCMAKE_C_COMPILER=`which clang` \
+  -DCMAKE_CXX_COMPILER=`which clang++` \
+  -DDRLOJEKYLL_ENABLE_TESTS=ON ~/Code/DrLojekyll
 $ cmake --build build
 $ cmake --install build
 ```
