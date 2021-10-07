@@ -44,6 +44,7 @@ set(Runtime_SRCS
 )
 
 set(Runtime_PRIV_DEPS
+  $<BUILD_INTERFACE:concurrentqueue>
 )
 
 set(Runtime_DEPS
@@ -58,6 +59,3 @@ dr_define_static_library(Runtime
   DEPENDENCIES ${Runtime_DEPS}
   PRIVATE_DEPS ${Runtime_PRIV_DEPS}
 )
-
-target_include_directories(Runtime PRIVATE
-  "${PROJECT_SOURCE_DIR}/vendor/concurrentqueue/src")
