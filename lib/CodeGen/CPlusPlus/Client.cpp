@@ -45,7 +45,7 @@ static void DefineBuilderBuilder(const std::vector<ParsedMessage> &messages,
     }
   }
 
-  os << os.Indent() << "flatbuffers::grpc::Message<DatalogInputMessage> Build(void) {\n";
+  os << os.Indent() << "flatbuffers::grpc::Message<DatalogServerMessage> Build(void) {\n";
   os.PushIndent();
 
   auto do_message = [&os] (ParsedMessage message, const char *suffix) {
@@ -117,7 +117,7 @@ static void DefineBuilderBuilder(const std::vector<ParsedMessage> &messages,
   if (has_removed) {
     os << os.Indent() << "has_removed = false;\n";
   }
-  os << os.Indent() << "mb.Finish(CreateDatalogInputMessage(mb";
+  os << os.Indent() << "mb.Finish(CreateDatalogServerMessage(mb";
   if (has_added) {
     os << ", added_offset";
   }
@@ -125,7 +125,7 @@ static void DefineBuilderBuilder(const std::vector<ParsedMessage> &messages,
     os << ", removed_offset";
   }
   os << "));\n"
-     << os.Indent() << "return mb.ReleaseMessage<DatalogInputMessage>();\n";
+     << os.Indent() << "return mb.ReleaseMessage<DatalogServerMessage>();\n";
   os.PopIndent();
   os << os.Indent() << "}";
 }
@@ -388,7 +388,7 @@ void GenerateClientHeader(Program program, ParsedModule module,
   }
 
   os << os.Indent() << "bool Publish(DatalogMessageBuilder &messages) const;\n"
-     << os.Indent() << "::hyde::rt::ClientResultStream<DatalogOutputMessage> Subscribe(const std::string &client_name) const;\n";
+     << os.Indent() << "::hyde::rt::ClientResultStream<DatalogClientMessage> Subscribe(const std::string &client_name) const;\n";
 
   os.PopIndent();  // public
   os.PopIndent();  // class
@@ -508,14 +508,14 @@ void GenerateClientImpl(Program program, ParsedModule module,
      << os.Indent() << "return false;\n";
   os.PopIndent();  // Publish
   os << "}\n\n"
-     << "::hyde::rt::ClientResultStream<DatalogOutputMessage> DatalogClient::Subscribe(const std::string &client_name) const {\n";
+     << "::hyde::rt::ClientResultStream<DatalogClientMessage> DatalogClient::Subscribe(const std::string &client_name) const {\n";
   os.PushIndent();
 
   os << os.Indent() << "flatbuffers::grpc::MessageBuilder mb;\n"
      << os.Indent() << "mb.Finish(CreateClient(mb, mb.CreateString(client_name)));\n"
      << os.Indent() << "PumpActiveStreams();\n"
      << os.Indent() << "auto message = mb.ReleaseMessage<Client>();\n"
-     << os.Indent() << "return ::hyde::rt::ClientResultStream<DatalogOutputMessage>(this->impl, method_Subscribe, message.BorrowSlice());\n";
+     << os.Indent() << "return ::hyde::rt::ClientResultStream<DatalogClientMessage>(this->impl, method_Subscribe, message.BorrowSlice());\n";
 
   os.PopIndent();  // Subscribe
   os << "}\n\n";

@@ -221,7 +221,7 @@ static void DeclareMessages(ParsedModule module,
     }
   }
 
-  os << os.Indent() << "table DatalogInputMessage {\n";
+  os << os.Indent() << "table DatalogServerMessage {\n";
   if (any_inputs) {
     os.PushIndent();
     os << os.Indent() << "added:AddedInputMessage;\n";
@@ -269,7 +269,7 @@ static void DeclareMessages(ParsedModule module,
 
   // Create a table representing lists of output messages that can be
   // published.
-  os << os.Indent() << "table DatalogOutputMessage {\n";
+  os << os.Indent() << "table DatalogClientMessage {\n";
   if (any_outputs) {
     os.PushIndent();
     os << os.Indent() << "added:AddedOutputMessage;\n";
@@ -369,8 +369,8 @@ static void DeclareService(Program program, ParsedModule module,
   }
 
   // Apply an input message to the database, producing an output message.
-  os << os.Indent() << "Publish(DatalogInputMessage):Empty;\n"
-     << os.Indent() << "Subscribe(Client):DatalogOutputMessage (streaming: \"server\");\n";
+  os << os.Indent() << "Publish(DatalogServerMessage):Empty;\n"
+     << os.Indent() << "Subscribe(Client):DatalogClientMessage (streaming: \"server\");\n";
 
   os.PopIndent();
   os << os.Indent() << "}\n\n";
@@ -415,7 +415,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     }
   }
 
-  os << os.Indent() << "root_type DatalogInputMessage;\n\n";
+  os << os.Indent() << "root_type DatalogServerMessage;\n\n";
 }
 
 }  // namespace flat
