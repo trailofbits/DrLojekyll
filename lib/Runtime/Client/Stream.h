@@ -9,6 +9,8 @@
 #include <grpcpp/support/async_stream.h>
 #include <list>
 #include <mutex>
+#include <new>
+#include <type_traits>
 
 #include "Serialize.h"
 
@@ -35,6 +37,8 @@ class BackendResultStreamImpl
                           const grpc::internal::RpcMethod &method,
                           const grpc::Slice &request);
 
+  void TearDown(bool shut_down=true);
+
   // If this stream is cached, then this points at the lock of the cache.
   // This is an aliasing shared pointer, whose refcount is the connection
   // itself.
@@ -44,8 +48,12 @@ class BackendResultStreamImpl
   BackendResultStreamImpl **prev_link{nullptr};
   BackendResultStreamImpl *next{nullptr};
 
-  grpc::ClientContext context;
-  grpc::CompletionQueue completion_queue;
+  std::aligned_storage_t<sizeof(grpc::ClientContext),
+                         alignof(grpc::ClientContext)> context_storage;
+  grpc::ClientContext *context;
+  std::aligned_storage_t<sizeof(grpc::CompletionQueue),
+                         alignof(grpc::CompletionQueue)> completion_queue_storage;
+  grpc::CompletionQueue *completion_queue;
 
   grpc::Slice pending_response;
 

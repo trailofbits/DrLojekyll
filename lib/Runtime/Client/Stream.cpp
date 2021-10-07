@@ -20,11 +20,13 @@ BackendResultStreamImpl::BackendResultStreamImpl(
     const grpc::Slice &request)
     : cache_lock(conn, &(conn->pending_streams_lock)),
       pending_response(),
+      context(new (&context_storage) grpc::ClientContext),
+      completion_queue(new (&completion_queue_storage) grpc::CompletionQueue),
       reader(grpc::internal::ClientAsyncReaderFactory<grpc::Slice>::Create<grpc::Slice>(
           conn->channel.get(),
-          &completion_queue,
+          completion_queue,
           method,
-          &context,
+          context,
           request,
           true,
           reinterpret_cast<void *>(RequestTag::kStartCall))) {
@@ -43,21 +45,13 @@ BackendResultStreamImpl::BackendResultStreamImpl(
 }
 
 BackendResultStreamImpl::~BackendResultStreamImpl(void) {
-  Unlink();
-
   if (!is_finished && !sent_finished && reader) {
     sent_finished = true;
     reader->Finish(&status, kFinishTag);
     std::cerr << "B " << reinterpret_cast<const void *>(this) << " finishing stream\n";
   }
 
-  if (!is_shut_down && !sent_shut_down && reader) {
-    std::cerr << "C " << reinterpret_cast<const void *>(this) << " shutting cq\n";
-    completion_queue.Shutdown();
-  }
-
-  reader.reset();
-  std::cerr << "C " << reinterpret_cast<const void *>(this) << " reset reader\n";
+  TearDown();
 }
 
 // Unlink this stream from the cache.
@@ -77,6 +71,22 @@ void BackendResultStreamImpl::Unlink(void) {
   }
 }
 
+void BackendResultStreamImpl::TearDown(bool shut_down) {
+  Unlink();
+  if (completion_queue) {
+    if (shut_down) {
+      sent_shut_down = true;
+      completion_queue->Shutdown();
+    }
+
+    is_finished = true;
+    completion_queue->~CompletionQueue();
+    completion_queue = nullptr;
+  }
+
+  reader.reset();
+}
+
 bool BackendResultStreamImpl::Pump(
     std::chrono::system_clock::time_point deadline,
     bool *timed_out) {
@@ -88,13 +98,12 @@ bool BackendResultStreamImpl::Pump(
   void *tag = nullptr;
   bool succeeded = false;
 
-  switch (completion_queue.AsyncNext(&tag, &succeeded, deadline)) {
+  switch (completion_queue->AsyncNext(&tag, &succeeded, deadline)) {
 
     // Shutting down this stream.
     case grpc::CompletionQueue::SHUTDOWN:
       assert(sent_shut_down);
-      Unlink();
-      reader.reset();
+      TearDown(false);
       is_finished = true;
       is_shut_down = true;
       std::cerr << "D " << reinterpret_cast<const void *>(this) << " shut down\n";
@@ -139,11 +148,7 @@ bool BackendResultStreamImpl::Pump(
           }
 
         case RequestTag::kFinish:
-          Unlink();
-          is_finished = true;
-          sent_shut_down = true;
-          completion_queue.Shutdown();
-          reader.reset();
+          TearDown();
           std::cerr << "H " << reinterpret_cast<const void *>(this) << " finished\n";
           return false;
       }
@@ -166,7 +171,7 @@ bool BackendResultStreamImpl::Next(grpc::Slice *out) {
   }
 
   // We're done.
-  if (is_finished || is_shut_down || !reader) {
+  if (!completion_queue) {
     return false;
   }
 
@@ -175,12 +180,8 @@ bool BackendResultStreamImpl::Next(grpc::Slice *out) {
 
     void *tag = nullptr;
     bool succeeded = false;
-    if (!completion_queue.Next(&tag, &succeeded)) {
-      Unlink();
-      completion_queue.Shutdown();
-      reader.reset();
-      is_finished = true;
-      is_shut_down = true;
+    if (!completion_queue->Next(&tag, &succeeded)) {
+      TearDown();
       std::cerr << "I " << reinterpret_cast<const void *>(this) << " finished\n";
       return false;
     }
@@ -217,11 +218,7 @@ bool BackendResultStreamImpl::Next(grpc::Slice *out) {
         }
 
       case RequestTag::kFinish:
-        Unlink();
-        completion_queue.Shutdown();
-        reader.reset();
-        is_finished = true;
-        sent_shut_down = true;
+        TearDown();
         std::cerr << "L " << reinterpret_cast<const void *>(this) << " finished\n";
         return false;
     }
