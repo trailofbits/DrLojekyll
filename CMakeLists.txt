@@ -1,5 +1,11 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
+if(NOT DEFINED VCPKG_ROOT)
+  message(FATAL_ERROR "Must build with VCPKG")
+endif()
+
+include(cmake/vcpkg_helper.cmake)
+
 cmake_minimum_required(VERSION 3.17)
 project(DrLojekyll LANGUAGES C CXX)
 
@@ -7,6 +13,7 @@ include("cmake/options.cmake")
 include("cmake/add_sanitizer_settings.cmake")
 include("cmake/dr_define_static_library.cmake")
 include("cmake/utils.cmake")
+include("cmake/ccache.cmake")
 
 if(DRLOJEKYLL_ENABLE_SANITIZERS)
   defineSanitizersTarget()
@@ -148,6 +155,10 @@ install(
 # --------------------------------------------
 # targets ------------------------------------
 # --------------------------------------------
+
+# Test: remove me!
+find_package(absl REQUIRED CONFIG)
+
 add_subdirectory(lib)
 add_subdirectory(bin)
 

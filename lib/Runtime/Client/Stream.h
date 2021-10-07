@@ -9,6 +9,8 @@
 #include <grpcpp/support/async_stream.h>
 #include <list>
 #include <mutex>
+#include <new>
+#include <type_traits>
 
 #include "Serialize.h"
 
@@ -33,7 +35,9 @@ class BackendResultStreamImpl
 
   BackendResultStreamImpl(const std::shared_ptr<BackendConnectionImpl> &conn,
                           const grpc::internal::RpcMethod &method,
-                          const grpc_slice &request);
+                          const grpc::Slice &request);
+
+  void TearDown(bool shut_down=true);
 
   // If this stream is cached, then this points at the lock of the cache.
   // This is an aliasing shared pointer, whose refcount is the connection
@@ -44,19 +48,23 @@ class BackendResultStreamImpl
   BackendResultStreamImpl **prev_link{nullptr};
   BackendResultStreamImpl *next{nullptr};
 
-  grpc::ClientContext context;
-  grpc::CompletionQueue completion_queue;
+  std::aligned_storage_t<sizeof(grpc::ClientContext),
+                         alignof(grpc::ClientContext)> context_storage;
+  grpc::ClientContext *context;
+  std::aligned_storage_t<sizeof(grpc::CompletionQueue),
+                         alignof(grpc::CompletionQueue)> completion_queue_storage;
+  grpc::CompletionQueue *completion_queue;
 
-  grpc_slice pending_response;
+  grpc::Slice pending_response;
 
-  std::unique_ptr<grpc::ClientAsyncReader<grpc_slice>> reader;
+  std::unique_ptr<grpc::ClientAsyncReader<grpc::Slice>> reader;
   bool sent_finished{false};
   bool is_finished{false};
   bool sent_shut_down{false};
   bool is_shut_down{false};
 
   grpc::Status status;
-  std::list<grpc_slice> queued_responses;
+  std::list<grpc::Slice> queued_responses;
 
   // Unlink this stream from the cache.
   void Unlink(void);
@@ -65,7 +73,7 @@ class BackendResultStreamImpl
   bool Pump(std::chrono::system_clock::time_point deadline, bool *timed_out);
 
   // Get the next thing.
-  bool Next(grpc_slice *out_);
+  bool Next(grpc::Slice *out_);
 };
 
 }  // namespace rt

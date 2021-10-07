@@ -1,6 +1,6 @@
 # Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
-find_package(GTest REQUIRED)
+find_package(GTest CONFIG REQUIRED)
 include(GoogleTest)
 
 compile_datalog(
@@ -17,11 +17,11 @@ compile_datalog(
 add_executable(mini_disassembler_standalone
   Standalone.cpp)
   
-target_link_libraries(mini_disassembler_standalone PUBLIC gtest gtest_main PRIVATE mini_disassembler)
+target_link_libraries(mini_disassembler_standalone PUBLIC GTest::gtest GTest::gtest_main PRIVATE mini_disassembler)
 
 
 add_executable(mini_disassembler_client
   Client.cpp)
   
-target_link_libraries(mini_disassembler_client PUBLIC gtest gtest_main PRIVATE mini_disassembler)
+target_link_libraries(mini_disassembler_client PUBLIC GTest::gtest GTest::gtest_main PRIVATE mini_disassembler)
 

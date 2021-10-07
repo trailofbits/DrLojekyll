@@ -19,10 +19,10 @@ namespace internal {
 std::shared_ptr<BackendResultStreamImpl> RequestStream(
     const std::shared_ptr<BackendConnectionImpl> &conn,
     const grpc::internal::RpcMethod &method,
-    grpc_slice request);
+    const grpc::Slice &request);
 
 // Try to get the next value from the request.
-bool NextOpaque(BackendResultStreamImpl &impl, const grpc_slice &);
+bool NextOpaque(BackendResultStreamImpl &impl, const grpc::Slice &);
 
 }  // namespace internal
 
@@ -33,7 +33,7 @@ template <typename Response>
 class BackendResultStreamIterator {
  private:
   std::shared_ptr<BackendResultStreamImpl> impl;
-  grpc_slice message;
+  grpc::Slice message;
 
   BackendResultStreamIterator(
       const BackendResultStreamIterator<Response> &) = delete;
@@ -41,9 +41,6 @@ class BackendResultStreamIterator {
       const BackendResultStreamIterator<Response> &) = delete;
 
  public:
-
-  BackendResultStreamIterator(void)
-      : message(grpc_empty_slice()) {}
 
   BackendResultStreamIterator(
       BackendResultStreamIterator<Response> &&that) noexcept
@@ -61,31 +58,22 @@ class BackendResultStreamIterator {
     return *this;
   }
 
-  ~BackendResultStreamIterator(void) {
-    grpc_slice_unref(message);
-    message = grpc_empty_slice();
-  }
-
   // Implicit construction from an opaque stream.
   BackendResultStreamIterator(
-      const std::shared_ptr<BackendResultStreamImpl> &impl_)
-    : message(grpc_empty_slice()) {
+      const std::shared_ptr<BackendResultStreamImpl> &impl_) {
     if (internal::NextOpaque(*impl_, message)) {
       assert(flatbuffers::Verifier(
-          GRPC_SLICE_START_PTR(message),
-          GRPC_SLICE_LENGTH(message)).VerifyBuffer<Response>(nullptr));
+          message.begin(), message.size()).VerifyBuffer<Response>(nullptr));
       impl = impl_;
     }
   }
 
   inline const Response &operator*(void) const noexcept {
-    return *(flatbuffers::GetRoot<Response>(
-        GRPC_SLICE_START_PTR(message)));
+    return *(flatbuffers::GetRoot<Response>(message.begin()));
   }
 
   inline const Response *operator->(void) const noexcept {
-    return flatbuffers::GetRoot<Response>(
-        GRPC_SLICE_START_PTR(message));
+    return flatbuffers::GetRoot<Response>(message.begin());
   }
 
   inline BackendResultStreamIterator<Response> &operator++(void) noexcept {
@@ -93,8 +81,7 @@ class BackendResultStreamIterator {
       impl.reset();
     } else {
       assert(flatbuffers::Verifier(
-          GRPC_SLICE_START_PTR(message),
-          GRPC_SLICE_LENGTH(message)).VerifyBuffer<Response>(nullptr));
+          message.begin(), message.size()).VerifyBuffer<Response>(nullptr));
     }
     return *this;
   }
@@ -118,7 +105,7 @@ class BackendResultStream {
   inline explicit BackendResultStream(
       const std::shared_ptr<BackendConnectionImpl> &conn,
       const grpc::internal::RpcMethod &method,
-      const grpc_slice &request)
+      const grpc::Slice &request)
       : impl(internal::RequestStream(conn, method, request)) {}
 
   inline BackendResultStreamIterator<Response> begin(void) const noexcept {

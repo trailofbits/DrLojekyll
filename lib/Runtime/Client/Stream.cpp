@@ -9,8 +9,7 @@
 
 #include "Connection.h"
 
-[[gnu::noinline]]
-extern "C" void pumped(void) {}
+#include <iostream>
 
 namespace hyde {
 namespace rt {
@@ -18,17 +17,21 @@ namespace rt {
 BackendResultStreamImpl::BackendResultStreamImpl(
     const std::shared_ptr<BackendConnectionImpl> &conn,
     const grpc::internal::RpcMethod &method,
-    const grpc_slice &request)
+    const grpc::Slice &request)
     : cache_lock(conn, &(conn->pending_streams_lock)),
-      pending_response(grpc_empty_slice()),
-      reader(grpc::internal::ClientAsyncReaderFactory<grpc_slice>::Create<grpc_slice>(
+      pending_response(),
+      context(new (&context_storage) grpc::ClientContext),
+      completion_queue(new (&completion_queue_storage) grpc::CompletionQueue),
+      reader(grpc::internal::ClientAsyncReaderFactory<grpc::Slice>::Create<grpc::Slice>(
           conn->channel.get(),
-          &completion_queue,
+          completion_queue,
           method,
-          &context,
+          context,
           request,
           true,
           reinterpret_cast<void *>(RequestTag::kStartCall))) {
+
+  std::cerr << "A " << reinterpret_cast<const void *>(this) << " making stream\n";
 
   // Link it into the cache.
   std::unique_lock<std::mutex> locker(conn->pending_streams_lock);
@@ -42,24 +45,13 @@ BackendResultStreamImpl::BackendResultStreamImpl(
 }
 
 BackendResultStreamImpl::~BackendResultStreamImpl(void) {
-  Unlink();
-
   if (!is_finished && !sent_finished && reader) {
     sent_finished = true;
     reader->Finish(&status, kFinishTag);
+    std::cerr << "B " << reinterpret_cast<const void *>(this) << " finishing stream\n";
   }
 
-  if (!is_shut_down && !sent_shut_down && reader) {
-    completion_queue.Shutdown();
-  }
-
-  reader.reset();
-
-  grpc_slice_unref(pending_response);
-  for (auto &unused_response : queued_responses) {
-    grpc_slice_unref(unused_response);
-  }
-  queued_responses.clear();
+  TearDown();
 }
 
 // Unlink this stream from the cache.
@@ -79,6 +71,22 @@ void BackendResultStreamImpl::Unlink(void) {
   }
 }
 
+void BackendResultStreamImpl::TearDown(bool shut_down) {
+  Unlink();
+  if (completion_queue) {
+    if (shut_down) {
+      sent_shut_down = true;
+      completion_queue->Shutdown();
+    }
+
+    is_finished = true;
+    completion_queue->~CompletionQueue();
+    completion_queue = nullptr;
+  }
+
+  reader.reset();
+}
+
 bool BackendResultStreamImpl::Pump(
     std::chrono::system_clock::time_point deadline,
     bool *timed_out) {
@@ -90,20 +98,21 @@ bool BackendResultStreamImpl::Pump(
   void *tag = nullptr;
   bool succeeded = false;
 
-  switch (completion_queue.AsyncNext(&tag, &succeeded, deadline)) {
+  switch (completion_queue->AsyncNext(&tag, &succeeded, deadline)) {
 
     // Shutting down this stream.
     case grpc::CompletionQueue::SHUTDOWN:
       assert(sent_shut_down);
-      Unlink();
-      reader.reset();
+      TearDown(false);
       is_finished = true;
       is_shut_down = true;
+      std::cerr << "D " << reinterpret_cast<const void *>(this) << " shut down\n";
       return false;
 
     // We timed out, that's OK, because we're just trying to pull stuff off
     // of the completion queue while we're being asked to do something else.
     case grpc::CompletionQueue::TIMEOUT:
+      std::cerr << "E " << reinterpret_cast<const void *>(this) << " timeout\n";
       *timed_out = true;
       return false;
 
@@ -112,13 +121,9 @@ bool BackendResultStreamImpl::Pump(
       switch (static_cast<RequestTag>(reinterpret_cast<uintptr_t>(tag))) {
         case RequestTag::kStartCall:
           if (!succeeded) {
-            Unlink();
-
-            grpc_slice_unref(pending_response);
-            pending_response = grpc_empty_slice();
-
             sent_finished = true;
             reader->Finish(&status, kFinishTag);
+            std::cerr << "F " << reinterpret_cast<const void *>(this) << " finishing\n";
             return false;
 
           // Schedule us to read `pending_response`.
@@ -130,32 +135,21 @@ bool BackendResultStreamImpl::Pump(
         case RequestTag::kRead:
           if (succeeded) {
             queued_responses.emplace_back(std::move(pending_response));
-            pending_response = grpc_empty_slice();
 
             // Schedule the next one to be read.
             reader->Read(&pending_response, kReadTag);
             return true;
 
           } else {
-            Unlink();
-
-            grpc_slice_unref(pending_response);
-            pending_response = grpc_empty_slice();
-
             sent_finished = true;
             reader->Finish(&status, kFinishTag);
+            std::cerr << "G " << reinterpret_cast<const void *>(this) << " finishing\n";
             return false;
           }
 
         case RequestTag::kFinish:
-          Unlink();
-
-          grpc_slice_unref(pending_response);
-          pending_response = grpc_empty_slice();
-
-          is_finished = true;
-          sent_shut_down = true;
-          completion_queue.Shutdown();
+          TearDown();
+          std::cerr << "H " << reinterpret_cast<const void *>(this) << " finished\n";
           return false;
       }
     }
@@ -166,21 +160,18 @@ bool BackendResultStreamImpl::Pump(
 }
 
 // Get the next thing.
-bool BackendResultStreamImpl::Next(grpc_slice *out) {
-
-  grpc_slice_unref(*out);
+bool BackendResultStreamImpl::Next(grpc::Slice *out) {
 
   // We've got some queued responses.
   if (!queued_responses.empty()) {
+    std::cerr << "H " << reinterpret_cast<const void *>(this) << " unqueueing\n";
     *out = std::move(queued_responses.front());
     queued_responses.pop_front();
     return true;
   }
 
-  *out = grpc_empty_slice();
-
   // We're done.
-  if (is_finished || is_shut_down || !reader) {
+  if (!completion_queue) {
     return false;
   }
 
@@ -189,12 +180,9 @@ bool BackendResultStreamImpl::Next(grpc_slice *out) {
 
     void *tag = nullptr;
     bool succeeded = false;
-    if (!completion_queue.Next(&tag, &succeeded)) {
-      Unlink();
-
-      reader.reset();
-      is_finished = true;
-      is_shut_down = true;
+    if (!completion_queue->Next(&tag, &succeeded)) {
+      TearDown();
+      std::cerr << "I " << reinterpret_cast<const void *>(this) << " finished\n";
       return false;
     }
 
@@ -204,6 +192,7 @@ bool BackendResultStreamImpl::Next(grpc_slice *out) {
         if (!succeeded) {
           sent_finished = true;
           reader->Finish(&status, kFinishTag);
+          std::cerr << "J " << reinterpret_cast<const void *>(this) << " sent finish\n";
           return false;
 
         } else {
@@ -215,31 +204,22 @@ bool BackendResultStreamImpl::Next(grpc_slice *out) {
         if (succeeded) {
 
           // Take the refcount from `pending_response`.
-          *out = pending_response;
+          *out = std::move(pending_response);
 
           // Schedule the next one to be read.
-          pending_response = grpc_empty_slice();
           reader->Read(&pending_response, kReadTag);
           return true;
 
         } else {
-          grpc_slice_unref(pending_response);
-          pending_response = grpc_empty_slice();
-
           sent_finished = true;
           reader->Finish(&status, kFinishTag);
+          std::cerr << "K " << reinterpret_cast<const void *>(this) << " sent finish\n";
           return false;
         }
 
       case RequestTag::kFinish:
-        Unlink();
-
-        grpc_slice_unref(pending_response);
-        pending_response = grpc_empty_slice();
-
-        is_finished = true;
-        sent_shut_down = true;
-        completion_queue.Shutdown();
+        TearDown();
+        std::cerr << "L " << reinterpret_cast<const void *>(this) << " finished\n";
         return false;
     }
   }
@@ -253,12 +233,12 @@ namespace internal {
 std::shared_ptr<BackendResultStreamImpl> RequestStream(
     const std::shared_ptr<BackendConnectionImpl> &conn,
     const grpc::internal::RpcMethod &method,
-    grpc_slice request) {
+    const grpc::Slice &request) {
   return std::make_shared<BackendResultStreamImpl>(conn, method, request);
 }
 
-bool NextOpaque(BackendResultStreamImpl &impl, const grpc_slice &out) {
-  return impl.Next(const_cast<grpc_slice *>(&out));
+bool NextOpaque(BackendResultStreamImpl &impl, const grpc::Slice &out) {
+  return impl.Next(const_cast<grpc::Slice *>(&out));
 }
 
 }  // namespace internal

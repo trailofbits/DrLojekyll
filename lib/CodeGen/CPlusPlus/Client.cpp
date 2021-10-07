@@ -375,10 +375,10 @@ void GenerateClientHeader(Program program, ParsedModule module,
   os << os.Indent() << "public:\n";
   os.PushIndent();
 
-  os << os.Indent() << "DatalogClient(const DatalogClient &) = default;\n"
-     << os.Indent() << "DatalogClient(DatalogClient &&) noexcept = default;\n"
-     << os.Indent() << "DatalogClient &operator=(const DatalogClient &) = default;\n"
-     << os.Indent() << "DatalogClient &operator=(DatalogClient &&) noexcept = default;\n\n"
+  os << os.Indent() << "DatalogClient(const DatalogClient &) = delete;\n"
+     << os.Indent() << "DatalogClient(DatalogClient &&) noexcept = delete;\n"
+     << os.Indent() << "DatalogClient &operator=(const DatalogClient &) = delete;\n"
+     << os.Indent() << "DatalogClient &operator=(DatalogClient &&) noexcept = delete;\n\n"
      << os.Indent() << "~DatalogClient(void);\n"
      << os.Indent() << "explicit DatalogClient(const std::shared_ptr<grpc::Channel> &channel_);\n\n";
 

@@ -11,7 +11,8 @@ namespace rt {
 
 class BackendResultStreamImpl;
 
-class BackendConnectionImpl : public std::enable_shared_from_this<BackendConnectionImpl> {
+class BackendConnectionImpl
+    : public std::enable_shared_from_this<BackendConnectionImpl> {
  private:
   BackendConnectionImpl(void) = delete;
   BackendConnectionImpl(const BackendConnectionImpl &) = delete;

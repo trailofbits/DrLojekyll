@@ -191,7 +191,7 @@ static void DefineQuery(ParsedQuery query, OutputStream &os) {
        << "if (num_generated) {\n";
     os.PushIndent();
     os << os.Indent() << "flatbuffers::grpc::Message<" <<  query.Name() << "_"
-        << decl.Arity() << "> message(request->BorrowSlice(), true);\n"
+        << decl.Arity() << "> message(request->BorrowSlice());\n"
         << "*response = std::move(message);\n"
         << "status = grpc::StatusCode::OK;\n";
     os.PopIndent();
@@ -546,7 +546,7 @@ static void DefineDatabaseLog(ParsedModule module,
                               const std::vector<ParsedMessage> &messages,
                               OutputStream &os) {
 
-  os << "class PublishedMessageBuilder final {\n";
+  os << "class PublishedMessageBuilder final : public grpc::GrpcLibraryCodegen {\n";
   os.PushIndent();
   os << os.Indent() << "private:\n";
   os.PushIndent();
@@ -765,6 +765,7 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
   // Include auto-generated files.
   os << "#include <moodycamel/blockingconcurrentqueue.h>\n"
      << "#include <grpcpp/grpcpp.h>\n"
+     << "#include <grpcpp/impl/grpc_library.h>\n"
      << "#include <flatbuffers/flatbuffers.h>\n"
      << "#include \"" << file_name << "_generated.h\"\n"
      << "#include \"" << file_name << ".grpc.fb.h\"\n"
@@ -783,8 +784,11 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
   DefineDatabaseLog(module, messages, os);
 
   // Define the main gRPC service class, and declare each of its methods.
-  os << "class DatalogService final : public Datalog::Service {\n";
+  os << "class DatalogService final\n";
   os.PushIndent();
+  os.PushIndent();
+  os << os.Indent() << ": public grpc::GrpcLibraryCodegen, public Datalog::Service {\n";
+  os.PopIndent();
   os << os.Indent() << "public:\n";
   os.PushIndent();
   DeclareServiceMethods(queries, os);
@@ -794,6 +798,7 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
      << "\n\n"
      << "using DatabaseStorageType = hyde::rt::StdStorage;\n"
      << "using DatabaseInputMessageType = DatabaseInputMessage<DatabaseStorageType>;\n"
+     << "[[gnu::used]] static grpc::internal::GrpcLibraryInitializer gInitializer;\n"
      << "static std::vector<std::unique_ptr<DatabaseInputMessageType>> gInputMessages;\n"
      << "static std::mutex gInputMessagesLock;\n"
      << "static moodycamel::LightweightSemaphore gInputMessagesSemaphore;\n"
