@@ -92,7 +92,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
      << "#include <string>\n"
      << "#include <tuple>\n"
      << "#include <utility>\n"
-     << "#include <drlojekyll/Runtime/Server/Runtime.h>\n\n"
+     << "#include <drlojekyll/Runtime/Runtime.h>\n\n"
      << "#ifndef __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n"
      << "#  define __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n";
 

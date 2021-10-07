@@ -121,19 +121,15 @@ function(compile_datalog)
     DEPENDS ${DR_DRLOJEKYLL_CC}
             ${DR_SOURCES})
   
+  set(runtime_libs
+    ${DR_DRLOJEKYLL_RT}
+    gRPC::gpr gRPC::upb gRPC::grpc gRPC::grpc++
+    flatbuffers::flatbuffers
+  )
+  
   if(DR_LIBRARY_NAME OR DR_SERVICE_NAME)
-    
-    if(NOT TARGET gRPC::grpc++)
-      find_package(gRPC CONFIG REQUIRED)
-    endif()
-    
-    set(gRPC_libraries gRPC::gpr gRPC::upb gRPC::grpc gRPC::grpc++)
-    
-    if(NOT TARGET flatbuffers::flatbuffers)
-      find_package(Flatbuffers CONFIG REQUIRED)
-    endif()
-
-    set(fb_libraries flatbuffers::flatbuffers)
+    find_package(gRPC CONFIG REQUIRED)
+    find_package(Flatbuffers CONFIG REQUIRED)
   endif()
   
   # Generate a library that we can use to link against the generated C++ code,
@@ -150,10 +146,7 @@ function(compile_datalog)
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.h")
 
     target_link_libraries(${DR_LIBRARY_NAME} PUBLIC
-      ${DR_DRLOJEKYLL_RT}
-      ${gRPC_libraries}
-      ${fb_libraries}
-      ${DR_LIBRARIES})
+      ${runtime_libs})
 
     target_include_directories(${DR_LIBRARY_NAME} PUBLIC
       "${DR_CXX_OUTPUT_DIR}")
@@ -172,10 +165,7 @@ function(compile_datalog)
     target_include_directories(${DR_SERVICE_NAME} INTERFACE "${DR_CXX_OUTPUT_DIR}")
     
     target_link_libraries(${DR_SERVICE_NAME} PRIVATE
-      ${DR_DRLOJEKYLL_RT}
-      ${gRPC_libraries}
-      ${fb_libraries}
-      ${DR_LIBRARIES})
+      ${runtime_libs})
   endif()
   
 endfunction(compile_datalog)

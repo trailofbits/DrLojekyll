@@ -13,11 +13,10 @@
 #include <utility>
 #include <vector>
 
-#include <drlojekyll/Runtime/Endian.h>
-#include <drlojekyll/Runtime/Int.h>
-
 #include "Column.h"
+#include "Endian.h"
 #include "Index.h"
+#include "Int.h"
 #include "Reference.h"
 #include "Table.h"
 #include "Util.h"

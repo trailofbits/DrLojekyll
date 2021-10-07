@@ -12,7 +12,7 @@
 #include <utility>
 #include <unordered_map>
 
-#include <drlojekyll/Runtime/Server/Std/Storage.h>
+#include "StdStorage.h"
 
 namespace hyde {
 namespace rt {

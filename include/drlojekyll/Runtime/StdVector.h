@@ -7,7 +7,7 @@
 #include <tuple>
 #include <deque>
 
-#include <drlojekyll/Runtime/Server/Runtime.h>
+#include "Runtime.h"
 
 namespace hyde {
 namespace rt {

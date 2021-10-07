@@ -4,7 +4,7 @@
 
 #include <memory>
 
-#include <drlojekyll/Runtime/Server/Std/Table.h>
+#include "StdTable.h"
 
 namespace hyde {
 namespace rt {

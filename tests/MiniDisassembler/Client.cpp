@@ -2,13 +2,11 @@
 
 #include <gtest/gtest.h>
 
-#include <drlojekyll/Runtime/Client/Stream.h>
-
 #include "database.client.h"  // Auto-generated.
 
 template <typename DB>
 void dump(DB &db,
-          ::hyde::rt::BackendResultStream<database::OutputMessage> &updates,
+          ::hyde::rt::ClientResultStream<database::OutputMessage> &updates,
           bool wait=true) {
   if (wait) {
 

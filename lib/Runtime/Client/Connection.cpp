@@ -19,10 +19,10 @@ static const auto kOneMillisecond = std::chrono::milliseconds(1);
 
 }  // namespace
 
-BackendConnection::BackendConnection(std::shared_ptr<grpc::Channel> channel_)
-    : impl(std::make_shared<BackendConnectionImpl>(std::move(channel_))) {}
+ClientConnection::ClientConnection(std::shared_ptr<grpc::Channel> channel_)
+    : impl(std::make_shared<ClientConnectionImpl>(std::move(channel_))) {}
 
-void BackendConnection::PumpActiveStreams(void) const {
+void ClientConnection::PumpActiveStreams(void) const {
   const auto deadline = std::chrono::system_clock::now() + kOneMillisecond;
 
   std::unique_lock<std::mutex> locker(impl->pending_streams_lock);
@@ -52,13 +52,13 @@ void BackendConnection::PumpActiveStreams(void) const {
   }
 }
 
-BackendConnection::~BackendConnection(void) {
+ClientConnection::~ClientConnection(void) {
   std::unique_lock<std::mutex> locker(impl->pending_streams_lock);
   assert(!impl->pending_streams);
 }
 
 // Send data to the backend.
-bool BackendConnection::Publish(const grpc::internal::RpcMethod &method,
+bool ClientConnection::Publish(const grpc::internal::RpcMethod &method,
                                 const grpc::Slice &data) const {
   grpc::ClientContext context;
   grpc::Slice ret_data;
@@ -69,7 +69,7 @@ bool BackendConnection::Publish(const grpc::internal::RpcMethod &method,
 }
 
 // Invoke an RPC that returns a single value.
-void BackendConnection::Call(
+void ClientConnection::Call(
     const grpc::internal::RpcMethod &method,
     const grpc::Slice &data, grpc::Slice &ret_data) const {
   grpc::ClientContext context;

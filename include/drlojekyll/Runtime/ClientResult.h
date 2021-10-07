@@ -10,28 +10,28 @@
 namespace hyde {
 namespace rt {
 
-class BackendConnection;
+class ClientConnection;
 
 template <typename T>
-class BackendResult {
+class ClientResult {
  private:
-  friend class BackendConnection;
+  friend class ClientConnection;
 
   template <typename>
-  friend class BackendResultStreamIterator;
+  friend class ClientResultStreamIterator;
 
   grpc::Slice message;
 
-  inline BackendResult(grpc::Slice message_)
+  inline ClientResult(grpc::Slice message_)
       : message(std::move(message_)) {}
 
  public:
-  ~BackendResult(void) = default;
-  BackendResult(void) = default;
-  BackendResult(const BackendResult<T> &) = default;
-  BackendResult(BackendResult<T> &&) noexcept = default;
-  BackendResult<T> &operator=(const BackendResult<T> &) = default;
-  BackendResult &operator=(BackendResult<T> &&) noexcept = default;
+  ~ClientResult(void) = default;
+  ClientResult(void) = default;
+  ClientResult(const ClientResult<T> &) = default;
+  ClientResult(ClientResult<T> &&) noexcept = default;
+  ClientResult<T> &operator=(const ClientResult<T> &) = default;
+  ClientResult &operator=(ClientResult<T> &&) noexcept = default;
 
   inline operator const T *(void) const noexcept {
     return message.size() ?

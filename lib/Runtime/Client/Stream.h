@@ -2,8 +2,6 @@
 
 #pragma once
 
-#include <drlojekyll/Runtime/Client/Stream.h>
-
 #include <chrono>
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/support/async_stream.h>
@@ -12,6 +10,7 @@
 #include <new>
 #include <type_traits>
 
+#include <drlojekyll/Runtime/ClientResultStream.h>
 #include "Serialize.h"
 
 namespace hyde {
@@ -26,14 +25,14 @@ static const auto kReadTag =
 static const auto kFinishTag =
     reinterpret_cast<void *>(RequestTag::kFinish);
 
-class BackendConnectionImpl;
+class ClientConnectionImpl;
 
-class BackendResultStreamImpl
-    : public std::enable_shared_from_this<BackendResultStreamImpl> {
+class ClientResultStreamImpl
+    : public std::enable_shared_from_this<ClientResultStreamImpl> {
  public:
-  ~BackendResultStreamImpl(void);
+  ~ClientResultStreamImpl(void);
 
-  BackendResultStreamImpl(const std::shared_ptr<BackendConnectionImpl> &conn,
+  ClientResultStreamImpl(const std::shared_ptr<ClientConnectionImpl> &conn,
                           const grpc::internal::RpcMethod &method,
                           const grpc::Slice &request);
 
@@ -45,8 +44,8 @@ class BackendResultStreamImpl
   std::shared_ptr<std::mutex> cache_lock;
 
   // Links into the cache to unlink ourselves.
-  BackendResultStreamImpl **prev_link{nullptr};
-  BackendResultStreamImpl *next{nullptr};
+  ClientResultStreamImpl **prev_link{nullptr};
+  ClientResultStreamImpl *next{nullptr};
 
   std::aligned_storage_t<sizeof(grpc::ClientContext),
                          alignof(grpc::ClientContext)> context_storage;

@@ -8,24 +8,24 @@
 #include <string>
 #include <memory>
 
-#include "Result.h"
+#include "ClientResult.h"
 
 namespace hyde {
 namespace rt {
 
-class BackendConnectionImpl;
+class ClientConnectionImpl;
 
 // Specialize this over a gRPC-auto-generated class.
-class BackendConnection {
+class ClientConnection {
  private:
   template <typename>
-  friend class BackendResultStream;
+  friend class ClientResultStream;
 
-  BackendConnection(void) = delete;
+  ClientConnection(void) = delete;
 
  protected:
 
-  std::shared_ptr<BackendConnectionImpl> impl;
+  std::shared_ptr<ClientConnectionImpl> impl;
 
   // Try to pull data in from active streams.
   void PumpActiveStreams(void) const;
@@ -40,22 +40,22 @@ class BackendConnection {
             grpc::Slice &output_data) const;
 
   template <typename T>
-  inline BackendResult<T> CallResult(const grpc::internal::RpcMethod &method,
+  inline ClientResult<T> CallResult(const grpc::internal::RpcMethod &method,
                                      const grpc::Slice &data) const {
-    BackendResult<T> ret;
+    ClientResult<T> ret;
     Call(method, data, ret.message);
     return ret;
   }
 
  public:
-  ~BackendConnection(void);
+  ~ClientConnection(void);
 
-  BackendConnection(std::shared_ptr<grpc::Channel> channel_);
-  BackendConnection(const BackendConnection &) = default;
-  BackendConnection(BackendConnection &&) noexcept= default;
+  ClientConnection(std::shared_ptr<grpc::Channel> channel_);
+  ClientConnection(const ClientConnection &) = default;
+  ClientConnection(ClientConnection &&) noexcept= default;
 
-  BackendConnection &operator=(const BackendConnection &) = default;
-  BackendConnection &operator=(BackendConnection &&) noexcept = default;
+  ClientConnection &operator=(const ClientConnection &) = default;
+  ClientConnection &operator=(ClientConnection &&) noexcept = default;
 };
 
 }  // namespace rt

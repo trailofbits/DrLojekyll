@@ -1,5 +1,8 @@
 # Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
+find_package(gRPC CONFIG REQUIRED)
+find_package(Flatbuffers CONFIG REQUIRED)
+
 set(Runtime_PUBLIC_H
 
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Endian.h"
@@ -7,24 +10,26 @@ set(Runtime_PUBLIC_H
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Reference.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Result.h"
 
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Client/Connection.h"
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Client/Result.h"
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Client/Stream.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/ClientConnection.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/ClientResult.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/ClientResultStream.h"
   
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Server/xxhash.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/xxhash.h"
 
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Server/Column.h"
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Server/Index.h"
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Server/Runtime.h"
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Server/Serializer.h"
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Server/Table.h"
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Server/Util.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Column.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Index.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Runtime.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Serializer.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Table.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Util.h"
     
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Server/Std/Runtime.h"
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Server/Std/Scan.h"
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Server/Std/Storage.h"
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Server/Std/Table.h"
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Server/Std/Vector.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/StdRuntime.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/StdScan.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/StdStorage.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/StdTable.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/StdVector.h"
+  
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Semaphore.h"
 )
 
 set(Runtime_SRCS
@@ -35,18 +40,16 @@ set(Runtime_SRCS
   "Client/Stream.cpp"
   "Client/Stream.h"
   "Server/Std/Storage.cpp"
+  "Semaphore.cpp"
 )
 
 set(Runtime_PRIV_DEPS
+  concurrentqueue
 )
 
-find_package(gRPC CONFIG REQUIRED)
-find_package(concurrentqueue REQUIRED)
-
 set(Runtime_DEPS
-  flatbuffers
-  concurrentqueue
-  gRPC::grpc++
+  flatbuffers::flatbuffers
+  gRPC::gpr gRPC::upb gRPC::grpc gRPC::grpc++
 )
 
 dr_define_static_library(Runtime

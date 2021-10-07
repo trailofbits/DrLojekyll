@@ -2,21 +2,21 @@
 
 #pragma once
 
-#include <drlojekyll/Runtime/Client/Connection.h>
-
 #include <mutex>
+
+#include <drlojekyll/Runtime/ClientConnection.h>
 
 namespace hyde {
 namespace rt {
 
-class BackendResultStreamImpl;
+class ClientResultStreamImpl;
 
-class BackendConnectionImpl
-    : public std::enable_shared_from_this<BackendConnectionImpl> {
+class ClientConnectionImpl
+    : public std::enable_shared_from_this<ClientConnectionImpl> {
  private:
-  BackendConnectionImpl(void) = delete;
-  BackendConnectionImpl(const BackendConnectionImpl &) = delete;
-  BackendConnectionImpl(BackendConnectionImpl &&) noexcept = delete;
+  ClientConnectionImpl(void) = delete;
+  ClientConnectionImpl(const ClientConnectionImpl &) = delete;
+  ClientConnectionImpl(ClientConnectionImpl &&) noexcept = delete;
 
  public:
   const std::shared_ptr<grpc::Channel> channel;
@@ -25,9 +25,9 @@ class BackendConnectionImpl
   std::mutex pending_streams_lock;
 
   // Linked list of asynchronous streams that we can pump for results.
-  BackendResultStreamImpl *pending_streams{nullptr};
+  ClientResultStreamImpl *pending_streams{nullptr};
 
-  inline BackendConnectionImpl(std::shared_ptr<grpc::Channel> channel_)
+  inline ClientConnectionImpl(std::shared_ptr<grpc::Channel> channel_)
       : channel(std::move(channel_)) {}
 };
 

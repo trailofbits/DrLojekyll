@@ -13,9 +13,8 @@
 #define XXH_INLINE_ALL
 #include "xxhash.h"
 
-#include <drlojekyll/Runtime/Endian.h>
-#include <drlojekyll/Runtime/Int.h>
-
+#include "Endian.h"
+#include "Int.h"
 #include "Reference.h"
 #include "Util.h"
 

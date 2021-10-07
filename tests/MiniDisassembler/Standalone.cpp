@@ -2,7 +2,6 @@
 
 #include <gtest/gtest.h>
 
-#include <drlojekyll/Runtime/Server/Std/Runtime.h>
 #include <algorithm>
 #include <vector>
 #include <iomanip>
@@ -11,6 +10,7 @@
 #include <cstdio>
 #include <cinttypes>
 
+#include <drlojekyll/Runtime/StdRuntime.h>
 #include "database.db.h"  // Auto-generated.
 
 template <typename DB>

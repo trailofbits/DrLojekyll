@@ -1579,7 +1579,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
 
   os << "/* Auto-generated file */\n\n"
      << "#pragma once\n\n"
-     << "#include <drlojekyll/Runtime/Server/Runtime.h>\n\n"
+     << "#include <drlojekyll/Runtime/Runtime.h>\n\n"
      << "#include \"" << file_name << "_generated.h\"\n"
      << "#ifndef __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n"
      << "#  define __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n";

@@ -37,7 +37,7 @@ static void DefineOutboxes(OutputStream &os) {
   os << os.Indent() << "Outbox **prev_next{nullptr};\n"
      << os.Indent() << "Outbox *next{nullptr};\n"
      << os.Indent() << "std::string name;\n"
-     << os.Indent() << "moodycamel::LightweightSemaphore messages_sem;\n"
+     << os.Indent() << "hyde::rt::Semaphore messages_sem;\n"
      << os.Indent() << "std::mutex messages_lock;\n"
      << os.Indent() << "std::vector<std::shared_ptr<flatbuffers::grpc::Message<OutputMessage>>> messages;\n\n"
      << os.Indent() << "inline Outbox(void) {\n";
@@ -280,7 +280,7 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
   // Busy loop.
   os << os.Indent() << "for (auto failed = false; !failed && !context->IsCancelled(); ) {\n";
   os.PushIndent();
-  os << os.Indent() << "if (outbox.messages_sem.wait()) {\n";
+  os << os.Indent() << "if (outbox.messages_sem.Wait()) {\n";
   os.PushIndent();
   os << os.Indent() << "std::unique_lock<std::mutex> locker(outbox.messages_lock);\n"
      << os.Indent() << "messages.swap(outbox.messages);\n";
@@ -427,7 +427,7 @@ static void DefinePublishMethod(const std::vector<ParsedMessage> &messages,
   os << os.Indent() << "}\n\n"
      << os.Indent() << "std::unique_lock<std::mutex> locker(gInputMessagesLock);\n"
      << os.Indent() << "gInputMessages.push_back(std::move(input_msg));\n"
-     << os.Indent() << "gInputMessagesSemaphore.signal();\n";
+     << os.Indent() << "gInputMessagesSemaphore.Signal();\n";
   os.PopIndent();
   os << os.Indent() << "}\n"
      << os.Indent() << "return grpc::Status::OK;\n";
@@ -674,7 +674,7 @@ static void DefineDatabaseThread(const std::vector<ParsedMessage> &messages,
      << os.Indent() << "inputs.reserve(128);\n"
      << os.Indent() << "while (true) {\n";
   os.PushIndent();
-  os << os.Indent() << "if (gInputMessagesSemaphore.wait()) {\n";
+  os << os.Indent() << "if (gInputMessagesSemaphore.Wait()) {\n";
   os.PushIndent();
   os << os.Indent() << "std::unique_lock<std::mutex> locker(gInputMessagesLock);\n"
      << os.Indent() << "inputs.swap(gInputMessages);\n";
@@ -720,7 +720,7 @@ static void DefineDatabaseThread(const std::vector<ParsedMessage> &messages,
   os << os.Indent() << "}\n\n"
      << os.Indent() << "std::unique_lock<std::mutex> outbox_locker(outbox->messages_lock);\n"
      << os.Indent() << "outbox->messages.push_back(output);\n"
-     << os.Indent() << "outbox->messages_sem.signal();\n"
+     << os.Indent() << "outbox->messages_sem.Signal();\n"
      << os.Indent() << "outbox = outbox->next;\n";
   os.PopIndent();
   os << os.Indent() << "}\n";  // for
@@ -748,7 +748,7 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
      << "#include <string>\n"
      << "#include <thread>\n"
      << "#include <vector>\n\n"
-     << "#include <drlojekyll/Runtime/Server/Std/Runtime.h>\n\n";
+     << "#include <drlojekyll/Runtime/StdRuntime.h>\n\n";
 
   const auto module = program.ParsedModule();
   const auto db_name = module.DatabaseName();
@@ -763,7 +763,7 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
   }
 
   // Include auto-generated files.
-  os << "#include <moodycamel/blockingconcurrentqueue.h>\n"
+  os << "#include <drlojekyll/Runtime/Semaphore.h>\n"
      << "#include <grpcpp/grpcpp.h>\n"
      << "#include <grpcpp/impl/grpc_library.h>\n"
      << "#include <flatbuffers/flatbuffers.h>\n"
@@ -801,7 +801,7 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
      << "[[gnu::used]] static grpc::internal::GrpcLibraryInitializer gInitializer;\n"
      << "static std::vector<std::unique_ptr<DatabaseInputMessageType>> gInputMessages;\n"
      << "static std::mutex gInputMessagesLock;\n"
-     << "static moodycamel::LightweightSemaphore gInputMessagesSemaphore;\n"
+     << "static hyde::rt::Semaphore gInputMessagesSemaphore;\n"
      << "static PublishedMessageBuilder gDatabaseLog;\n"
      << "static DatabaseStorageType gStorage;\n"
      << "static std::shared_mutex gDatabaseLock;\n"

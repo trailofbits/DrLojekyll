@@ -19,13 +19,7 @@ set(CodeGen_SRCS
     "Util.cpp"
 )
 
-add_library(codegen_includes INTERFACE)
-target_include_directories(codegen_includes INTERFACE
-    "${CMAKE_CURRENT_SOURCE_DIR}/CPlusPlus"
-)
-
 set(CodeGen_PRIV_DEPS
-    codegen_includes
 )
 
 set(CodeGen_DEPS
