@@ -22,24 +22,26 @@ void ParserImpl::ParseEnum(ParsedModuleImpl *module) {
     return;
   }
 
-  const Token name = tok.AsForeignType();
+  Token name;
 
   // Should be the first decl.
-  if (Lexeme::kIdentifierAtom == name.Lexeme() ||
-      Lexeme::kIdentifierVariable == name.Lexeme()) {
-
+  if (Lexeme::kIdentifierAtom == tok.Lexeme() ||
+      Lexeme::kIdentifierVariable == tok.Lexeme()) {
+    name = tok.AsForeignType();
 
   // Looks like a redecl.
-  } else if (Lexeme::kIdentifierType == name.Lexeme()) {
+  } else if (Lexeme::kIdentifierType == tok.Lexeme()) {
+    name = tok;
 
   } else {
-    context->error_log.Append(scope_range, name.SpellingRange())
-        << "Expected variable or atom here, got '" << name << "' instead";
+    context->error_log.Append(scope_range, tok.SpellingRange())
+        << "Expected variable or atom here for the name of the enum, but got '"
+        << tok << "' instead";
     return;
   }
 
   if (!ReadNextSubToken(tok)) {
-    context->error_log.Append(scope_range, name.NextPosition())
+    context->error_log.Append(scope_range, tok.NextPosition())
         << "Expected a period or an underlying type name to end the "
         << "enum declaration";
     return;
