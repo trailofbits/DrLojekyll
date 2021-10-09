@@ -1,3 +1,5 @@
+// Copyright 2021, Trail of Bits, Inc. All rights reserved.
+
 #include <drlojekyll/CodeGen/CodeGen.h>
 #include <drlojekyll/ControlFlow/Format.h>
 #include <drlojekyll/ControlFlow/Program.h>
@@ -103,7 +105,7 @@ static void DefineBuilderBuilder(const std::vector<ParsedMessage> &messages,
     }
     os << os.Indent() << "removed_offset = CreateRemovedInputMessage(mb";
     for (ParsedMessage message : messages) {
-      if (message.IsReceived()) {
+      if (message.IsReceived() && message.IsDifferential()) {
         os << ", " << message.Name() << "_" << message.Arity()
            << "_removed_offset";
       }
@@ -222,8 +224,8 @@ static void DefineMessageBuilder(ParsedModule module,
       os << os.Indent() << "constexpr auto added = true;\n";
     }
 
-    os << os.Indent() << "auto offset = CreateMessage_"
-       << message.Name() << "_" << message.Arity() << "(mb";
+    os << os.Indent() << "auto offset = ::hyde::rt::CreateFB<Message_"
+       << message.Name() << "_" << message.Arity() << ">::Create(mb";
 
     for (auto param : decl.Parameters()) {
       os << ", " << param.Name();
@@ -309,9 +311,9 @@ static void DeclareQuery(ParsedModule module, ParsedQuery query,
   }
 
   os << prefix << decl.Name() << "_"
-     << decl.BindingPattern();
+     << decl.BindingPattern() << "(";
 
-  auto sep = "(";
+  auto sep = "";
   for (ParsedParameter param : decl.Parameters()) {
     if (param.Binding() == ParameterBinding::kBound) {
       TypeLoc type = param.Type();
@@ -342,6 +344,7 @@ void GenerateClientHeader(Program program, ParsedModule module,
      << "#include <flatbuffers/flatbuffers.h>\n"
      << "#include <flatbuffers/grpc.h>\n"
      << "#include <drlojekyll/Runtime/Runtime.h>\n"
+     << "#include <drlojekyll/Runtime/FlatBuffers.h>\n"
      << "#include <drlojekyll/Runtime/ClientConnection.h>\n"
      << "#include <drlojekyll/Runtime/ClientResultStream.h>\n"
      << "#include \"" << file_name << "_generated.h\"\n\n";
@@ -468,8 +471,8 @@ void GenerateClientImpl(Program program, ParsedModule module,
     //    }
     //  }
 
-    os << os.Indent() << "mb.Finish(Create" << query.Name() << "_"
-       << decl.Arity() << "(mb";
+    os << os.Indent() << "mb.Finish(::hyde::rt::CreateFB<::" << ns_name_prefix
+       << decl.Name() << "_" << decl.BindingPattern() << ">::Create(mb";
 
     for (ParsedParameter param : decl.Parameters()) {
       if (param.Binding() == ParameterBinding::kBound) {

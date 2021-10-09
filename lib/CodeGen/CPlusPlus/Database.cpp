@@ -1405,9 +1405,15 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
      << decl.BindingPattern() << "(";
 
   auto sep = "";
+  auto has_refs = false;
   for (auto param : params) {
     if (param.Binding() == ParameterBinding::kBound) {
-      os << sep << TypeName(module, param.Type()) << " param_" << param.Index();
+      os << sep << TypeName(module, param.Type()) << " ";
+      if (!param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+        has_refs = true;
+        os << "val_";
+      }
+      os << "param_" << param.Index();
       sep = ", ";
     }
   }
@@ -1420,6 +1426,19 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
   assert(num_params == (num_bound_params + num_free_params));
 
   os.PushIndent();
+  if (has_refs) {
+    for (auto param : params) {
+      if (param.Binding() != ParameterBinding::kBound ||
+          param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+        continue;
+      }
+
+      os << os.Indent()
+         << "::hyde::rt::InternRef<" << TypeName(module, param.Type())
+         << "> param_" << param.Index()
+         << "(storage.Intern(std::move(val_param_" << param.Index() << ")));\n";
+    }
+  }
   os << os.Indent() << "::hyde::rt::index_t num_generated = 0;\n";
 
   if (spec.forcing_function) {

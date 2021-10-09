@@ -115,7 +115,8 @@ static void DeclareServiceMethods(const std::vector<ParsedQuery> &queries,
   os.PopIndent();
 }
 
-static void DefineQuery(ParsedQuery query, OutputStream &os) {
+static void DefineQuery(ParsedModule module, ParsedQuery query,
+                        OutputStream &os, const std::string &ns_prefix) {
   ParsedDeclaration decl(query);
   os << os.Indent() << "auto status = grpc::StatusCode::NOT_FOUND;\n"
      << os.Indent() << "if (auto params = request->GetRoot()) {\n";
@@ -128,7 +129,8 @@ static void DefineQuery(ParsedQuery query, OutputStream &os) {
   auto has_free_params = false;
   for (ParsedParameter param : decl.Parameters()) {
     if (param.Binding() == ParameterBinding::kBound) {
-      os << sep << "params->" << param.Name() << "()";
+      os << sep << "::hyde::rt::FBCast<" << TypeName(module, param.Type())
+         << ">::From(params->" << param.Name() << "())";
       sep = ", ";
     } else if (param.Binding() == ParameterBinding::kFree) {
       has_free_params = true;
@@ -155,15 +157,15 @@ static void DefineQuery(ParsedQuery query, OutputStream &os) {
   //    }
   //  }
 
-    os << os.Indent() << "mb.Finish(Create" << query.Name() << "_"
-       << decl.Arity() << "(mb";
+    os << os.Indent() << "mb.Finish(::hyde::rt::CreateFB<::" << ns_prefix
+       << query.Name() << "_" << decl.Arity() << ">::Create(mb";
 
     for (ParsedParameter param : decl.Parameters()) {
       os << ", p" << param.Index();
     }
 
     os << "));\n"
-       << os.Indent() << "auto message = mb.ReleaseMessage<"
+       << os.Indent() << "auto message = mb.ReleaseMessage<::" << ns_prefix
        << query.Name() << "_" << decl.Arity() << ">();\n";
 
     // If there are free parameters, then we're doing server-to-client streaming
@@ -206,7 +208,9 @@ static void DefineQuery(ParsedQuery query, OutputStream &os) {
 }
 
 // Define the out-of-line method bodies for each of the `Query_*`methods.
-static void DefineQueryMethods(const std::vector<ParsedQuery> &queries,
+static void DefineQueryMethods(ParsedModule module,
+                               const std::vector<ParsedQuery> &queries,
+                               const std::string &ns_prefix,
                                OutputStream &os) {
   if (queries.empty()) {
     return;
@@ -227,7 +231,7 @@ static void DefineQueryMethods(const std::vector<ParsedQuery> &queries,
     DeclareQuery(query, os, true);
     os << " {\n";
     os.PushIndent();
-    DefineQuery(query, os);
+    DefineQuery(module, query, os, ns_prefix);
     os.PopIndent();
     os << "}";
   }
@@ -336,7 +340,8 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
 }
 
 // Define a method that clients invoke to publish messages to the server.
-static void DefinePublishMethod(const std::vector<ParsedMessage> &messages,
+static void DefinePublishMethod(ParsedModule module,
+                                const std::vector<ParsedMessage> &messages,
                                 OutputStream &os) {
   os << "\n\n::grpc::Status DatalogService::Publish(\n";
   os.PushIndent();
@@ -367,7 +372,8 @@ static void DefinePublishMethod(const std::vector<ParsedMessage> &messages,
        << message.Arity();
     auto sep = "(";
     for (ParsedParameter param : decl.Parameters()) {
-      os << sep << "entry->" << param.Name() << "()";
+      os << sep << "::hyde::rt::FBCast<" << TypeName(module, param.Type())
+         << ">::From(entry->" << param.Name() << "())";
       sep = ", ";
     }
     os << ");\n";
@@ -623,8 +629,8 @@ static void DefineDatabaseLog(ParsedModule module,
 
     os << sep << "bool added) {\n";
     os.PushIndent();
-    os << os.Indent() << "auto offset = CreateMessage_"
-       << message.Name() << "_" << message.Arity() << "(mb";
+    os << os.Indent() << "auto offset = ::hyde::rt::CreateFB<Message_"
+       << message.Name() << "_" << message.Arity() << ">::Create(mb";
 
     for (auto param : decl.Parameters()) {
       os << ", " << param.Name();
@@ -748,6 +754,7 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
      << "#include <string>\n"
      << "#include <thread>\n"
      << "#include <vector>\n\n"
+     << "#include <drlojekyll/Runtime/FlatBuffers.h>\n"
      << "#include <drlojekyll/Runtime/StdRuntime.h>\n\n";
 
   const auto module = program.ParsedModule();
@@ -810,9 +817,9 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
      << "    gStorage, gDatabaseLog, gFunctors);\n";
 
   // Define the query methods out-of-line.
-  DefineQueryMethods(queries, os);
+  DefineQueryMethods(module, queries, ns_name_prefix, os);
   DefineOutboxes(os);
-  DefinePublishMethod(messages, os);
+  DefinePublishMethod(module, messages, os);
   DefineSubscribeMethod(messages, os);
 
   os << "\n\n";
