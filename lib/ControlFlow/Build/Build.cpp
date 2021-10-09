@@ -54,13 +54,13 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
     }
   });
 
-  // We will always unique all input data into records, to help kick off
-  // all later record-based analysis.
-  for (auto io : query.IOs()) {
-    for (auto receive : io.Receives()) {
-      (void) TABLE::GetOrCreate(impl, context, receive);
-    }
-  }
+//  // We will always unique all input data into records, to help kick off
+//  // all later record-based analysis.
+//  for (auto io : query.IOs()) {
+//    for (auto receive : io.Receives()) {
+//      (void) TABLE::GetOrCreate(impl, context, receive);
+//    }
+//  }
 
   for (auto view : query.Inserts()) {
     auto insert = QueryInsert::From(view);

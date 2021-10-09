@@ -341,6 +341,7 @@ void GenerateClientHeader(Program program, ParsedModule module,
      << "#include <vector>\n\n"
      << "#include <flatbuffers/flatbuffers.h>\n"
      << "#include <flatbuffers/grpc.h>\n"
+     << "#include <drlojekyll/Runtime/Runtime.h>\n"
      << "#include <drlojekyll/Runtime/ClientConnection.h>\n"
      << "#include <drlojekyll/Runtime/ClientResultStream.h>\n"
      << "#include \"" << file_name << "_generated.h\"\n\n";

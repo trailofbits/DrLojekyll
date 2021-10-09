@@ -189,6 +189,20 @@ class StdTable
 
   template <typename... Ts>
   HYDE_RT_NEVER_INLINE
+  bool TryChangeTupleFromPresentToAbsent(Ts... cols) noexcept {
+    const TupleType tuple(std::move(cols)...);
+    const auto hash = this->HashTuple(tuple);
+    if (const auto record = FindRecord(tuple, hash); record) {
+      return ChangeState(&std::get<kStateIndex>(*record), TupleState::kPresent,
+                         TupleState::kAbsent);
+    } else {
+      return false;
+    }
+  }
+
+
+  template <typename... Ts>
+  HYDE_RT_NEVER_INLINE
   bool TryChangeTupleFromUnknownToAbsent(Ts... cols) const noexcept {
     const TupleType tuple(std::move(cols)...);
     const auto hash = this->HashTuple(tuple);
