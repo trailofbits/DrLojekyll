@@ -887,7 +887,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected variable or literal here as argument to predicate '"
-              << pred->name << "', but got '" << tok << "' instead";
+              << pred_name << "', but got '" << tok << "' instead";
           return;
         }
 
