@@ -1,5 +1,5 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
-
+#undef NDEBUG
 #include <drlojekyll/CodeGen/CodeGen.h>
 #include <drlojekyll/ControlFlow/Format.h>
 #include <drlojekyll/ControlFlow/Program.h>
@@ -79,8 +79,9 @@ static void GenerateFlatBufferSchema(
 }
 
 // Run the FlatBuffers parser and compiler to emit C++ and Python code.
-static void GenerateFlatBufferOutput(const Parser &dr_parser,
-                                     const std::string &schema) {
+static int GenerateFlatBufferOutput(const Parser &dr_parser,
+                                    const std::string &schema,
+                                    ErrorLog error_log) {
 
   flatbuffers::IDLOptions opts;
   opts.generate_all = true;
@@ -103,8 +104,14 @@ static void GenerateFlatBufferOutput(const Parser &dr_parser,
 
   std::string source_file_name = gDatabaseName + ".fbs";
 
-  parser.Parse(schema.c_str(), &(include_dirs_cstrs[0]),
-               source_file_name.c_str());
+  auto ret = parser.Parse(schema.c_str(), &(include_dirs_cstrs[0]),
+                          source_file_name.c_str());
+
+  if (!ret) {
+    error_log.Append()
+        << parser.error_;
+    return EXIT_FAILURE;
+  }
 
   if (gCxxOutDir) {
     auto out_dir = std::filesystem::path(std::string(gCxxOutDir) + "/").lexically_normal().generic_string();
@@ -144,6 +151,8 @@ static void GenerateFlatBufferOutput(const Parser &dr_parser,
     assert(ret2);
     (void) ret1; (void) ret2;
   }
+
+  return EXIT_SUCCESS;
 }
 
 static int CompileModule(const Parser &parser, DisplayManager display_manager,
@@ -173,7 +182,9 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
     }
 
     if (gCxxOutDir || gPyOutDir) {
-      GenerateFlatBufferOutput(parser, fb_schema);
+      if (auto ret = GenerateFlatBufferOutput(parser, fb_schema, error_log)) {
+        return ret;
+      }
     }
 
     if (gCxxOutDir) {

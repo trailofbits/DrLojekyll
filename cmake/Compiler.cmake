@@ -107,30 +107,37 @@ function(compile_datalog)
     list(APPEND dr_args -ir-out "${DR_IR_OUTPUT_FILE}")
   endif()
   
+  if(DR_LIBRARY_NAME OR DR_SERVICE_NAME)
+    find_package(gRPC CONFIG REQUIRED)
+    find_package(Flatbuffers CONFIG REQUIRED)
+  endif()
+  
   # Datalog source files to compile.
   if(NOT DR_SOURCES)
     message(FATAL_ERROR "compile_datalog function requires at least one SOURCES parameter")
   endif()
   list(APPEND dr_args ${DR_SOURCES})
   
-  add_custom_command(
-    OUTPUT ${dr_cxx_output_files} ${dr_py_output_files}
+  add_custom_target("${DR_DATABASE_NAME}_compile"
+    BYPRODUCTS ${dr_cxx_output_files} ${dr_py_output_files}
     COMMAND ${dr_args}
     COMMENT "Compiling ${DATABASE_NAME} datalog code"
     WORKING_DIRECTORY "${DR_WORKING_DIRECTORY}"
-    DEPENDS ${DR_DRLOJEKYLL_CC}
-            ${DR_SOURCES})
+    SOURCES ${DR_SOURCES})
+
+  # Changes in any of these could mean a re-compile.
+  add_dependencies("${DR_DATABASE_NAME}_compile"
+    ${DR_DRLOJEKYLL_CC}
+    ${DR_DRLOJEKYLL_RT}
+    gRPC::gpr gRPC::upb gRPC::grpc gRPC::grpc++
+    flatbuffers::flatbuffers
+  )
   
   set(runtime_libs
     ${DR_DRLOJEKYLL_RT}
     gRPC::gpr gRPC::upb gRPC::grpc gRPC::grpc++
     flatbuffers::flatbuffers
   )
-  
-  if(DR_LIBRARY_NAME OR DR_SERVICE_NAME)
-    find_package(gRPC CONFIG REQUIRED)
-    find_package(Flatbuffers CONFIG REQUIRED)
-  endif()
   
   # Generate a library that we can use to link against the generated C++ code,
   # e.g. to make custom instances of the database.
@@ -139,16 +146,18 @@ function(compile_datalog)
       message(FATAL_ERROR "CXX_OUTPUT_DIR argument to compile_datalog is required when using LIBRARY_NAME")
     endif()
       
-    add_library(${DR_LIBRARY_NAME} STATIC
+    add_library("${DR_LIBRARY_NAME}" STATIC
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.db.h"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}_generated.h"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.cpp"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.h")
-
-    target_link_libraries(${DR_LIBRARY_NAME} PUBLIC
+  
+    add_dependencies("${DR_LIBRARY_NAME}" "${DR_DATABASE_NAME}_compile")
+  
+    target_link_libraries("${DR_LIBRARY_NAME}" PUBLIC
       ${runtime_libs})
 
-    target_include_directories(${DR_LIBRARY_NAME} PUBLIC
+    target_include_directories("${DR_LIBRARY_NAME}" PUBLIC
       $<BUILD_INTERFACE:${DR_CXX_OUTPUT_DIR}>)
   
   endif()
@@ -157,15 +166,17 @@ function(compile_datalog)
   # run the database as a server.
   if(DR_SERVICE_NAME)
     
-    add_executable(${DR_SERVICE_NAME}
+    add_executable("${DR_SERVICE_NAME}"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.server.cpp"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.grpc.fb.h"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.grpc.fb.cc")
     
-    target_include_directories(${DR_SERVICE_NAME} PRIVATE
+    add_dependencies("${DR_SERVICE_NAME}" "${DR_DATABASE_NAME}_compile")
+    
+    target_include_directories("${DR_SERVICE_NAME}" PRIVATE
       $<BUILD_INTERFACE:${DR_CXX_OUTPUT_DIR}>)
     
-    target_link_libraries(${DR_SERVICE_NAME} PRIVATE
+    target_link_libraries("${DR_SERVICE_NAME}" PRIVATE
       ${runtime_libs})
   endif()
   
