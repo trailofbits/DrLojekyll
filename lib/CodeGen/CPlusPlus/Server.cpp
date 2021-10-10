@@ -518,7 +518,7 @@ static void DefineDatabaseLogBuild(const std::vector<ParsedMessage> &messages,
     }
     os << os.Indent() << "removed_offset = CreateRemovedOutputMessage(mb";
     for (ParsedMessage message : messages) {
-      if (message.IsPublished()) {
+      if (message.IsPublished() && message.IsDifferential()) {
         os << ", " << message.Name() << "_" << message.Arity()
            << "_removed_offset";
       }
