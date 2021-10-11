@@ -23,7 +23,7 @@ ClientResultStreamImpl::ClientResultStreamImpl(
     : channel(connection.channel),
       context() {
 
-  context.set_compression_algorithm(GRPC_COMPRESS_STREAM_GZIP);
+//  context.set_compression_algorithm(GRPC_COMPRESS_STREAM_GZIP);
   context.set_wait_for_ready(true);
   context.set_idempotent(true);
   reader.reset(
@@ -38,6 +38,10 @@ ClientResultStreamImpl::ClientResultStreamImpl(
 
 ClientResultStreamImpl::~ClientResultStreamImpl(void) {
   if (reader) {
+    std::cerr << "trying to finish\n";
+    auto status = reader->Finish();
+    std::cerr << "status: " << status.error_message() << '\n';
+
     context.TryCancel();
   }
 }
@@ -66,9 +70,6 @@ bool ClientResultStreamImpl::Next(std::shared_ptr<uint8_t> *out,
     return true;
 
   } else {
-    std::cerr << "trying to finish\n";
-    auto status = reader->Finish();
-    std::cerr << "status: " << status.error_message() << '\n';
     reader.reset();
     return false;
   }
