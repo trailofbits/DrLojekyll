@@ -48,7 +48,7 @@ function(compile_datalog)
   else()
     message(FATAL_ERROR "DATABASE_NAME parameter of compile_datalog is required")
   endif()
-  
+
   if(NOT DR_WORKING_DIRECTORY)
     set(DR_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
   endif()
@@ -56,7 +56,7 @@ function(compile_datalog)
   # Output directory in which C++ code is placed.
   if(DR_CXX_OUTPUT_DIR)
     list(APPEND dr_args -cpp-out "${DR_CXX_OUTPUT_DIR}")
-    
+
     set(dr_cxx_output_files
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.server.cpp"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.cpp"
@@ -106,39 +106,45 @@ function(compile_datalog)
   if(DR_IR_OUTPUT_FILE)
     list(APPEND dr_args -ir-out "${DR_IR_OUTPUT_FILE}")
   endif()
-  
-  if(DR_LIBRARY_NAME OR DR_SERVICE_NAME)
-    find_package(gRPC CONFIG REQUIRED)
-    find_package(Flatbuffers CONFIG REQUIRED)
-  endif()
-  
+
   # Datalog source files to compile.
   if(NOT DR_SOURCES)
     message(FATAL_ERROR "compile_datalog function requires at least one SOURCES parameter")
   endif()
   list(APPEND dr_args ${DR_SOURCES})
-  
-  add_custom_target("${DR_DATABASE_NAME}_compile"
-    BYPRODUCTS ${dr_cxx_output_files} ${dr_py_output_files}
-    COMMAND ${dr_args}
-    COMMENT "Compiling ${DATABASE_NAME} datalog code"
-    WORKING_DIRECTORY "${DR_WORKING_DIRECTORY}"
-    SOURCES ${DR_SOURCES})
 
-  # Changes in any of these could mean a re-compile.
-  add_dependencies("${DR_DATABASE_NAME}_compile"
-    ${DR_DRLOJEKYLL_CC}
-    ${DR_DRLOJEKYLL_RT}
-    gRPC::gpr gRPC::upb gRPC::grpc gRPC::grpc++
-    flatbuffers::flatbuffers
-  )
-  
+  if(DR_LIBRARY_NAME OR DR_SERVICE_NAME)
+    find_package(gRPC CONFIG REQUIRED)
+    find_package(Flatbuffers CONFIG REQUIRED)
+  endif()
+
+  add_custom_command(
+    OUTPUT
+      ${dr_cxx_output_files}
+      ${dr_py_output_files}
+    BYPRODUCTS
+      ${dr_cxx_output_files}
+      ${dr_py_output_files}
+    COMMAND
+      ${dr_args}
+    COMMENT
+      "Compiling ${DATABASE_NAME} datalog code"
+    WORKING_DIRECTORY
+      "${DR_WORKING_DIRECTORY}"
+    DEPENDS
+      "${DR_DRLOJEKYLL_CC}"
+      ${DR_SOURCES})
+
+  add_custom_target("${DR_DATABASE_NAME}_outputs" DEPENDS
+    ${dr_cxx_output_files}
+    ${dr_py_output_files})
+
   set(runtime_libs
     ${DR_DRLOJEKYLL_RT}
     gRPC::gpr gRPC::upb gRPC::grpc gRPC::grpc++
     flatbuffers::flatbuffers
   )
-  
+
   # Generate a library that we can use to link against the generated C++ code,
   # e.g. to make custom instances of the database.
   if(DR_LIBRARY_NAME)
@@ -151,9 +157,10 @@ function(compile_datalog)
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}_generated.h"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.cpp"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.h")
-  
-    add_dependencies("${DR_LIBRARY_NAME}" "${DR_DATABASE_NAME}_compile")
-  
+
+    add_dependencies("${DR_LIBRARY_NAME}"
+      "${DR_DATABASE_NAME}_outputs")
+
     target_link_libraries("${DR_LIBRARY_NAME}" PUBLIC
       ${runtime_libs})
 
@@ -165,17 +172,18 @@ function(compile_datalog)
   # Generate an executable that we can set up as a standalone service that will
   # run the database as a server.
   if(DR_SERVICE_NAME)
-    
+
     add_executable("${DR_SERVICE_NAME}"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.server.cpp"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.grpc.fb.h"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.grpc.fb.cc")
-    
-    add_dependencies("${DR_SERVICE_NAME}" "${DR_DATABASE_NAME}_compile")
-    
+
+    add_dependencies("${DR_SERVICE_NAME}"
+      "${DR_DATABASE_NAME}_outputs")
+
     target_include_directories("${DR_SERVICE_NAME}" PRIVATE
       $<BUILD_INTERFACE:${DR_CXX_OUTPUT_DIR}>)
-    
+
     target_link_libraries("${DR_SERVICE_NAME}" PRIVATE
       ${runtime_libs})
   endif()

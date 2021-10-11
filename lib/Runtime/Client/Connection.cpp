@@ -13,7 +13,7 @@ namespace hyde {
 namespace rt {
 namespace {
 
-static const auto kOneMillisecond = std::chrono::milliseconds(1);
+//static const auto kOneMillisecond = std::chrono::milliseconds(1);
 
 [[gnu::used]] const ::grpc::internal::GrpcLibraryInitializer kInitGRPC;
 
@@ -23,33 +23,34 @@ ClientConnection::ClientConnection(std::shared_ptr<grpc::Channel> channel_)
     : impl(std::make_shared<ClientConnectionImpl>(std::move(channel_))) {}
 
 void ClientConnection::PumpActiveStreams(void) const {
-  const auto deadline = std::chrono::system_clock::now() + kOneMillisecond;
-
-  std::unique_lock<std::mutex> locker(impl->pending_streams_lock);
-
-  bool timed_out = false;
-  auto made_progress = true;
-  auto has_non_empty = false;
-  for (auto stream = impl->pending_streams; stream && !timed_out;
-       stream = stream->next) {
-    if (stream->queued_responses.empty()) {
-      if (stream->Pump(deadline, &timed_out)) {
-        made_progress = true;
-      }
-    } else  {
-      has_non_empty = true;
-    }
-  }
-
-  // If we didn't get anything, pump the them all.
-  if (!made_progress && has_non_empty) {
-    for (auto stream = impl->pending_streams; stream && !timed_out;
-         stream = stream->next) {
-      if (stream->Pump(deadline, &timed_out)) {
-        made_progress = true;
-      }
-    }
-  }
+//  const auto deadline = std::chrono::system_clock::now() + kOneMillisecond;
+//
+//  std::unique_lock<std::mutex> locker(impl->pending_streams_lock);
+//  std::cerr << "Pumping\n";
+//  bool timed_out = false;
+//  auto made_progress = true;
+//  auto has_non_empty = false;
+//  for (auto stream = impl->pending_streams; stream && !timed_out;
+//       stream = stream->next) {
+//    if (stream->queued_responses.empty()) {
+//      if (stream->Pump(deadline, &timed_out)) {
+//        made_progress = true;
+//      }
+//    } else  {
+//      has_non_empty = true;
+//    }
+//  }
+//
+//  // If we didn't get anything, pump the them all.
+//  if (!made_progress && has_non_empty) {
+//    for (auto stream = impl->pending_streams; stream && !timed_out;
+//         stream = stream->next) {
+//      if (stream->Pump(deadline, &timed_out)) {
+//        made_progress = true;
+//      }
+//    }
+//  }
+//  std::cerr << "Done pumping\n";
 }
 
 ClientConnection::~ClientConnection(void) {

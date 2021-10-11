@@ -1,5 +1,5 @@
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
-#undef NDEBUG
+
 #include <drlojekyll/CodeGen/CodeGen.h>
 #include <drlojekyll/ControlFlow/Format.h>
 #include <drlojekyll/ControlFlow/Program.h>

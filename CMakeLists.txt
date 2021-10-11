@@ -144,6 +144,13 @@ if(DRLOJEKYLL_ENABLE_LIBFUZZER)
 endif()
 
 if(DRLOJEKYLL_ENABLE_INSTALL)
+  if(DRLOJEKYLL_ENABLE_SANITIZERS)
+    install(
+      TARGETS drlojekyll_sanitizers
+      EXPORT "${PROJECT_NAME}Targets"
+  )
+  endif()
+  
   install(
       TARGETS settings_public settings_private
       EXPORT "${PROJECT_NAME}Targets"

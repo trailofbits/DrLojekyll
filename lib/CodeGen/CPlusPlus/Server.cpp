@@ -282,7 +282,7 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
   os << os.Indent() << "}\n\n";  // Link it in.
 
   // Busy loop.
-  os << os.Indent() << "for (auto failed = false; !failed && !context->IsCancelled(); ) {\n";
+  os << os.Indent() << "for (auto failed = false; !failed; ) {\n";
   os.PushIndent();
   os << os.Indent() << "if (outbox.messages_sem.Wait()) {\n";
   os.PushIndent();
@@ -302,6 +302,7 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
   os.PopIndent();
 
   os << os.Indent() << "}\n\n"
+     << os.Indent() << "auto num_sent = 0;\n"
      << os.Indent() << "for (const auto &message : messages) {\n";
   os.PushIndent();
   os << os.Indent() << "if (!writer->Write(*message)) {\n";
@@ -309,10 +310,17 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
   os << os.Indent() << "failed = true;\n"
      << os.Indent() << "break;\n";
   os.PopIndent();
-  os << os.Indent() << "}\n";  // Write
+  os << os.Indent() << "}\n"  // Write
+     << os.Indent() << "++num_sent;\n";
   os.PopIndent();
   os << os.Indent() << "}\n\n"  // for
-     << os.Indent() << "messages.clear();\n";
+     << os.Indent() << "messages.clear();\n"
+     << os.Indent() << "if (gLog) {\n";
+  os.PushIndent();
+  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
+     << os.Indent() << "std::cerr << \"Sent \" << num_sent << \" outputs to client '\" << outbox.name << \"'\" << std::endl;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n";
   os.PopIndent();
   os << os.Indent() << "}\n\n";  // busy loop.
 

@@ -16,10 +16,12 @@
 namespace hyde {
 namespace rt {
 
-enum class RequestTag : uintptr_t { kStartCall, kRead, kFinish };
+enum class RequestTag : uintptr_t { kStartCall, kReadInitialMetadata, kRead, kFinish };
 
 static const auto kStartCallTag =
     reinterpret_cast<void *>(RequestTag::kStartCall);
+static const auto kReadInitialMetadata =
+    reinterpret_cast<void *>(RequestTag::kReadInitialMetadata);
 static const auto kReadTag =
     reinterpret_cast<void *>(RequestTag::kRead);
 static const auto kFinishTag =
@@ -36,34 +38,36 @@ class ClientResultStreamImpl
                           const grpc::internal::RpcMethod &method,
                           const grpc::Slice &request);
 
-  void TearDown(bool shut_down=true);
+  void TearDown(void);
 
   // If this stream is cached, then this points at the lock of the cache.
   // This is an aliasing shared pointer, whose refcount is the connection
   // itself.
-  std::shared_ptr<std::mutex> cache_lock;
+//  std::shared_ptr<std::mutex> cache_lock;
 
-  // Links into the cache to unlink ourselves.
-  ClientResultStreamImpl **prev_link{nullptr};
-  ClientResultStreamImpl *next{nullptr};
+//  // Links into the cache to unlink ourselves.
+//  ClientResultStreamImpl **prev_link{nullptr};
+//  ClientResultStreamImpl *next{nullptr};
 
-  std::aligned_storage_t<sizeof(grpc::ClientContext),
-                         alignof(grpc::ClientContext)> context_storage;
-  grpc::ClientContext *context;
-  std::aligned_storage_t<sizeof(grpc::CompletionQueue),
-                         alignof(grpc::CompletionQueue)> completion_queue_storage;
-  grpc::CompletionQueue *completion_queue;
+  grpc::ClientContext context;
+//  std::aligned_storage_t<sizeof(grpc::ClientContext),
+//                         alignof(grpc::ClientContext)> context_storage;
+//  grpc::ClientContext *context;
 
-  grpc::Slice pending_response;
+//  std::aligned_storage_t<sizeof(grpc::CompletionQueue),
+//                         alignof(grpc::CompletionQueue)> completion_queue_storage;
+//  grpc::CompletionQueue *completion_queue;
+//
+//  grpc::Slice pending_response;
 
-  std::unique_ptr<grpc::ClientAsyncReader<grpc::Slice>> reader;
-  bool sent_finished{false};
-  bool is_finished{false};
-  bool sent_shut_down{false};
-  bool is_shut_down{false};
-
-  grpc::Status status;
-  std::list<grpc::Slice> queued_responses;
+  std::mutex read_lock;
+  std::unique_ptr<grpc::ClientReader<grpc::Slice>> reader;
+//  bool sent_finished{false};
+//  bool is_finished{false};
+//  bool sent_shut_down{false};
+//
+//  grpc::Status status;
+//  std::list<grpc::Slice> queued_responses;
 
   // Unlink this stream from the cache.
   void Unlink(void);
