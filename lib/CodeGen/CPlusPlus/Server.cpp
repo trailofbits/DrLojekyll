@@ -246,7 +246,10 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
      << os.Indent() << "const flatbuffers::grpc::Message<Client> *request,\n"
      << os.Indent() << "::grpc::ServerWriter<flatbuffers::grpc::Message<DatalogClientMessage>> *writer) {\n\n";
 
-  os << os.Indent() << "const auto client = request->GetRoot();\n"
+  os << os.Indent() << "writer->SendInitialMetadata();\n\n"
+     << os.Indent() << "grpc::WriteOptions options;\n"
+     << os.Indent() << "options.set_write_through();\n"
+     << os.Indent() << "const auto client = request->GetRoot();\n"
      << os.Indent() << "if (!client) {\n";
   os.PushIndent();
   os << os.Indent() << "return grpc::Status::CANCELLED;\n";
@@ -302,23 +305,37 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
   os.PopIndent();
 
   os << os.Indent() << "}\n\n"
-     << os.Indent() << "auto num_sent = 0;\n"
+     << os.Indent() << "auto num_sent = 0ul;\n"
+     << os.Indent() << "auto num_failed = 0ul;\n"
      << os.Indent() << "for (const auto &message : messages) {\n";
   os.PushIndent();
-  os << os.Indent() << "if (!writer->Write(*message)) {\n";
+  os << os.Indent() << "if (gLog) {\n";
   os.PushIndent();
-  os << os.Indent() << "failed = true;\n"
-     << os.Indent() << "break;\n";
+  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
+     << os.Indent() << "std::cerr << \"Message size is \" << message->BorrowSlice().size() << \" bytes\" << std::endl;\n";
   os.PopIndent();
-  os << os.Indent() << "}\n"  // Write
-     << os.Indent() << "++num_sent;\n";
+  os << os.Indent() << "}\n"
+     << os.Indent() << "if (!writer->Write(*message, options)) {\n";
+  os.PushIndent();
+  os << os.Indent() << "++num_failed;\n";
+  os.PopIndent();
+  os << os.Indent() << "} else {\n";
+  os.PushIndent();
+  os << os.Indent() << "++num_sent;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n";  // Write
   os.PopIndent();
   os << os.Indent() << "}\n\n"  // for
      << os.Indent() << "messages.clear();\n"
      << os.Indent() << "if (gLog) {\n";
   os.PushIndent();
   os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
-     << os.Indent() << "std::cerr << \"Sent \" << num_sent << \" outputs to client '\" << outbox.name << \"'\" << std::endl;\n";
+     << os.Indent() << "std::cerr << \"Sent \" << num_sent << \"/\" << (num_sent+num_failed) << \" outputs to client '\" << outbox.name << \"'\" << std::endl;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n"
+     << os.Indent() << "if (num_failed) {\n";
+  os.PushIndent();
+  os << os.Indent() << "break;\n";
   os.PopIndent();
   os << os.Indent() << "}\n";
   os.PopIndent();

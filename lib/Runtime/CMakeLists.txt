@@ -11,8 +11,7 @@ set(Runtime_PUBLIC_H
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Reference.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Result.h"
 
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/ClientConnection.h"
-  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/ClientResultStream.h"
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Client.h"
   
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/xxhash.h"
 
@@ -33,11 +32,10 @@ set(Runtime_PUBLIC_H
 )
 
 set(Runtime_SRCS
-  "Client/Connection.cpp"
   "Client/Serialize.cpp"
   "Client/Serialize.h"
-  "Client/Stream.cpp"
-  "Client/Stream.h"
+  "Client/Client.cpp"
+  "Client/Client.h"
   "Server/Std/Storage.cpp"
   "Semaphore.cpp"
 )

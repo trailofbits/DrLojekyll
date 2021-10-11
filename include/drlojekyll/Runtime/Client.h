@@ -10,14 +10,13 @@
 namespace hyde {
 namespace rt {
 
-class ClientConnection;
 class ClientResultStreamImpl;
 
 namespace internal {
 
 // Create a request.
 std::shared_ptr<ClientResultStreamImpl> RequestStream(
-    const ClientConnection &conn,
+    std::shared_ptr<grpc::Channel> channel_,
     const grpc::internal::RpcMethod &method,
     const grpc::Slice &request);
 
@@ -25,7 +24,26 @@ std::shared_ptr<ClientResultStreamImpl> RequestStream(
 bool NextOpaque(ClientResultStreamImpl &impl, std::shared_ptr<uint8_t> &,
                 size_t align, size_t min_size);
 
+// Call an RPC, returning a single result.
+std::shared_ptr<uint8_t> Call(
+    grpc::Channel *channel, const grpc::internal::RpcMethod &method,
+    const grpc::Slice &data,
+    size_t min_size, size_t align);
+
 }  // namespace internal
+
+// Send data to the backend.
+bool Publish(grpc::Channel *channel, const grpc::internal::RpcMethod &method,
+             const grpc::Slice &data);
+
+template <typename T>
+inline std::shared_ptr<T> Query(
+    grpc::Channel *channel, const grpc::internal::RpcMethod &method,
+    const grpc::Slice &data) {
+  auto ret = internal::Call(channel, method, data, sizeof(T), alignof(T));
+  std::shared_ptr<T> new_ret(ret, flatbuffers::GetMutableRoot<T>(ret.get()));
+  return new_ret;
+}
 
 class ClientResultStreamEndIterator {};
 
@@ -100,10 +118,10 @@ class ClientResultStream {
 
  public:
   inline explicit ClientResultStream(
-      const ClientConnection &conn,
+      std::shared_ptr<grpc::Channel> channel_,
       const grpc::internal::RpcMethod &method,
       const grpc::Slice &request)
-      : impl(internal::RequestStream(conn, method, request)) {}
+      : impl(internal::RequestStream(std::move(channel_), method, request)) {}
 
   inline ClientResultStreamIterator<Response> begin(void) const noexcept {
     return impl;

@@ -46,9 +46,20 @@ size_t NumFunctionInstructions(DB &db, uint64_t func_ea) {
 // A simple Google Test example
 TEST(MiniDisassembler, ServerConnectionWorks) {
 
-  auto channel = grpc::CreateChannel(
+  auto send_channel = grpc::CreateChannel(
       "localhost:50051", grpc::InsecureChannelCredentials());
-  database::DatalogClient db(channel);
+
+  auto recv_channel = grpc::CreateChannel(
+      "localhost:50051", grpc::InsecureChannelCredentials());
+
+  auto query_channel = grpc::CreateChannel(
+      "localhost:50051", grpc::InsecureChannelCredentials());
+
+  ASSERT_NE(recv_channel.get(), send_channel.get());
+
+  database::DatalogClient db(std::move(send_channel),
+                             std::move(recv_channel),
+                             std::move(query_channel));
 
   auto updates = db.Subscribe("MiniDisassemblerTest");
 

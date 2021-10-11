@@ -1,6 +1,6 @@
 // Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
-#include "Stream.h"
+#include "Client.h"
 
 #include <atomic>
 #include <new>
@@ -8,8 +8,7 @@
 #include <grpcpp/impl/codegen/sync_stream.h>
 #include <grpcpp/impl/codegen/status.h>
 #include <grpcpp/impl/codegen/status_code_enum.h>
-
-#include <drlojekyll/Runtime/ClientConnection.h>
+#include <grpcpp/impl/codegen/client_unary_call.h>
 
 #include <iostream>
 
@@ -17,15 +16,14 @@ namespace hyde {
 namespace rt {
 
 ClientResultStreamImpl::ClientResultStreamImpl(
-    const ClientConnection &connection,
+    std::shared_ptr<grpc::Channel> channel_,
     const grpc::internal::RpcMethod &method,
     const grpc::Slice &request)
-    : channel(connection.channel),
+    : channel(std::move(channel_)),
       context() {
 
 //  context.set_compression_algorithm(GRPC_COMPRESS_STREAM_GZIP);
   context.set_wait_for_ready(true);
-  context.set_idempotent(true);
   reader.reset(
       grpc::internal::ClientReaderFactory<grpc::Slice>::Create<grpc::Slice>(
         channel.get(),
@@ -39,8 +37,6 @@ ClientResultStreamImpl::ClientResultStreamImpl(
 ClientResultStreamImpl::~ClientResultStreamImpl(void) {
   if (reader) {
     std::cerr << "trying to finish\n";
-    auto status = reader->Finish();
-    std::cerr << "status: " << status.error_message() << '\n';
 
     context.TryCancel();
   }
@@ -51,7 +47,8 @@ bool ClientResultStreamImpl::Next(std::shared_ptr<uint8_t> *out,
                                   size_t align, size_t min_size) {
   grpc::Slice slice;
   auto read = false;
-  {
+
+  for (auto retry = 8; !read && retry--; ) {
     std::unique_lock<std::mutex> read_locker(read_lock);
     if (!reader) {
       return false;
@@ -78,10 +75,11 @@ bool ClientResultStreamImpl::Next(std::shared_ptr<uint8_t> *out,
 namespace internal {
 
 std::shared_ptr<ClientResultStreamImpl> RequestStream(
-    const ClientConnection &conn,
+    std::shared_ptr<grpc::Channel> channel_,
     const grpc::internal::RpcMethod &method,
     const grpc::Slice &request) {
-  return std::make_shared<ClientResultStreamImpl>(conn, method, request);
+  return std::make_shared<ClientResultStreamImpl>(
+      std::move(channel_), method, request);
 }
 
 bool NextOpaque(ClientResultStreamImpl &impl,
@@ -90,6 +88,38 @@ bool NextOpaque(ClientResultStreamImpl &impl,
   return impl.Next(&out, align, min_size);
 }
 
+// Invoke an RPC that returns a single value.
+std::shared_ptr<uint8_t> Call(
+    grpc::Channel *channel, const grpc::internal::RpcMethod &method,
+    const grpc::Slice &data, size_t min_size, size_t align) {
+
+  grpc::ClientContext context;
+  grpc::Slice slice;
+  grpc::Status status =
+      ::grpc::internal::BlockingUnaryCall<grpc::Slice, grpc::Slice>(
+          channel, method, &context, data, &slice);
+
+  auto size = std::max<size_t>(slice.size(), min_size);
+  std::shared_ptr<uint8_t> out(
+      new (std::align_val_t{align}) uint8_t[size],
+      [](uint8_t *p ){ delete [] p; });
+
+  memcpy(out.get(), slice.begin(), slice.size());
+  return out;
+}
+
 }  // namespace internal
+
+// Send data to the backend.
+bool Publish(grpc::Channel *channel, const grpc::internal::RpcMethod &method,
+             const grpc::Slice &data) {
+  grpc::ClientContext context;
+  grpc::Slice ret_data;
+  grpc::Status status =
+      ::grpc::internal::BlockingUnaryCall<grpc::Slice, grpc::Slice>(
+          channel, method, &context, data, &ret_data);
+  return status.error_code() == grpc::StatusCode::OK;
+}
+
 }  // namespace rt
 }  // namespace hyde
