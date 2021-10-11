@@ -138,12 +138,18 @@ function(compile_datalog)
   add_custom_target("${DR_DATABASE_NAME}_outputs" DEPENDS
     ${dr_cxx_output_files}
     ${dr_py_output_files})
-
+  
   set(runtime_libs
     ${DR_DRLOJEKYLL_RT}
     gRPC::gpr gRPC::upb gRPC::grpc gRPC::grpc++
     flatbuffers::flatbuffers
   )
+  
+  if(TARGET DrLojekyll::drlojekyll_sanitizers)
+    list(APPEND runtime_libs DrLojekyll::drlojekyll_sanitizers)
+  elseif(TARGET drlojekyll_sanitizers)
+    list(APPEND runtime_libs drlojekyll_sanitizers)
+  endif()
 
   # Generate a library that we can use to link against the generated C++ code,
   # e.g. to make custom instances of the database.
@@ -157,7 +163,7 @@ function(compile_datalog)
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}_generated.h"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.cpp"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.h")
-
+    
     add_dependencies("${DR_LIBRARY_NAME}"
       "${DR_DATABASE_NAME}_outputs")
 

@@ -34,7 +34,6 @@ set(Runtime_PUBLIC_H
 
 set(Runtime_SRCS
   "Client/Connection.cpp"
-  "Client/Connection.h"
   "Client/Serialize.cpp"
   "Client/Serialize.h"
   "Client/Stream.cpp"

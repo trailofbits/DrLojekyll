@@ -12,22 +12,32 @@
 namespace hyde {
 namespace rt {
 
-class ClientConnectionImpl;
+template <typename>
+class ClientResultStream;
+
+class ClientResultStreamImpl;
 
 // Specialize this over a gRPC-auto-generated class.
 class ClientConnection {
  private:
+  friend class ClientResultStreamImpl;
+
   template <typename>
   friend class ClientResultStream;
 
   ClientConnection(void) = delete;
 
- protected:
+  std::shared_ptr<grpc::Channel> channel;
 
-  std::shared_ptr<ClientConnectionImpl> impl;
+ public:
+  ~ClientConnection(void);
 
-  // Try to pull data in from active streams.
-  void PumpActiveStreams(void) const;
+  ClientConnection(std::shared_ptr<grpc::Channel> channel_);
+  ClientConnection(const ClientConnection &) = default;
+  ClientConnection(ClientConnection &&) noexcept= default;
+
+  ClientConnection &operator=(const ClientConnection &) = default;
+  ClientConnection &operator=(ClientConnection &&) noexcept = default;
 
   // Send data to the backend.
   bool Publish(const grpc::internal::RpcMethod &method,
@@ -45,16 +55,6 @@ class ClientConnection {
     std::shared_ptr<T> new_ret(ret, flatbuffers::GetMutableRoot<T>(ret.get()));
     return new_ret;
   }
-
- public:
-  ~ClientConnection(void);
-
-  ClientConnection(std::shared_ptr<grpc::Channel> channel_);
-  ClientConnection(const ClientConnection &) = default;
-  ClientConnection(ClientConnection &&) noexcept= default;
-
-  ClientConnection &operator=(const ClientConnection &) = default;
-  ClientConnection &operator=(ClientConnection &&) noexcept = default;
 };
 
 }  // namespace rt

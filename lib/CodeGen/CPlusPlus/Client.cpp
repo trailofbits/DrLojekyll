@@ -360,7 +360,7 @@ void GenerateClientHeader(Program program, ParsedModule module,
 
   // Declare the client interface to the database.
   os << "class DatalogClientImpl;\n"
-     << "class DatalogClient final : public hyde::rt::ClientConnection {\n";
+     << "class DatalogClient final {\n";
   os.PushIndent();
   os << os.Indent() << "private:\n";
   os.PushIndent();
@@ -373,7 +373,8 @@ void GenerateClientHeader(Program program, ParsedModule module,
   }
 
   os << os.Indent() << "const grpc::internal::RpcMethod method_Publish;\n"
-     << os.Indent() << "const grpc::internal::RpcMethod method_Subscribe;\n\n";
+     << os.Indent() << "const grpc::internal::RpcMethod method_Subscribe;\n"
+     << os.Indent() << "::hyde::rt::ClientConnection connection;\n\n";
 
   os.PopIndent();  // private
 
@@ -428,11 +429,11 @@ void GenerateClientImpl(Program program, ParsedModule module,
   os << "DatalogClient::~DatalogClient(void) {}\n\n"
      << "DatalogClient::DatalogClient(const std::shared_ptr<grpc::Channel> &channel_)\n";
   os.PushIndent();
-  os << os.Indent() << ": hyde::rt::ClientConnection(channel_)";
-
+  os << os.Indent() << ": ";
+  auto sep = "";
   for (ParsedQuery query : queries) {
     ParsedDeclaration decl(query);
-    os << ",\n"
+    os << sep
        << os.Indent() << "  method_Query_"
        << decl.Name() << "_" << decl.BindingPattern()
        << "(\"/" << file_name << ".Datalog/Query_"
@@ -444,14 +445,17 @@ void GenerateClientImpl(Program program, ParsedModule module,
     } else {
       os << "::grpc::internal::RpcMethod::SERVER_STREAMING, channel_)";
     }
+
+    sep = ",\n";
   }
 
-  os << ",\n"
+  os << sep
      << os.Indent() << "  method_Publish(\"/" << file_name
      << ".Datalog/Publish\", ::grpc::internal::RpcMethod::NORMAL_RPC, channel_)"
      << ",\n"
      << os.Indent() << "  method_Subscribe(\"/" << file_name
-     << ".Datalog/Subscribe\", ::grpc::internal::RpcMethod::SERVER_STREAMING, channel_) {}\n\n";
+     << ".Datalog/Subscribe\", ::grpc::internal::RpcMethod::SERVER_STREAMING, channel_),\n"
+     << os.Indent() << "  connection(channel_) {}\n\n";
 
   os.PopIndent();
 
@@ -481,12 +485,11 @@ void GenerateClientImpl(Program program, ParsedModule module,
     }
 
     os << "));\n"
-       << os.Indent() << "PumpActiveStreams();\n"
        << os.Indent() << "auto message = mb.ReleaseMessage<"
        << query.Name() << "_" << decl.Arity() << ">();\n";
 
     if (AllParametersAreBound(decl)) {
-      os << os.Indent() << "return this->CallResult<"
+      os << os.Indent() << "return connection.CallResult<"
          << decl.Name() << "_" << decl.Arity()
          << ">(method_Query_"
          << decl.Name() << "_" << decl.BindingPattern()
@@ -495,7 +498,7 @@ void GenerateClientImpl(Program program, ParsedModule module,
     } else {
       os << os.Indent() << "return ::hyde::rt::ClientResultStream<"
          << decl.Name() << "_" << decl.Arity()
-         << ">(this->impl, method_Query_"
+         << ">(connection, method_Query_"
          << decl.Name() << "_" << decl.BindingPattern()
          << ", message.BorrowSlice());\n";
     }
@@ -508,7 +511,7 @@ void GenerateClientImpl(Program program, ParsedModule module,
   os << os.Indent() << "if (messages.HasAnyMessages()) {\n";
   os.PushIndent();
   os << os.Indent() << "auto message = messages.Build();\n"
-     << os.Indent() << "return this->hyde::rt::ClientConnection::Publish(method_Publish, message.BorrowSlice());\n";
+     << os.Indent() << "return connection.Publish(method_Publish, message.BorrowSlice());\n";
   os.PopIndent();  // if
   os << os.Indent() << "}\n"
      << os.Indent() << "return false;\n";
@@ -519,9 +522,8 @@ void GenerateClientImpl(Program program, ParsedModule module,
 
   os << os.Indent() << "flatbuffers::grpc::MessageBuilder mb;\n"
      << os.Indent() << "mb.Finish(CreateClient(mb, mb.CreateString(client_name)));\n"
-     << os.Indent() << "PumpActiveStreams();\n"
      << os.Indent() << "auto message = mb.ReleaseMessage<Client>();\n"
-     << os.Indent() << "return ::hyde::rt::ClientResultStream<DatalogClientMessage>(this->impl, method_Subscribe, message.BorrowSlice());\n";
+     << os.Indent() << "return ::hyde::rt::ClientResultStream<DatalogClientMessage>(connection, method_Subscribe, message.BorrowSlice());\n";
 
   os.PopIndent();  // Subscribe
   os << "}\n\n";

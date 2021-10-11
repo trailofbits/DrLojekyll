@@ -10,14 +10,14 @@
 namespace hyde {
 namespace rt {
 
-class ClientConnectionImpl;
+class ClientConnection;
 class ClientResultStreamImpl;
 
 namespace internal {
 
 // Create a request.
 std::shared_ptr<ClientResultStreamImpl> RequestStream(
-    const std::shared_ptr<ClientConnectionImpl> &conn,
+    const ClientConnection &conn,
     const grpc::internal::RpcMethod &method,
     const grpc::Slice &request);
 
@@ -100,7 +100,7 @@ class ClientResultStream {
 
  public:
   inline explicit ClientResultStream(
-      const std::shared_ptr<ClientConnectionImpl> &conn,
+      const ClientConnection &conn,
       const grpc::internal::RpcMethod &method,
       const grpc::Slice &request)
       : impl(internal::RequestStream(conn, method, request)) {}
