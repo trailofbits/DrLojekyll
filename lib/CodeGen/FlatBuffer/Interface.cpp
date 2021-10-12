@@ -13,7 +13,7 @@
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/ModuleIterator.h>
 
-#include "Util.h"
+#include "../CPlusPlus/Util.h"
 
 namespace hyde {
 namespace flat {

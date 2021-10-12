@@ -3,7 +3,9 @@
 #pragma once
 
 #include <memory>
-#include <cstddef>
+
+// ssize_t (posix)
+#include <sys/types.h>
 
 namespace hyde {
 namespace rt {
