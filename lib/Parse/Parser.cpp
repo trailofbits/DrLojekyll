@@ -1337,7 +1337,31 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
     decl->range = FunctorRange::kOneToOne;
   }
 
-  // Different differential attributes.
+  // Different `@first` attributes.
+  if (prev_decl->first_attribute.IsValid() !=
+      decl->first_attribute.IsValid()) {
+    if (decl->first_attribute.IsValid()) {
+      auto err = context->error_log.Append(
+          scope_range, decl->differential_attribute.SpellingRange());
+      err << "Message is marked as returning at most one output, "
+          << "but prior declaration isn't";
+
+      auto note = err.Note(prev_decl_range);
+      note << "Previous declaration is here";
+
+    } else {
+      auto err = context->error_log.Append(
+          prev_decl_range,
+          prev_decl->first_attribute.SpellingRange());
+      err << "Message is marked as returning at most one output, "
+          << "but redeclaration isn't";
+
+      auto note = err.Note(scope_range);
+      note << "Redeclaration is here";
+    }
+  }
+
+  // Different `@differential` attributes.
   if (prev_decl->differential_attribute.IsValid() !=
       decl->differential_attribute.IsValid()) {
 

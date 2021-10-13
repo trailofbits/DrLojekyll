@@ -174,7 +174,47 @@ void ParserImpl::ParseQuery(ParsedModuleImpl *module) {
         }
 
       case 6:
-        if (Lexeme::kPuncPeriod == lexeme) {
+        if (Lexeme::kPragmaCodeGenFirst == lexeme) {
+          if (query->first_attribute.IsValid()) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "Unexpected '" << tok << "' pragma here; query " << name
+                << " was already specified with a return stream limiter";
+
+            DisplayRange prev_range(query->first_attribute.Position(),
+                                    query->first_attribute.NextPosition());
+            err.Note(scope_range, prev_range)
+                << "Previous '" << tok << "' pragma was here";
+
+            RemoveDecl(query);
+            return;
+
+          } else {
+            bool has_free = false;
+            for (auto param : query->parameters) {
+              if (param->opt_binding.Lexeme() == Lexeme::kKeywordFree) {
+                has_free = true;
+                break;
+              }
+            }
+
+            if (!has_free) {
+              context->error_log.Append(scope_range, tok_range)
+                  << "Cannot use  '" << tok << "' return stream limiter "
+                  << "pragma without specifying any `free`-attributed "
+                  << "parameters to the query " << name;
+
+              RemoveDecl(query);
+              return;
+
+            } else {
+              query->last_tok = tok;
+              query->first_attribute = tok;
+              state = 6;
+              continue;
+            }
+          }
+
+        } else if (Lexeme::kPuncPeriod == lexeme) {
           query->last_tok = tok;
           state = 7;
           continue;

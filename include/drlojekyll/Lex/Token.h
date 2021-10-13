@@ -365,6 +365,14 @@ enum class Lexeme : uint8_t {
   //    Instead of:    !foo(A, B)
   //           Use:    @never foo(A, B)
   kPragmaPerfNever,
+
+  // Used to mark a query with `free`-attributed parameters as only returning
+  // the first match. This changes the return type from a stream to a possible
+  // value.
+  //
+  //    #query foo(..., free type Val, ...) @first ...
+  //
+  kPragmaCodeGenFirst,
 };
 
 enum class TypeKind : uint32_t;

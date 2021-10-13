@@ -355,6 +355,7 @@ class ParsedDeclarationImpl : public Def<ParsedDeclarationImpl>, public User {
   FunctorRange range{FunctorRange::kZeroOrMore};
   Token inline_attribute;
   Token differential_attribute;
+  Token first_attribute;
   Token last_tok;
 
   // Is this decl a functor, and if so, does it have `aggregate`- and

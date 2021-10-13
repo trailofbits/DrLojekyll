@@ -121,16 +121,18 @@ The following type names are built-in.
 ```antlr
 
 // Signed integer types.
-type: "i8" ;
-type: "i16" ;
-type: "i32" ;
-type: "i64" ;
+integral_type_name: "i8" ;
+integral_type_name: "i16" ;
+integral_type_name: "i32" ;
+integral_type_name: "i64" ;
 
 // Unsigned integer types.
-type: "u8" ;
-type: "u16" ;
-type: "u32" ;
-type: "u64" ;
+integral_type_name: "u8" ;
+integral_type_name: "u16" ;
+integral_type_name: "u32" ;
+integral_type_name: "u64" ;
+
+type: integral_type_name ;
 
 // Floating point types.
 type: "f32" ;
@@ -191,6 +193,17 @@ and only used once) specifies where a value is substituted. This particular exam
 us to represent the class of 8-bit integers in terms of Python's infinite precision `int`
 type.
 
+
+### Enumeration Types
+
+Enumeration types mirror their C or C++ counterparts: they are named integral
+types. Enumerator constants are "added" to enumerations using `#constant`.
+
+```antlr
+enum_decl: "#enum" foreign_type_name integral_type_name "." ; 
+
+```
+
 ## Declarations
 
 There are several categories of declarations. All declarations must end with a period.
@@ -248,6 +261,7 @@ decl: functor_decl ;
 decl: message_decl ;
 decl: query_decl ;
 decl: foreign_decl ;
+decl: enum_decl ;
 decl: constant_decl ;
 decl: database_decl ;
 
@@ -257,7 +271,7 @@ database_decl: "#database" named_var "." ;
 message_decl: "#message" atom "(" param_list_0 ")" maybe_differential "." ;
 export_decl: "#export" atom "(" param_list_1 ")" finish_decl_or_start_clause ;
 local_decl: "#local" atom "(" param_list_1 ")" maybe_inline finish_decl_or_start_clause ;
-query_decl: "#query" atom "(" param_list_3 ")" finish_decl_or_start_clause;
+query_decl: "#query" atom "(" param_list_3 ")" maybe_first finish_decl_or_start_clause;
 
 finish_decl_or_start_clause : "." ;
 finish_decl_or_start_clause : ":" conjunct_list "." ;
@@ -273,6 +287,8 @@ maybe_differential: ;
 maybe_inline: "@inline" ;
 maybe_inline: ;
 
+maybe_first: "@first" ;
+maybe_first: ;
 
 param_list_0: type named_var "," param_list_0 ;
 param_list_0: type named_var ;

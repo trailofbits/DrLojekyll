@@ -1012,6 +1012,10 @@ unsigned ParsedQuery::NumNegatedUses(void) const noexcept {
   return impl->context->negated_uses.Size();
 }
 
+bool ParsedQuery::ReturnsAtMostOneResult(void) const noexcept {
+  return impl->first_attribute.IsValid();
+}
+
 const ParsedExport &ParsedExport::From(const ParsedDeclaration &decl) {
   assert(decl.IsExport());
   return reinterpret_cast<const ParsedExport &>(decl);

@@ -361,7 +361,7 @@ static void DeclareService(Program program, ParsedModule module,
       }
     }
 
-    if (!all_bound) {
+    if (!all_bound && !query.ReturnsAtMostOneResult()) {
       os << " (streaming: \"server\")";
     }
 

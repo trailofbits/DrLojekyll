@@ -74,7 +74,7 @@ static void DeclareQuery(ParsedQuery query, OutputStream &os, bool out_of_line) 
      << os.Indent() << "const flatbuffers::grpc::Message<"
      << query.Name() << "_"  << decl.BindingPattern() << "> *request,\n";
 
-  if (AllParametersAreBound(decl)) {
+  if (AllParametersAreBound(decl) || query.ReturnsAtMostOneResult()) {
     os << os.Indent() << "flatbuffers::grpc::Message<"
        << query.Name() << "_" << query.Arity() << "> *response";
   } else {
@@ -151,11 +151,6 @@ static void DefineQuery(ParsedModule module, ParsedQuery query,
 
     // TODO(pag): Eventually create flatbuffer offsets for non-trivial
     //            types.
-  //  for (ParsedParameter param : decl.Parameters()) {
-  //    switch (param.Type().UnderlyingKind()) {
-  //
-  //    }
-  //  }
 
     os << os.Indent() << "mb.Finish(::hyde::rt::CreateFB<::" << ns_prefix
        << query.Name() << "_" << decl.Arity() << ">::Create(mb";
@@ -170,18 +165,25 @@ static void DefineQuery(ParsedModule module, ParsedQuery query,
 
     // If there are free parameters, then we're doing server-to-client streaming
     // using `writer`.
-    os << os.Indent() << "if (!writer->Write(message)) {\n";
-    os.PushIndent();
-    os << os.Indent() << "status = grpc::StatusCode::CANCELLED;\n"
-       << os.Indent() << "return false;\n";
-    os.PopIndent();
-    os << os.Indent() << "} else {\n";
-    os.PushIndent();
-    os << os.Indent() << "status = grpc::StatusCode::OK;\n"
-       << os.Indent() << "return true;\n";
-    os.PopIndent();
-    os << os.Indent() << "}\n";
+    if (!query.ReturnsAtMostOneResult()) {
+      os << os.Indent() << "if (!writer->Write(message)) {\n";
+      os.PushIndent();
+      os << os.Indent() << "status = grpc::StatusCode::CANCELLED;\n"
+         << os.Indent() << "return false;\n";
+      os.PopIndent();
+      os << os.Indent() << "} else {\n";
+      os.PushIndent();
+      os << os.Indent() << "status = grpc::StatusCode::OK;\n"
+         << os.Indent() << "return true;\n";
+      os.PopIndent();
+      os << os.Indent() << "}\n";
 
+    // We want to write back only our first found result.
+    } else {
+      os << os.Indent() << "*response = std::move(message);\n";
+      os << os.Indent() << "status = grpc::StatusCode::OK;\n"
+         << os.Indent() << "return false;\n";
+    }
 
     os.PopIndent();  // End of lambda to query callback.
     os << os.Indent() << "});\n";
@@ -380,6 +382,12 @@ static void DefinePublishMethod(ParsedModule module,
   os.PopIndent();
 
   os << os.Indent() << "}\n\n"
+     << os.Indent() << "if (gLog) {\n";
+  os.PushIndent();
+  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
+     << os.Indent() << "std::cerr << \"Received message size is \" << request->BorrowSlice().size() << \" bytes\" << std::endl;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n"
      << os.Indent() << "auto input_msg = std::make_unique<DatabaseInputMessageType>(gStorage);\n";
 
   auto do_message = [&] (ParsedMessage message, const char *vector,

@@ -30,6 +30,9 @@ std::shared_ptr<uint8_t> Call(
     const grpc::Slice &data,
     size_t min_size, size_t align);
 
+// Kill a stream.
+void Kill(ClientResultStreamImpl *stream);
+
 }  // namespace internal
 
 // Send data to the backend.
@@ -129,6 +132,10 @@ class ClientResultStream {
 
   inline ClientResultStreamEndIterator end(void) const noexcept {
     return {};
+  }
+
+  inline void Kill(void) const {
+    internal::Kill(impl.get());
   }
 };
 

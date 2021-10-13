@@ -301,7 +301,7 @@ static void DeclareQuery(ParsedModule module, ParsedQuery query,
   ParsedDeclaration decl(query);
   os << os.Indent();
 
-  if (AllParametersAreBound(decl)) {
+  if (AllParametersAreBound(decl) || query.ReturnsAtMostOneResult()) {
     os << "std::shared_ptr<" << decl.Name() << "_" << decl.Arity()
        << "> ";
   } else {
@@ -443,7 +443,7 @@ void GenerateClientImpl(Program program, ParsedModule module,
        << decl.Name() << "_" << decl.BindingPattern()
        << "\", ";
 
-    if (AllParametersAreBound(decl)) {
+    if (AllParametersAreBound(decl) || query.ReturnsAtMostOneResult()) {
       os << "::grpc::internal::RpcMethod::NORMAL_RPC, query_channel)";
     } else {
       os << "::grpc::internal::RpcMethod::SERVER_STREAMING, query_channel)";
@@ -488,7 +488,7 @@ void GenerateClientImpl(Program program, ParsedModule module,
        << os.Indent() << "auto message = mb.ReleaseMessage<"
        << query.Name() << "_" << decl.Arity() << ">();\n";
 
-    if (AllParametersAreBound(decl)) {
+    if (AllParametersAreBound(decl) || query.ReturnsAtMostOneResult()) {
       os << os.Indent() << "return ::hyde::rt::Query<"
          << decl.Name() << "_" << decl.Arity()
          << ">(query_channel.get(), method_Query_"

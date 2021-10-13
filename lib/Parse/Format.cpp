@@ -109,7 +109,12 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
   }
 
   os << ")";
-  if (decl.IsFunctor()) {
+  if (decl.IsQuery()) {
+    auto query = ParsedQuery::From(decl);
+    if (query.ReturnsAtMostOneResult()) {
+      os << " @first";
+    }
+  } else if (decl.IsFunctor()) {
     auto functor = ParsedFunctor::From(decl);
     if (!functor.IsPure()) {
       os << " @impure";

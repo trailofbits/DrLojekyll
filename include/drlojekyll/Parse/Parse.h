@@ -518,6 +518,8 @@ class ParsedQuery : public Node<ParsedQuery, ParsedQueryImpl> {
     return NumPositiveUses() + NumNegatedUses();
   }
 
+  bool ReturnsAtMostOneResult(void) const noexcept;
+
  protected:
   friend class ParsedDeclaration;
   using Node<ParsedQuery, ParsedQueryImpl>::Node;

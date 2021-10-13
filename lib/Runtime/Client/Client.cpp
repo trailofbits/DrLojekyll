@@ -108,6 +108,13 @@ std::shared_ptr<uint8_t> Call(
   return out;
 }
 
+// Kill a stream.
+void Kill(ClientResultStreamImpl *stream) {
+  if (stream) {
+    stream->context.TryCancel();
+  }
+}
+
 }  // namespace internal
 
 // Send data to the backend.
