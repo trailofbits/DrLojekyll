@@ -72,6 +72,7 @@ function(compile_datalog)
 
   # Output directory in which Python code is placed.
   if(DR_PY_OUTPUT_DIR)
+    message("Sending python output to: ${DR_PY_OUTPUT_DIR}")
     list(APPEND dr_args -py-out "${DR_PY_OUTPUT_DIR}")
     
     set(dr_py_output_files
@@ -122,9 +123,9 @@ function(compile_datalog)
     OUTPUT
       ${dr_cxx_output_files}
       ${dr_py_output_files}
-    BYPRODUCTS
-      ${dr_cxx_output_files}
-      ${dr_py_output_files}
+    #BYPRODUCTS
+    #  ${dr_cxx_output_files}
+    #  ${dr_py_output_files}
     COMMAND
       ${dr_args}
     COMMENT

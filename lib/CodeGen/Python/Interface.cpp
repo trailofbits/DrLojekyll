@@ -59,8 +59,8 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
      << "from dataclasses import dataclass\n"
      << "from typing import Final, Iterator, List, Optional\n"
      << "from ." << file_name << "_grpc_fb import DatalogStub\n"
-     << "from .InputMessage import InputMessageT as InputMessage\n"
-     << "from .OutputMessage import OutputMessageT as OutputMessage\n"
+     << "from .DatalogServerMessage import DatalogServerMessageT as DatalogServerMessage\n"
+     << "from .DatalogClientMessage import DatalogClientMessageT as DatalogClientMessage\n"
      << "from .Client import ClientT as Client\n"
      << "from .AddedInputMessage import AddedInputMessageT as AddedInputMessage\n";
 
@@ -79,9 +79,8 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   for (ParsedMessage message : messages) {
     const auto name = message.Name();
     const auto arity = message.Arity();
-    os << "from .Message_" << name << "_" << arity
-       << " import Message_" << name << "_" << arity
-       << "T as " << name << "_" << arity << '\n';
+    os << "from .Message_" << name << "_" << arity << " import Message_" << name
+       << "_" << arity << "T as " << name << "_" << arity << '\n';
   }
 
   // Import each query builder object with a nice name.
@@ -91,14 +90,12 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     const auto arity = query.Arity();
 
     if (decl.IsFirstDeclaration()) {
-      os << "from ." << name << "_" << arity
-         << " import " << name << "_" << arity
-         << "T as " << name << "_" << arity << '\n';
+      os << "from ." << name << "_" << arity << " import " << name << "_"
+         << arity << '\n';
     }
 
     auto bp = decl.BindingPattern();
-    os << "from ." << name << "_" << bp
-       << " import " << name << "_" << bp
+    os << "from ." << name << "_" << bp << " import " << name << "_" << bp
        << "T as " << name << "_" << bp << '\n';
   }
 
@@ -108,15 +105,14 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   os.PushIndent();
   if (has_inputs) {
 
-    os << os.Indent() << "_msg: InputMessage\n"
+    os << os.Indent() << "_msg: DatalogServerMessage\n"
        << os.Indent() << "_added_msg: Optional[AddedInputMessage]\n";
     if (has_removed_inputs) {
       os << os.Indent() << "_removed_msg: Optional[RemovedInputMessage]\n";
     }
-    os << '\n'
-       << os.Indent() << "def __init__(self):\n";
+    os << '\n' << os.Indent() << "def __init__(self):\n";
     os.PushIndent();
-    os << os.Indent() << "self._msg = InputMessage()\n"
+    os << os.Indent() << "self._msg = DatalogServerMessage()\n"
        << os.Indent() << "self._added_msg = None\n";
     if (has_removed_inputs) {
       os << os.Indent() << "self._removed_msg = None\n";
@@ -146,7 +142,8 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
       os.PopIndent();  // _removed
     }
 
-    auto do_message = [&] (ParsedMessage message, const char *prefix, const char *method) {
+    auto do_message = [&](ParsedMessage message, const char *prefix,
+                          const char *method) {
       const ParsedDeclaration decl(message);
       const auto name = message.Name();
       const auto arity = message.Arity();
@@ -165,7 +162,8 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
       os.PopIndent();
       os << os.Indent() << "msg = " << name << '_' << arity << "()\n";
       for (ParsedParameter param : decl.Parameters()) {
-        os << os.Indent() << "msg." << param.Name() << " = " << param.Name() << '\n';
+        os << os.Indent() << "msg." << param.Name() << " = " << param.Name()
+           << '\n';
       }
       os << os.Indent() << "ls." << name << '_' << arity << ".append(msg)\n\n";
       os.PopIndent();
@@ -226,19 +224,23 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     }
   }
 
-  os << os.Indent() << "def consume(self, db: 'Datalog', output: OutputMessage):\n";
+  os << os.Indent()
+     << "def consume(self, db: 'Datalog', output: DatalogClientMessage):\n";
   os.PushIndent();
   os << os.Indent() << "self.begin(db)\n";
   if (has_outputs) {
     auto i = 0;
 
-    auto do_message = [&] (ParsedMessage message, const char *list, const char *added) {
+    auto do_message = [&](ParsedMessage message, const char *list,
+                          const char *added) {
       const ParsedDeclaration decl(message);
       const auto name = message.Name();
       const auto arity = message.Arity();
-      os << os.Indent() << "if output." << list << '.' << name << '_' << arity << " is not None:\n";
+      os << os.Indent() << "if output." << list << '.' << name << '_' << arity
+         << " is not None:\n";
       os.PushIndent();
-      os << os.Indent() << "for m" << i << " in output." << list << '.' << name << '_' << arity << ":\n";
+      os << os.Indent() << "for m" << i << " in output." << list << '.' << name
+         << '_' << arity << ":\n";
       os.PushIndent();
       os << os.Indent() << "self.consume_" << name << '_' << arity << "(db";
       for (ParsedParameter param : decl.Parameters()) {
@@ -281,25 +283,28 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   os << "class Datalog:\n";
   os.PushIndent();
   os << os.Indent() << "_stub: DatalogStub\n\n"
-     << os.Indent() << "def __init__(self, client_name: str, channel: grpc.Channel):\n";
+     << os.Indent()
+     << "def __init__(self, client_name: str, channel: grpc.Channel):\n";
   os.PushIndent();
   os << os.Indent() << "self._name = client_name\n"
      << os.Indent() << "self._stub = DatalogStub(channel)\n\n";
   os.PopIndent();  // __init__
 
-  os << os.Indent() << "def produce(self, builder: InputMessageBuilder) -> None:\n";
+  os << os.Indent()
+     << "def produce(self, builder: InputMessageBuilder) -> None:\n";
   os.PushIndent();
   if (has_inputs) {
     os << os.Indent() << "message_builder = flatbuffers.Builder(0)\n"
        << os.Indent() << "message = builder._msg\n"
-       << os.Indent() << "builder._msg = InputMessage()\n"
+       << os.Indent() << "builder._msg = DatalogServerMessage()\n"
        << os.Indent() << "builder._added_msg = None\n";
     if (has_removed_inputs) {
       os << os.Indent() << "builder._removed_msg = None\n";
     }
     os << os.Indent() << "offset = message.Pack(message_builder)\n"
        << os.Indent() << "message_builder.Finish(offset)\n"
-       << os.Indent() << "self._stub.Publish(bytes(message_builder.Output()))\n\n";
+       << os.Indent()
+       << "self._stub.Publish(bytes(message_builder.Output()))\n\n";
   } else {
     os << os.Indent() << "pass\n\n";
   }
@@ -334,34 +339,46 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     os << os.Indent() << "req = " << name << '_' << bp << "()\n";
     for (ParsedParameter param : decl.Parameters()) {
       if (param.Binding() == ParameterBinding::kBound) {
-        os << os.Indent() << "req." << param.Name() << " = " << param.Name() << '\n';
+        os << os.Indent() << "req." << param.Name() << " = " << param.Name()
+           << '\n';
       }
     }
     os << os.Indent() << "message_builder = flatbuffers.Builder(0)\n"
        << os.Indent() << "offset = req.Pack(message_builder)\n"
        << os.Indent() << "message_builder.Finish(offset)\n"
-       << os.Indent() << "buff = bytes(message_builder.Output())\n"
-       << os.Indent() << "resp = self._stub.Query_" << name << '_' << bp << "(buff)\n";
+       << os.Indent() << "buff = bytes(message_builder.Output())\n";
+    os << os.Indent() << "try:\n";
+    os.PushIndent();
+    os << os.Indent() << "resp = self._stub.Query_" << name << '_' << bp
+       << "(buff)\n";
 
     // It's a `_MultiThreadedRendezvous`.
     if (has_free) {
       os << os.Indent() << "for resp_buff in resp:\n";
       os.PushIndent();
-      os << os.Indent() << "yield " << name << '_' << arity << ".InitFromBuf(resp_buff, 0)\n";
+      os << os.Indent() << "yield " << name << '_' << arity
+         << ".GetRootAs(resp_buff)\n";
       os.PopIndent();
-
-      os << os.Indent() << "del resp\n\n";
     } else {
-
     }
 
+    os.PopIndent();  //try
+    os << os.Indent() << "except grpc.RpcError as rpc_error:\n";
+    os.PushIndent();  // except open
+    os << os.Indent() << "if rpc_error.code() == grpc.StatusCode.NOT_FOUND:\n";
+    os.PushIndent();  //if open
+    os << os.Indent() << "return\n";
+    os.PopIndent();  // if close
+    os << os.Indent() << "raise rpc_error\n";  // re-raise
+    os.PopIndent();  // except close
     os.PopIndent();
     os << '\n';
   }
 
-  os << os.Indent() << "def consume(self, consumer: OutputMessageConsumer) -> None:\n";
+  os << os.Indent()
+     << "def consume(self, consumer: OutputMessageConsumer) -> None:\n";
   os.PushIndent();
-  os << os.Indent() << "message_builder = flatbuffer.Builder(0)\n"
+  os << os.Indent() << "message_builder = flatbuffers.Builder(0)\n"
      << os.Indent() << "message = Client()\n"
      << os.Indent() << "message.name = self._name\n"
      << os.Indent() << "offset = message.Pack(message_builder)\n"

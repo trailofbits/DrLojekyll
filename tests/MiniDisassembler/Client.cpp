@@ -5,9 +5,10 @@
 #include "database.client.h"  // Auto-generated.
 
 template <typename DB>
-void dump(DB &db,
-          ::hyde::rt::ClientResultStream<database::DatalogClientMessage> &updates,
-          bool wait=true) {
+void dump(
+    DB &db,
+    ::hyde::rt::ClientResultStream<database::DatalogClientMessage> &updates,
+    bool wait = true) {
   if (wait) {
 
     // Pluck one update off of what the server published.
@@ -22,8 +23,8 @@ void dump(DB &db,
 
   for (auto func_ea = 0; func_ea < 50; func_ea++) {
     for (auto inst : db.function_instructions_bf(func_ea)) {
-      std::cout << "  FuncEA=" << inst->FuncEA()
-                << " InstEA=" << inst->InstEA() << "\n";
+      std::cout << "  FuncEA=" << inst->FuncEA() << " InstEA=" << inst->InstEA()
+                << "\n";
     }
   }
 
@@ -46,19 +47,27 @@ size_t NumFunctionInstructions(DB &db, uint64_t func_ea) {
 // A simple Google Test example
 TEST(MiniDisassembler, ServerConnectionWorks) {
 
-  auto send_channel = grpc::CreateChannel(
-      "localhost:50051", grpc::InsecureChannelCredentials());
+  grpc::ChannelArguments args;
+  args.SetMaxSendMessageSize(std::numeric_limits<int>::max());
+  args.SetMaxReceiveMessageSize(std::numeric_limits<int>::max());
 
-  auto recv_channel = grpc::CreateChannel(
-      "localhost:50051", grpc::InsecureChannelCredentials());
 
-  auto query_channel = grpc::CreateChannel(
-      "localhost:50051", grpc::InsecureChannelCredentials());
+  auto send_channel = grpc::CreateCustomChannel(
+      "localhost:50051", grpc::InsecureChannelCredentials(), args);
+
+  auto recv_channel = grpc::CreateCustomChannel(
+      "localhost:50051", grpc::InsecureChannelCredentials(), args);
+
+  auto query_channel = grpc::CreateCustomChannel(
+      "localhost:50051", grpc::InsecureChannelCredentials(), args);
+
+
+  // Make two separate channels; we expect very different access patterns for
+  // incoming updates and for general usage.
 
   ASSERT_NE(recv_channel.get(), send_channel.get());
 
-  database::DatalogClient db(std::move(send_channel),
-                             std::move(recv_channel),
+  database::DatalogClient db(std::move(send_channel), std::move(recv_channel),
                              std::move(query_channel));
 
   auto updates = db.Subscribe("MiniDisassemblerTest");

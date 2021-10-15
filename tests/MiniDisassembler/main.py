@@ -4,6 +4,8 @@ import grpc
 import database
 import time
 
+from database.EdgeType import EdgeType
+
 if __name__ == "__main__":
   channel = grpc.insecure_channel('localhost:50051')
 
@@ -18,11 +20,22 @@ if __name__ == "__main__":
   db = database.Datalog("test", channel)
   db.produce(builder)
 
-  time.sleep(1)
   for func in db.function_instructions_bf(10):
-    print(func)
+    print(func.InstEA())
+
+  for func in db.function_instructions_bf(12):
+    print(func.InstEA())
+
+  for func in db.function_instructions_bf(9):
+    print(func.InstEA())
 
 
+  builder = database.InputMessageBuilder()
+  builder.produce_raw_transfer_3(10, 11, EdgeType.FALL_THROUGH)
+  db.produce(builder)
+
+  for func in db.function_instructions_bf(10):
+    print(func.InstEA())
   # db = Database(DatabaseLog(), DatabaseFunctors())
 
   # # Start with a few instructions, with no control-flow between them.
