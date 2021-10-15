@@ -1,0 +1,13 @@
+[metadata]
+name = ${DR_LIBRARY_NAME}
+version = 0.0.1
+[options]
+package_dir =
+    = src
+packages = find:
+python_requires = >=3.6
+install_requires =
+    grpcio-tools
+    flatbuffers
+[options.packages.find]
+where = src

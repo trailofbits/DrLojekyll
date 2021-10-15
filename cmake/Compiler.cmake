@@ -73,14 +73,15 @@ function(compile_datalog)
   # Output directory in which Python code is placed.
   if(DR_PY_OUTPUT_DIR)
     message("Sending python output to: ${DR_PY_OUTPUT_DIR}")
-    list(APPEND dr_args -py-out "${DR_PY_OUTPUT_DIR}")
-    
+    list(APPEND dr_args -py-out "${DR_PY_OUTPUT_DIR}/src")
+    configure_file("${CMAKE_SOURCE_DIR}/pysetup_files/setup.cfg.in" "${DR_PY_OUTPUT_DIR}/setup.cfg")
+    configure_file("${CMAKE_SOURCE_DIR}/pysetup_files/pyproject.toml.in" "${DR_PY_OUTPUT_DIR}/pyproject.toml")
     set(dr_py_output_files
-      "${DR_PY_OUTPUT_DIR}/${DR_DATABASE_NAME}/__init__.py"
-      "${DR_PY_OUTPUT_DIR}/${DR_DATABASE_NAME}/${DR_DATABASE_NAME}_grpc_db.py"
-      "${DR_PY_OUTPUT_DIR}/${DR_DATABASE_NAME}/InputMessage.py"
-      "${DR_PY_OUTPUT_DIR}/${DR_DATABASE_NAME}/OutputMessage.py"
-      "${DR_PY_OUTPUT_DIR}/${DR_DATABASE_NAME}/Client.py")
+      "${DR_PY_OUTPUT_DIR}/src/${DR_DATABASE_NAME}/__init__.py"
+      "${DR_PY_OUTPUT_DIR}/src/${DR_DATABASE_NAME}/${DR_DATABASE_NAME}_grpc_db.py"
+      "${DR_PY_OUTPUT_DIR}/src/${DR_DATABASE_NAME}/InputMessage.py"
+      "${DR_PY_OUTPUT_DIR}/src/${DR_DATABASE_NAME}/OutputMessage.py"
+      "${DR_PY_OUTPUT_DIR}/src/${DR_DATABASE_NAME}/Client.py")
 
   else()
     set(dr_py_output_files "")
@@ -123,9 +124,6 @@ function(compile_datalog)
     OUTPUT
       ${dr_cxx_output_files}
       ${dr_py_output_files}
-    #BYPRODUCTS
-    #  ${dr_cxx_output_files}
-    #  ${dr_py_output_files}
     COMMAND
       ${dr_args}
     COMMENT
