@@ -60,7 +60,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
      << "from typing import Final, Iterator, List, Optional\n"
      << "from ." << file_name << "_grpc_fb import DatalogStub\n"
      << "from .DatalogServerMessage import DatalogServerMessageT as DatalogServerMessage\n"
-     << "from .DatalogClientMessage import DatalogClientMessageT as DatalogClientMessage\n"
+     << "from .DatalogClientMessage import DatalogClientMessage\n"
      << "from .Client import ClientT as Client\n"
      << "from .AddedInputMessage import AddedInputMessageT as AddedInputMessage\n";
 
@@ -375,8 +375,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     os << '\n';
   }
 
-  os << os.Indent()
-     << "def consume(self, consumer: OutputMessageConsumer) -> None:\n";
+  os << os.Indent() << "def consume(self) -> Iterator[DatalogClientMessage]:\n";
   os.PushIndent();
   os << os.Indent() << "message_builder = flatbuffers.Builder(0)\n"
      << os.Indent() << "message = Client()\n"
@@ -384,14 +383,9 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
      << os.Indent() << "offset = message.Pack(message_builder)\n"
      << os.Indent() << "message_builder.Finish(offset)\n"
      << os.Indent() << "buff = bytes(message_builder.Output())\n"
-     << os.Indent() << "while True:\n";
-  os.PushIndent();
-  os << os.Indent() << "x = self._stub.Subscribe(buff)\n"
-     << os.Indent() << "print(x.__class__)\n"
-     << os.Indent() << "print(dir(x))\n"
-     << os.Indent() << "print(x)\n";
-
-  os.PopIndent();  // while
+     << os.Indent() << "x = self._stub.Subscribe(buff)\n"
+     << os.Indent()
+     << "return map(lambda currbytes: DatalogClientMessage.GetRootAs(currbytes),x)\n";
   os.PopIndent();  // consume
 
   os.PopIndent();  // class Datalog
