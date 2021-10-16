@@ -388,6 +388,7 @@ void ParserImpl::ParseLocalExport(
 
   DisplayPosition next_pos;
   Token name;
+  Token highlight;
 
   bool has_mutable_parameter = false;
 
@@ -778,8 +779,19 @@ void ParserImpl::ParseLocalExport(
 
         // Done with our declaration.
         } else if (Lexeme::kPuncPeriod == lexeme) {
+          if (highlight.IsValid()) {
+            context->error_log.Append(scope_range, highlight.SpellingRange())
+                << "Declaration is marked with clause '" << highlight
+                << "' pragma but ends instead of containing an embedded clause";
+          }
           local->last_tok = tok;
           state = 9;
+          continue;
+
+        } else if (Lexeme::kPragmaDebugHighlight == lexeme) {
+          clause_toks.push_back(tok);
+          highlight = tok;
+          state = 8;
           continue;
 
         // We've declared a local or export, and instead of the declaration
