@@ -82,6 +82,7 @@ Another common pattern is to use `#epilogue` code to embed self-tests.
 code_data: "```" <anything...> "```" ;
 code_data: "```c++" <anything...> "```" ;
 code_data: "```python" <anything...> "```" ;
+code_data: "```flat" <anything...> "```" ;
 code_data: <double quoted string literal> ;
 
 // Inline code statements to be emitted to the generated code.
@@ -278,15 +279,32 @@ finish_decl_or_start_clause : ":" conjunct_list "." ;
 
 constant_decl: "#constant" foreign_type_name code_data constant_pragmas "." ;
 
+// Tells the compile that a foreign constant has a unique representation that
+// is distinct from every other constant/foreign constant of the same type. This
+// helps the compiler be slightly more aggressive in some optimization cases.
+//
+// In general, the compiler doesn't try to interpret the equality of two constants,
+// even integral literals. For example, it doesn't know that `0x1` and `1` are the
+// same.
 constant_pragmas: "@unique" ;
 constant_pragmas: ;
 
+// Marks a received or published message as differential. Required if absent
+// and analysis determines that a published message actually admits retractions.
+// Key idea is that it helps document and clearly define what things admit
+// diffrentials, as they often creep into code because of usage of negations.
 maybe_differential: "@differential" ;
 maybe_differential: ;
 
+// Marks a `#local` or `#export` declaration as being inlinable into its usage
+// sites. Inlining is not yet done, but when it is added, this will enable
+// `@inline`-marked rules to not (themselves) be subject to range-restriction,
+// but instead rely on their inlining into other clause bodies to restrict all
+// variables.
 maybe_inline: "@inline" ;
 maybe_inline: ;
 
+// Only return the first result from a `#query` declaration.
 maybe_first: "@first" ;
 maybe_first: ;
 
@@ -376,8 +394,18 @@ cannot be defined for functors.
 
 
 ```antlr
+// Used for debugging the DataFlow IR when visualized using DOT digraphs.
+// A random color is used to highlight the borders of data flow IR nodes
+// associated with the clause.
 clause_head_pragma: "@highlight" ;
+
+// Tells the compiler that you are aware that a cross-produce is necessary,
+// essentially "blessing" it to generate what it assumes is bad performing
+// code. Sometimes cross-products are not desirable and come about by
+// accident, and so they are always treated as errors in the source code
+// unless otherwise so blessed.
 clause_head_pragma: "@product" ;
+
 clause_head_pragma: ;
 
 clause: atom "(" named_var_list ")" clause_head_pragma "." ;
@@ -403,14 +431,33 @@ comparison: var_or_literal "!=" var_or_literal ;
 comparison: var_or_literal "<" var_or_literal ;
 comparison: var_or_literal ">" var_or_literal ;
 
+// A variable can be used as a predicate if it has Boolean type. This
 predicate_tail: var ;
+
+// Booleans can be used as predicates, even though their evaluation
+// is mostly trivial. Adding in `false` or `!true` as a predicate is
+// a simple way to disable a rule, without commenting it out. The effect
+// on codegen will be as though it has been commented out, although that
+// rule will still be subject to type checking.
 predicate_tail: "true" ;
 predicate_tail: "false" ;
+
+// An atom name can be used as a zero-argument predicate. These behave
+// like existence checks. Zero argument predicates can be used before they
+// are defined.
 predicate_tail: atom ;
+
 predicate_tail: atom "(" arg_list ")" ;
 
 predicate: predicate_tail ;
 predicate: "!" predicate_tail ;
+
+// Never is a stronger form of negation that brings in programmer/system
+// knowledge that cannot be inferred. It tells the compiler that once
+// a particular negation is satisfied, it will always be satisfied. This
+// is a strong statement, as it says that future inputs (directly or
+// indirectly via `#message`s) will never lead to the negated predicate
+// being proven true.
 predicate: "@never" atom "(" arg_list ")" ;
 
 conjunct_list_tail: "," conjunct_list ;
