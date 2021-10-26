@@ -143,6 +143,7 @@ function(compile_datalog)
     ${DR_DRLOJEKYLL_RT}
     gRPC::gpr gRPC::upb gRPC::grpc gRPC::grpc++
     flatbuffers::flatbuffers
+    ${DR_LIBRARIES}
   )
   
   if(TARGET DrLojekyll::drlojekyll_sanitizers)

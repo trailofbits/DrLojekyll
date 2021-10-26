@@ -160,8 +160,12 @@ can begin with upper or lower case alphabetic characters.
 foreign_type_name: atom ;
 foreign_type_name: variable ;
 
-foreign_decl_pragmas: ;
+// Marks this type (possibly for a specific language target) as being referentially
+// transparent. That tells the compiler that equality implies identity. If a foreign
+// type is not marked as transparent, then the compiler will emit code that deduplicates
+// and interns equal instances so that all uses are identical.
 foreign_decl_pragmas: "@transparent" ;
+foreign_decl_pragmas: ;
 
 foreign_decl: "#foreign" foreign_type_name "." ;
 foreign_decl: "#foreign" foreign_type_name code_data foreign_decl_pragmas "." ;

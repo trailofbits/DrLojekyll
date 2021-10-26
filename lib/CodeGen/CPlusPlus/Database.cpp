@@ -1220,8 +1220,14 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
 
   auto arg_sep = "";
   for (ParsedParameter arg : args) {
-    os << arg_sep << "const " << TypeName(module, arg.Type().Kind()) << "& "
-       << arg.Name();
+    const TypeLoc type = arg.Type();
+    os << arg_sep;
+    if (type.IsReferentiallyTransparent(module, Language::kCxx)) {
+      os << TypeName(module, type) << ' ';
+    } else {
+      os << "const " << TypeName(module, type) << " &";
+    }
+    os << arg.Name();
     arg_sep = ", ";
   }
 
