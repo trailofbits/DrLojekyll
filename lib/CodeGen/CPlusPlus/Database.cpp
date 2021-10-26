@@ -449,7 +449,11 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       Functor(os, functor) << "(";
       auto sep = "";
       for (auto in_var : region.InputVariables()) {
-        os << sep << Var(os, in_var);
+        if (in_var.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+          os << sep << Var(os, in_var);
+        } else {
+          os << sep << "*" << Var(os, in_var);
+        }
         sep = ", ";
       }
       os << ")";
@@ -504,15 +508,16 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         } else {
           assert(!output_vars.empty());
 
-          os << os.Indent() << "for (auto tmp_" << id << " : ";
+          os << os.Indent();
+          auto sep = "for (auto [";
+          for (auto out_var : output_vars) {
+            os << sep << Var(os, out_var);
+            sep = ", ";
+          }
+          os << "] : ";
           call_functor();
           os << ") {\n";
           os.PushIndent();
-          auto out_var_index = 0u;
-          for (auto out_var : output_vars) {
-            os << os.Indent() << Var(os, out_var) << " = tmp_" << id << '['
-               << (out_var_index++) << "];\n";
-          }
           do_body();
           os.PopIndent();
           os << os.Indent() << "}\n";
@@ -1163,7 +1168,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
 };
 
 static void DeclareFunctor(OutputStream &os, ParsedModule module,
-                           ParsedFunctor func, bool user_fwd_declare = false) {
+                           ParsedFunctor func) {
   ParsedDeclaration decl(func);
   std::stringstream return_tuple;
   std::vector<ParsedParameter> args;
@@ -1198,8 +1203,8 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
     switch (func.Range()) {
       case FunctorRange::kOneOrMore:
       case FunctorRange::kZeroOrMore:
-        os << "std::optional<std::vector<" << tuple_prefix << return_tuple.str()
-           << tuple_suffix << ">>";
+        os << "std::vector<" << tuple_prefix << return_tuple.str()
+           << tuple_suffix << ">";
         break;
       case FunctorRange::kOneToOne:
         os << tuple_prefix << return_tuple.str() << tuple_suffix;
@@ -1210,7 +1215,7 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
     }
   }
 
-  os << " " << (user_fwd_declare ? "_" : "") << func.Name() << '_'
+  os << " " << func.Name() << '_'
      << ParsedDeclaration(func).BindingPattern() << "(";
 
   auto arg_sep = "";
@@ -1224,13 +1229,16 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
 }
 
 static void DefineFunctor(OutputStream &os, ParsedModule module,
-                          ParsedFunctor func) {
+                          ParsedFunctor func, const std::string &ns_name) {
   ParsedDeclaration decl(func);
   DeclareFunctor(os, module, func);
   os << " {\n";
   os.PushIndent();
-  os << os.Indent() << "return _" << func.Name() << '_'
-     << ParsedDeclaration(func).BindingPattern() << "(";
+  os << os.Indent() << "return ::";
+  if (!ns_name.empty()) {
+    os << ns_name << "::";
+  }
+  os << func.Name() << '_' << ParsedDeclaration(func).BindingPattern() << "(";
   auto sep_ret = "";
   for (auto param : decl.Parameters()) {
     if (param.Binding() == ParameterBinding::kBound) {
@@ -1244,14 +1252,16 @@ static void DefineFunctor(OutputStream &os, ParsedModule module,
 }
 
 static void DeclareFunctors(OutputStream &os, Program program,
-                            ParsedModule root_module) {
-  os << os.Indent() << "class " << gClassName << "Functors {\n";
+                            ParsedModule root_module,
+                            const std::string &ns_name) {
+  os << os.Indent() << "template <typename StorageT>\n"
+     << os.Indent() << "class " << gClassName << "Functors {\n";
   os.PushIndent();
   os << os.Indent() << "public:\n";
   os.PushIndent();
 
   for (ParsedFunctor func : Functors(root_module)) {
-    DefineFunctor(os, root_module, func);
+    DefineFunctor(os, root_module, func, ns_name);
   }
 
   os.PopIndent();
@@ -1633,7 +1643,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
 
   // Forward-declare user-provided functors
   for (ParsedFunctor func : Functors(module)) {
-    DeclareFunctor(os, module, func, true);
+    DeclareFunctor(os, module, func);
     os << ";\n";
   }
   os << "\n";
@@ -1648,11 +1658,12 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
     os << "namespace " << ns_name << " {\n";
   }
 
-  DeclareFunctors(os, program, module);
+  DeclareFunctors(os, program, module, ns_name);
   DeclareMessageLog(os, program, module);
 
   // A program gets its own class
-  os << "template <typename StorageT, typename LogT=DatabaseLog, typename FunctorsT=DatabaseFunctors>\n";
+  os << "template <typename StorageT, typename LogT=" << gClassName
+     << "Log, typename FunctorsT=" << gClassName << "Functors<StorageT>>\n";
   os << "class " << gClassName << " {\n";
   os.PushIndent();  // class
 

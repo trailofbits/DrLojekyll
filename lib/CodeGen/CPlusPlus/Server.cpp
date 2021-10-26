@@ -845,7 +845,7 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
      << "static PublishedMessageBuilder gDatabaseLog;\n"
      << "static DatabaseStorageType gStorage;\n"
      << "static std::shared_mutex gDatabaseLock;\n"
-     << "static DatabaseFunctors gFunctors;\n"
+     << "static DatabaseFunctors<DatabaseStorageType> gFunctors;\n"
      << "static Database<DatabaseStorageType, PublishedMessageBuilder> gDatabase(\n"
      << "    gStorage, gDatabaseLog, gFunctors);\n";
 

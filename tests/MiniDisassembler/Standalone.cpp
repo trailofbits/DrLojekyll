@@ -41,7 +41,7 @@ size_t NumFunctionInstructions(DB &db, uint64_t func_ea) {
 }
 
 using DatabaseStorage = hyde::rt::StdStorage;
-using DatabaseFunctors = database::DatabaseFunctors;
+using DatabaseFunctors = database::DatabaseFunctors<DatabaseStorage>;
 using DatabaseLog = database::DatabaseLog;
 using Database = database::Database<DatabaseStorage, DatabaseLog, DatabaseFunctors>;
 
