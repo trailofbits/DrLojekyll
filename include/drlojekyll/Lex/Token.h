@@ -373,6 +373,30 @@ enum class Lexeme : uint8_t {
   //    #query foo(..., free type Val, ...) @first ...
   //
   kPragmaCodeGenFirst,
+
+  // Used to mark that the data flow scheduler should try to schedule everything
+  // before a barrier before scheduling everything after a barrier. More than
+  // one barrier can be used within a clause body. This is often usedful to
+  // ensure that joins are not over-eagerly performed, when a more restricted
+  // join could be applied to the output of a functor.
+  //
+  //    function(ObjId, Arch, OS, EA) @highlight
+  //        : json_spec(Arch, OS, Spec)
+  //        , json_read_object_key(Spec, "functions", FuncList)
+  //        , json_read_list_entry(FuncList, _, FuncInfo)
+  //        , json_read_object_key(FuncInfo, "address", IntAddress)
+  //        , json_read_address(IntAddress, EA)
+  //        , @barrier
+  //        , instruction(ObjId, InstArch, EA)
+  //        , object_file(ObjId, _ObjArch, OS, _ObjLoadEA, _ObjPath)
+  //        , valid_arch_transition(Arch, InstArch).
+  //
+  // If we didn't have a barrier here, then `instruction` would be joined with
+  // `object_file`, then later the the effect of the join against `EA` output
+  // from `json_read_address` would be achieved via a comparison. This is not
+  // desirable because we really want the result of all the JSON parsing stuff
+  // to join against the remaining relations.
+  kPragmaPerfBarrier,
 };
 
 enum class TypeKind : uint32_t;

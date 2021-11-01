@@ -64,47 +64,50 @@ static void FindUnrelatedConditions(ParsedClauseImpl *clause,
     pred_to_set.emplace(pred, set);
   };
 
-  for (ParsedPredicateImpl *pred : clause->positive_predicates) {
-    do_pred(pred, nullptr);
-  }
+  for (const auto &group : clause->groups) {
 
-  for (ParsedPredicateImpl *pred : clause->negated_predicates) {
-    do_pred(pred, nullptr);
-  }
-
-  for (ParsedAggregateImpl * const agg : clause->aggregates) {
-    const auto set = new DisjointSet(next_id++);
-    sets.emplace_back(set);
-    do_pred(&(agg->predicate), set);
-    do_pred(&(agg->functor), set);
-  }
-
-  for (ParsedAssignmentImpl * const assign : clause->assignments) {
-    ParsedVariableImpl *lhs_var = assign->lhs.get();
-    auto &set = var_to_set[lhs_var->Id()];
-    if (!set) {
-      set = new DisjointSet(next_id++);
-      sets.emplace_back(set);
+    for (ParsedPredicateImpl *pred : group->positive_predicates) {
+      do_pred(pred, nullptr);
     }
-  }
 
-  for (ParsedComparisonImpl * const cmp : clause->comparisons) {
-    ParsedVariableImpl *lhs_var = cmp->lhs.get();
-    ParsedVariableImpl *rhs_var = cmp->rhs.get();
+    for (ParsedPredicateImpl *pred : group->negated_predicates) {
+      do_pred(pred, nullptr);
+    }
 
-    auto &lhs_set = var_to_set[lhs_var->Id()];
-    auto &rhs_set = var_to_set[rhs_var->Id()];
+    for (ParsedAggregateImpl * const agg : group->aggregates) {
+      const auto set = new DisjointSet(next_id++);
+      sets.emplace_back(set);
+      do_pred(&(agg->predicate), set);
+      do_pred(&(agg->functor), set);
+    }
 
-    if (lhs_set && rhs_set) {
-      DisjointSet::Union(lhs_set, rhs_set);
-    } else if (lhs_set) {
-      rhs_set = lhs_set;
-    } else if (rhs_set) {
-      lhs_set = rhs_set;
-    } else {
-      lhs_set = new DisjointSet(next_id++);
-      rhs_set = lhs_set;
-      sets.emplace_back(lhs_set);
+    for (ParsedAssignmentImpl * const assign : group->assignments) {
+      ParsedVariableImpl *lhs_var = assign->lhs.get();
+      auto &set = var_to_set[lhs_var->Id()];
+      if (!set) {
+        set = new DisjointSet(next_id++);
+        sets.emplace_back(set);
+      }
+    }
+
+    for (ParsedComparisonImpl * const cmp : group->comparisons) {
+      ParsedVariableImpl *lhs_var = cmp->lhs.get();
+      ParsedVariableImpl *rhs_var = cmp->rhs.get();
+
+      auto &lhs_set = var_to_set[lhs_var->Id()];
+      auto &rhs_set = var_to_set[rhs_var->Id()];
+
+      if (lhs_set && rhs_set) {
+        DisjointSet::Union(lhs_set, rhs_set);
+      } else if (lhs_set) {
+        rhs_set = lhs_set;
+      } else if (rhs_set) {
+        lhs_set = rhs_set;
+      } else {
+        lhs_set = new DisjointSet(next_id++);
+        rhs_set = lhs_set;
+        sets.emplace_back(lhs_set);
+      }
     }
   }
 
@@ -137,33 +140,35 @@ static void FindUnrelatedConditions(ParsedClauseImpl *clause,
     err << "The following elements in the body of this clause should be "
         << "factored out into a zero-argument predicate";
 
-    for (ParsedPredicateImpl *pred : clause->positive_predicates) {
-      if (pred_to_set[pred]->Find() == cond_set) {
-        err.Note(clause_range, ParsedPredicate(pred).SpellingRange())
-            << "This predicate";
+    for (const auto &group : clause->groups) {
+      for (ParsedPredicateImpl *pred : group->positive_predicates) {
+        if (pred_to_set[pred]->Find() == cond_set) {
+          err.Note(clause_range, ParsedPredicate(pred).SpellingRange())
+              << "This predicate";
+        }
       }
-    }
 
-    for (ParsedPredicateImpl *pred : clause->negated_predicates) {
-      if (pred_to_set[pred]->Find() == cond_set) {
-        err.Note(clause_range, ParsedPredicate(pred).SpellingRange())
-            << "This negated predicate";
+      for (ParsedPredicateImpl *pred : group->negated_predicates) {
+        if (pred_to_set[pred]->Find() == cond_set) {
+          err.Note(clause_range, ParsedPredicate(pred).SpellingRange())
+              << "This negated predicate";
+        }
       }
-    }
 
-    for (ParsedAssignmentImpl *assign : clause->assignments) {
-      ParsedVariableImpl *lhs_var = assign->lhs.get();
-      if (var_to_set[lhs_var->Id()] == cond_set) {
-        err.Note(clause_range, ParsedAssignment(assign).SpellingRange())
-            << "This assignment";
+      for (ParsedAssignmentImpl *assign : group->assignments) {
+        ParsedVariableImpl *lhs_var = assign->lhs.get();
+        if (var_to_set[lhs_var->Id()] == cond_set) {
+          err.Note(clause_range, ParsedAssignment(assign).SpellingRange())
+              << "This assignment";
+        }
       }
-    }
 
-    for (ParsedComparisonImpl *cmp : clause->comparisons) {
-      ParsedVariableImpl *lhs_var = cmp->lhs.get();
-      if (var_to_set[lhs_var->Id()] == cond_set) {
-        err.Note(clause_range, ParsedComparison(cmp).SpellingRange())
-            << "This comparison";
+      for (ParsedComparisonImpl *cmp : group->comparisons) {
+        ParsedVariableImpl *lhs_var = cmp->lhs.get();
+        if (var_to_set[lhs_var->Id()] == cond_set) {
+          err.Note(clause_range, ParsedComparison(cmp).SpellingRange())
+              << "This comparison";
+        }
       }
     }
   }
@@ -216,6 +221,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
   std::vector<ParsedVariableImpl *> pred_vars;
   ParsedPredicateImpl *pred = nullptr;
   ParsedAggregateImpl *agg = nullptr;
+  ParsedClauseImpl::Group *group = clause->groups.back().get();
 
   // Link `pred` into `clause`.
   auto link_pred = [&](void) {
@@ -238,12 +244,12 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
     if (!pred) {
       assert(!agg);
       if (negation_tok.IsValid()) {
-        pred = clause->negated_predicates.Create(module, clause);
+        pred = group->negated_predicates.Create(module, clause);
         pred->negation = negation_tok;
         pred_decl->context->negated_uses.AddUse(pred);
 
       } else {
-        pred = clause->positive_predicates.Create(module, clause);
+        pred = group->positive_predicates.Create(module, clause);
         pred_decl->context->positive_uses.AddUse(pred);
       }
     } else {
@@ -297,6 +303,8 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
 
         // Zero-argument predicate, e.g. `foo : ...`.
         } else if (Lexeme::kPuncColon == lexeme) {
+          group->barrier = tok;
+
           if (decl) {
             clause->declaration = decl;
             state = 5;
@@ -467,7 +475,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
           return;
         }
 
-      // We've just seen a `:`, time to parse a clause body.
+      // We've just seen a `:` or a `,`, time to parse a clause body.
       case 5:
         if (clause->first_body_token.IsInvalid()) {
           clause->first_body_token = tok;
@@ -554,6 +562,13 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
           state = 12;
           continue;
 
+        } else if (Lexeme::kPragmaPerfBarrier == lexeme) {
+          group = new ParsedClauseImpl::Group(clause);
+          clause->groups.emplace_back(group);
+          group->barrier = tok;
+          state = 8;
+          continue;
+
         } else {
           context->error_log.Append(scope_range, tok_range)
               << "Expected variable name, atom, or exclamation point, but got '"
@@ -586,7 +601,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
                 << lhs->name.SpellingRange() << "' instead";
           }
 
-          const auto assign = clause->assignments.Create(lhs);
+          const auto assign = group->assignments.Create(lhs);
 
           assign->rhs.literal =
               Token::Synthetic(Lexeme::kLiteralTrue, DisplayRange());
@@ -642,7 +657,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
           // If we're doing `<var> = <literal>` then we don't want to explode
           // it into `<temp> = literal, <var> = <temp>`.
           if (Lexeme::kPuncEqual == compare_op.Lexeme()) {
-            auto assign = clause->assignments.Create(lhs);
+            auto assign = group->assignments.Create(lhs);
             assign->rhs.literal = tok;
             std::string_view data;
             if (context->display_manager.TryReadData(tok_range, &data)) {
@@ -693,7 +708,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
             return;
           }
 
-          (void) clause->comparisons.Create(lhs, rhs, compare_op);
+          (void) group->comparisons.Create(lhs, rhs, compare_op);
           state = 8;
           continue;
 
@@ -781,7 +796,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
         // this gets treated as `V = false`.
         } else if (Lexeme::kIdentifierVariable == lexeme) {
           lhs = CreateVariable(clause, tok, false, false);
-          ParsedAssignmentImpl *const assign = clause->assignments.Create(lhs);
+          ParsedAssignmentImpl *const assign = group->assignments.Create(lhs);
           assign->rhs.literal =
               Token::Synthetic(Lexeme::kLiteralFalse, DisplayRange());
           assign->rhs.data = "false";
@@ -910,7 +925,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
           if (Token peek_tok; ReadNextSubToken(peek_tok)) {
             UnreadSubToken();
             if (peek_tok.Lexeme() == Lexeme::kKeywordOver) {
-              agg = clause->aggregates.Create(clause);
+              agg = group->aggregates.Create(clause);
               pred = &(agg->functor);
               pred_decl->context->positive_uses.AddUse(pred);
 

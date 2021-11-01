@@ -424,6 +424,12 @@ conjunct_list: predicate conjunct_list_tail ;
 conjunct_list: negation conjunct_list_tail ;
 conjunct_list: predicate "over" aggregation conjunct_list_tail ;
 
+// Introduces a kind of happens-before relation into the clause body, that
+// forces things before the barrier to be joined together as much as possible,
+// and then when that is done, joins things after the barrier. This helps
+// to encourage the dataflow builder to build user-intended pipelines.
+conjunct_list: "@barrier" conjunct_list_tail ;
+
 aggregation: predicate ;
 aggregation: "(" param_list_0 ")" "{" conjunct_list "}" ;
 

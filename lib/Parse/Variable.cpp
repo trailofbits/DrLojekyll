@@ -49,7 +49,7 @@ ParserImpl::CreateLiteralVariable(ParsedClauseImpl *clause, Token tok,
       Token::Synthetic(Lexeme::kIdentifierUnnamedVariable, tok.SpellingRange()),
       false, false);
 
-  const auto assign = clause->assignments.Create(lhs);
+  const auto assign = clause->groups.back()->assignments.Create(lhs);
   assign->rhs.literal = tok;
 
   const auto tok_lexeme = tok.Lexeme();
