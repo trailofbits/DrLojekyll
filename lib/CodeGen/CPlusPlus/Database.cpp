@@ -952,6 +952,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       return;
     }
 
+    auto id = region.Id();
     os << Comment(os, region, "ProgramTableProductRegion");
 
     os << os.Indent();
@@ -971,7 +972,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     }
 
     os << "> "
-       << "vec_" << region.Id() << ";\n";
+       << "vec_" << region.Id() << "(storage, " << region.Id() << ");\n";
 
     i = 0u;
 
@@ -1011,6 +1012,10 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
           continue;
         }
 
+        os << os.Indent() << "::hyde::rt::Scan<StorageT, ::hyde::rt::TableTag<"
+           << inner_table.Id() << ">> scan_" << id << "_" << i << "_" << j
+           << "(storage, " << Table(os, inner_table) << ");\n";
+
         os << os.Indent() << "for (auto ";
         auto inner_vars_size = inner_vars.size();
         if (inner_vars_size > 1) {
@@ -1024,7 +1029,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         if (inner_vars_size > 1) {
           os << "]";
         }
-        os << " : " << Table(os, inner_table) << ".Keys()) {\n";
+        os << " : scan_" << id << "_" << i << "_" << j << ") {\n";
         os.PushIndent();
         ++indents;
       }

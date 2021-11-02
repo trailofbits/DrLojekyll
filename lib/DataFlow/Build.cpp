@@ -571,7 +571,7 @@ static bool CreateProduct(QueryImpl *query, ParsedClause clause,
   auto join = query->joins.Create();
   join->color = context.color;
   auto col_index = 0u;
-  for (auto view : views) {
+  for (VIEW *view : views) {
 #ifndef NDEBUG
     auto unique_view = PromoteOnlyUniqueColumns(query, view);
     assert(unique_view == view);
@@ -776,10 +776,9 @@ static VIEW *TryApplyNegation(QueryImpl *query, ParsedClause clause,
       needed_params.push_back(false);
       all_needed = false;
 
+    // Failed to find a match; we have error diagnosis later because we might
+    // need to build a cross-product in order to apply functors.
     } else {
-      log.Append(pred.SpellingRange(), var.SpellingRange())
-          << "Internal error: Failed to discover constant used by variable '"
-          << var << "'";
       return nullptr;
     }
   }
@@ -1737,10 +1736,9 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
         changed = true;
       }
 
-      // Clear out the current list.
-      pred_views.clear();
-
+      // We moved things into the next group.
       if (changed) {
+        pred_views.clear();
         g += 1u;
         continue;
       }
