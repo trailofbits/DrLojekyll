@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <flatbuffers/flatbuffers.h>
+#include <drlojekyll/Runtime/Bytes.h>
 
 namespace hyde {
 namespace rt {
@@ -109,6 +110,17 @@ struct FBType<flatbuffers::Offset<flatbuffers::String>,
 };
 
 template <>
+struct FBType<flatbuffers::Offset<flatbuffers::String>,
+              hyde::rt::Bytes> {
+  static inline flatbuffers::Offset<flatbuffers::String> Intern(
+      flatbuffers::FlatBufferBuilder &_fbb,
+      const hyde::rt::Bytes &arg) noexcept {
+    return _fbb.CreateString(reinterpret_cast<const char *>(arg.data()),
+                             arg.size());
+  }
+};
+
+template <>
 struct FBType<flatbuffers::Offset<flatbuffers::Vector<char>>,
               std::string> {
   static inline flatbuffers::Offset<flatbuffers::Vector<char>> Intern(
@@ -161,6 +173,17 @@ struct FBType<flatbuffers::Offset<flatbuffers::Vector<char>>,
 };
 
 template <>
+struct FBType<flatbuffers::Offset<flatbuffers::Vector<char>>,
+              hyde::rt::Bytes> {
+  static inline flatbuffers::Offset<flatbuffers::Vector<char>> Intern(
+      flatbuffers::FlatBufferBuilder &_fbb,
+      const hyde::rt::Bytes &arg) noexcept {
+    return _fbb.CreateVector(reinterpret_cast<const char *>(arg.data()),
+                             arg.size());
+  }
+};
+
+template <>
 struct FBType<flatbuffers::Offset<flatbuffers::Vector<int8_t>>,
               std::string> {
   static inline flatbuffers::Offset<flatbuffers::Vector<int8_t>> Intern(
@@ -216,6 +239,17 @@ struct FBType<flatbuffers::Offset<flatbuffers::Vector<int8_t>>,
 };
 
 template <>
+struct FBType<flatbuffers::Offset<flatbuffers::Vector<int8_t>>,
+              hyde::rt::Bytes> {
+  static inline flatbuffers::Offset<flatbuffers::Vector<int8_t>> Intern(
+      flatbuffers::FlatBufferBuilder &_fbb,
+      const hyde::rt::Bytes &arg) noexcept {
+    return _fbb.CreateVector(reinterpret_cast<const int8_t *>(arg.data()),
+                             arg.size());
+  }
+};
+
+template <>
 struct FBType<flatbuffers::Offset<flatbuffers::Vector<uint8_t>>,
               std::string> {
   static inline flatbuffers::Offset<flatbuffers::Vector<uint8_t>> Intern(
@@ -265,6 +299,17 @@ struct FBType<flatbuffers::Offset<flatbuffers::Vector<uint8_t>>,
   static inline flatbuffers::Offset<flatbuffers::Vector<uint8_t>> Intern(
       flatbuffers::FlatBufferBuilder &_fbb,
       const std::vector<uint8_t> &arg) noexcept {
+    return _fbb.CreateVector(reinterpret_cast<const uint8_t *>(arg.data()),
+                             arg.size());
+  }
+};
+
+template <>
+struct FBType<flatbuffers::Offset<flatbuffers::Vector<uint8_t>>,
+              hyde::rt::Bytes> {
+  static inline flatbuffers::Offset<flatbuffers::Vector<uint8_t>> Intern(
+      flatbuffers::FlatBufferBuilder &_fbb,
+      const hyde::rt::Bytes &arg) noexcept {
     return _fbb.CreateVector(reinterpret_cast<const uint8_t *>(arg.data()),
                              arg.size());
   }
@@ -402,6 +447,37 @@ template <>
 class FBCast<std::vector<uint8_t>> {
  public:
   using T = std::vector<uint8_t>;
+  using ET = uint8_t;
+
+  inline static T From(T &&val) noexcept {
+    return std::forward<T>(val);
+  }
+
+  inline static T From(const flatbuffers::String *str) noexcept {
+    auto iter = reinterpret_cast<const ET *>(str->data());
+    return T(iter, iter + str->size());
+  }
+
+  inline static T From(const flatbuffers::Vector<char> *str) noexcept {
+    auto iter = reinterpret_cast<const ET *>(str->data());
+    return T(iter, iter + str->size());
+  }
+
+  inline static T From(const flatbuffers::Vector<int8_t> *str) noexcept {
+    auto iter = reinterpret_cast<const ET *>(str->data());
+    return T(iter, iter + str->size());
+  }
+
+  inline static T From(const flatbuffers::Vector<uint8_t> *str) noexcept {
+    auto iter = reinterpret_cast<const ET *>(str->data());
+    return T(iter, iter + str->size());
+  }
+};
+
+template <>
+class FBCast<hyde::rt::Bytes> {
+ public:
+  using T = hyde::rt::Bytes;
   using ET = uint8_t;
 
   inline static T From(T &&val) noexcept {

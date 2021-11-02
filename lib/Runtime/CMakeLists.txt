@@ -15,6 +15,7 @@ set(Runtime_PUBLIC_H
   
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/xxhash.h"
 
+  "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Bytes.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Column.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Index.h"
   "${PROJECT_SOURCE_DIR}/include/drlojekyll/Runtime/Runtime.h"

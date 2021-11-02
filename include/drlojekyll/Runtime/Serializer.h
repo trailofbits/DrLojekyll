@@ -13,6 +13,7 @@
 #define XXH_INLINE_ALL
 #include "xxhash.h"
 
+#include "Bytes.h"
 #include "Endian.h"
 #include "Int.h"
 #include "Reference.h"
@@ -1583,6 +1584,11 @@ template <typename Reader, typename Writer, typename T,
 struct Serializer<Reader, Writer, std::vector<T, VectorAllocator>>
     : public LinearContainerSerializer<Reader, Writer,
                                        std::vector<T, VectorAllocator>, T> {};
+
+template <typename Reader, typename Writer>
+struct Serializer<Reader, Writer, hyde::rt::Bytes>
+    : public LinearContainerSerializer<Reader, Writer,
+                                       std::vector<uint8_t>, uint8_t> {};
 
 template <typename Reader, typename Writer, typename T, typename StringTraits,
           typename StringAllocator>

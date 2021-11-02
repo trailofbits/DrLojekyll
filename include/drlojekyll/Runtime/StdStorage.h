@@ -90,6 +90,11 @@ class StdStorage {
     return *reinterpret_cast<const T *>(it->data);
   }
 
+  template <typename T, typename ParamT>
+  inline const T &Intern(ParamT val) {
+    return Intern(T(val));
+  }
+
  private:
   std::unordered_set<InternedValue, HashInternedValue,
                      CompareInternedValues> interned_data;
