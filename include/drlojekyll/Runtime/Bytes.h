@@ -101,11 +101,39 @@ static std::vector<uint8_t> BytesFromString(std::basic_string_view<T> str) {
 
 struct Bytes final : public std::vector<uint8_t> {
  public:
+  Bytes(void) {}
+  Bytes &operator=(const Bytes &that) {
+    this->std::vector<uint8_t>::operator =(that);
+    return *this;
+  }
+
+  Bytes &operator=(Bytes &&that) {
+    this->std::vector<uint8_t>::operator =(
+        std::forward<std::vector<uint8_t>>(that));
+    return *this;
+  }
+
+  Bytes &operator=(const std::vector<uint8_t> &that) {
+    this->std::vector<uint8_t>::operator =(that);
+    return *this;
+  }
+
+  Bytes &operator=(std::vector<uint8_t> &&that) {
+    this->std::vector<uint8_t>::operator =(
+        std::forward<std::vector<uint8_t>>(that));
+    return *this;
+  }
+
+  inline Bytes(const std::vector<uint8_t> &val)
+      : std::vector<uint8_t>(val) {}
 
   inline Bytes(const Bytes &val)
       : std::vector<uint8_t>(val) {}
 
   inline Bytes(Bytes &&val)
+      : std::vector<uint8_t>(std::forward<std::vector<uint8_t>>(val)) {}
+
+  inline Bytes(std::vector<uint8_t> &&val)
       : std::vector<uint8_t>(std::forward<std::vector<uint8_t>>(val)) {}
 
   inline Bytes(const uint8_t *begin_, const uint8_t *end_)
