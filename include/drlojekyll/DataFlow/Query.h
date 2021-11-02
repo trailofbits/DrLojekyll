@@ -965,7 +965,7 @@ class QueryKVIndex : public query::QueryNode<QueryKVIndex> {
   friend class QueryView;
 };
 
-//
+// View to encapsulate and replace the set of nodes contained in a subgraph of views
 class QuerySubgraph : public query::QueryNode<QuerySubgraph> {
  public:
   static QuerySubgraph From(QueryView view);

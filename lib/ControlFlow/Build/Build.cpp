@@ -2190,6 +2190,11 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
     BuildEagerNegateRegion(impl, pred_view, negate, context, parent,
                            last_table);
 
+  } else if (view.IsSubgraph()) {
+    BuildEagerSubgraphRegion(impl, pred_view, QuerySubgraph::From(view), context,
+                          parent, last_table);
+
+
   } else {
     assert(false);
   }

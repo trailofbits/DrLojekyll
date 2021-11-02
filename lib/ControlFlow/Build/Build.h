@@ -486,6 +486,13 @@ void BuildEagerTupleRegion(ProgramImpl *impl, QueryView pred_view,
                            QueryTuple tuple, Context &context, OP *parent,
                            TABLE *last_model);
 
+// Build an eager region for subgraph. If the tuple can receive differential
+// updates then its data needs to be saved.
+void BuildEagerSubgraphRegion(ProgramImpl *impl, QueryView pred_view,
+                           QuerySubgraph subgraph, Context &context, OP *parent,
+                           TABLE *last_model);
+
+
 // Build a top-down checker on a tuple. This possibly widens the tuple, i.e.
 // recovering "lost" columns, and possibly re-orders arguments before calling
 // down to the tuple's predecessor's checker.

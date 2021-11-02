@@ -131,6 +131,7 @@ void QueryImpl::BuildSubgraphs(void) {
 
   auto can_be_subgraph = [&](QueryView view) {
     return view.Successors().size() == 1 && !view.IsNegate()
+        && view.Predecessors().size() == 1
         && !is_conditional(view) && is_candidate_view_type(view);
   };
 
