@@ -1017,6 +1017,7 @@ class DefinedNodeIterator {
   using PrivateType = typename T::PrivateType;
   using NodeType = Node<PublicType, PrivateType>;
 
+  inline DefinedNodeIterator(void) : it(nullptr) {}
   inline DefinedNodeIterator(DefListIterator<PrivateType> it_) : it(it_) {}
 
   inline DefinedNodeIterator<T> &operator++(void) noexcept {

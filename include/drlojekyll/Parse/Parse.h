@@ -319,6 +319,10 @@ class ParsedClause : public Node<ParsedClause, ParsedClauseImpl> {
   // Returns the arity of this clause.
   unsigned Arity(void) const noexcept;
 
+  // Returns the number of groups of this clause. Each group is separated by
+  // a `@barrier` pragma. Most clauses just have a single group.
+  unsigned NumGroups(void) const noexcept;
+
   // Return the `n`th parameter of this clause.
   ParsedVariable NthParameter(unsigned n) const noexcept;
 
@@ -329,19 +333,19 @@ class ParsedClause : public Node<ParsedClause, ParsedClauseImpl> {
   DefinedNodeRange<ParsedVariable> Variables(void) const;
 
   // All positive predicates in the clause.
-  DefinedNodeRange<ParsedPredicate> PositivePredicates(void) const;
+  DefinedNodeRange<ParsedPredicate> PositivePredicates(unsigned group_num) const;
 
   // All negated predicates in the clause.
-  DefinedNodeRange<ParsedPredicate> NegatedPredicates(void) const;
+  DefinedNodeRange<ParsedPredicate> NegatedPredicates(unsigned group_num) const;
 
   // All assignments of variables to constant literals.
-  DefinedNodeRange<ParsedAssignment> Assignments(void) const;
+  DefinedNodeRange<ParsedAssignment> Assignments(unsigned group_num) const;
 
   // All comparisons between two variables.
-  DefinedNodeRange<ParsedComparison> Comparisons(void) const;
+  DefinedNodeRange<ParsedComparison> Comparisons(unsigned group_num) const;
 
   // All aggregations.
-  DefinedNodeRange<ParsedAggregate> Aggregates(void) const;
+  DefinedNodeRange<ParsedAggregate> Aggregates(unsigned group_num) const;
 
   // Is this a deletion clause?
   bool IsDeletion(void) const noexcept;

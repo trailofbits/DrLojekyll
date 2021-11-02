@@ -217,6 +217,7 @@ static void DeclareDescriptors(OutputStream &os, Program program,
 static void DefineGlobal(OutputStream &os, ParsedModule module,
                          DataVariable global) {
   TypeLoc type = global.Type();
+
   os << os.Indent();
   if (global.IsConstant()) {
     switch (global.Type().Kind()) {
@@ -238,10 +239,16 @@ static void DefineGlobal(OutputStream &os, ParsedModule module,
         break;
     }
   }
-  os << TypeName(module, type) << " " << Var(os, global) << ";\n";
+
+  if (type.IsReferentiallyTransparent(module, Language::kCxx)) {
+    os << TypeName(module, type);
+  } else {
+    os << "::hyde::rt::InternRef<" << TypeName(module, type) << ">";
+  }
+  os << " " << Var(os, global) << ";\n";
 }
 
-static bool CanInlineDefineConstant(DataVariable global) {
+static bool CanInlineDefineConstant(ParsedModule module, DataVariable global) {
   switch (global.DefiningRole()) {
     case VariableRole::kConstantZero:
     case VariableRole::kConstantOne:
@@ -250,22 +257,8 @@ static bool CanInlineDefineConstant(DataVariable global) {
     default: break;
   }
 
-  switch (auto type = global.Type(); type.Kind()) {
-    case TypeKind::kBoolean:
-    case TypeKind::kSigned8:
-    case TypeKind::kSigned16:
-    case TypeKind::kSigned32:
-    case TypeKind::kSigned64:
-    case TypeKind::kUnsigned8:
-    case TypeKind::kUnsigned16:
-    case TypeKind::kUnsigned32:
-    case TypeKind::kUnsigned64:
-    case TypeKind::kDouble:
-    case TypeKind::kFloat:
-      return true;
-    default:
-      return false;
-  }
+  auto type = global.Type();
+  return type.IsReferentiallyTransparent(module, Language::kCxx);
 }
 
 // Similar to DefineGlobal except has constexpr to enforce const-ness
@@ -279,14 +272,17 @@ static void DefineConstant(OutputStream &os, ParsedModule module,
     default: break;
   }
   auto type = global.Type();
-  if (CanInlineDefineConstant(global)) {
+  if (CanInlineDefineConstant(module, global)) {
     os << os.Indent() << "static constexpr " << TypeName(module, type) << " "
        << Var(os, global) << " = "
        << TypeValueOrDefault(module, type, global) << ";\n";
 
-  } else {
+  } else if (type.IsReferentiallyTransparent(module, Language::kCxx)) {
     os << os.Indent() << "const " << TypeName(module, type) << " "
        << Var(os, global) << ";\n";
+  } else {
+    os << os.Indent() << "const ::hyde::rt::InternRef<"
+       << TypeName(module, type) << "> " << Var(os, global) << ";\n";
   }
 }
 //
@@ -1715,7 +1711,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
     }
   }
   for (auto constant : program.Constants()) {
-    if (!CanInlineDefineConstant(constant)) {
+    if (!CanInlineDefineConstant(module, constant)) {
       os << ",\n"
          << os.Indent() << "  " << Var(os, constant)
          << TypeValueOrDefault(module, constant.Type(), constant);

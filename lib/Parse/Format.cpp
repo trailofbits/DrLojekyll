@@ -200,35 +200,42 @@ OutputStream &operator<<(OutputStream &os, ParsedClauseHead clause) {
 OutputStream &operator<<(OutputStream &os, ParsedClauseBody clause) {
   auto comma = " : ";
 
-  for (auto assign : clause.clause.Assignments()) {
-    os << comma << assign;
-    comma = ", ";
-  }
-
-  for (auto compare : clause.clause.Comparisons()) {
-    os << comma << compare;
-    comma = ", ";
-  }
-
-  for (auto pred : clause.clause.PositivePredicates()) {
-    os << comma << pred;
-    comma = ", ";
-  }
-
-  for (auto pred : clause.clause.NegatedPredicates()) {
-    os << comma << pred;
-    comma = ", ";
-  }
-
-  for (auto agg : clause.clause.Aggregates()) {
-    os << comma << agg;
-    comma = ", ";
-  }
-
   // If there is something like `!true` or `false` in the clause body, then
   // it gets marked as being disabled.
   if (clause.clause.IsDisabled()) {
     os << comma << "false";
+    comma = ", ";
+  }
+
+  for (auto g = 0u, num_groups = clause.clause.NumGroups();
+       g < num_groups; ++g) {
+
+    for (auto assign : clause.clause.Assignments(g)) {
+      os << comma << assign;
+      comma = ", ";
+    }
+
+    for (auto compare : clause.clause.Comparisons(g)) {
+      os << comma << compare;
+      comma = ", ";
+    }
+
+    for (auto pred : clause.clause.PositivePredicates(g)) {
+      os << comma << pred;
+      comma = ", ";
+    }
+
+    for (auto pred : clause.clause.NegatedPredicates(g)) {
+      os << comma << pred;
+      comma = ", ";
+    }
+
+    for (auto agg : clause.clause.Aggregates(g)) {
+      os << comma << agg;
+      comma = ", ";
+    }
+
+    comma = ", @barrier, ";
   }
 
   return os;

@@ -21,6 +21,28 @@
     return {impl->access.begin(), impl->access.end()}; \
   }
 
+
+#define DEFINED_RANGE_N(name, method, type, access, sub_access) \
+  DefinedNodeRange<type> name::method(unsigned n) const { \
+    auto &range = impl->access; \
+    if (n >= range.size()) { \
+      return {DefinedNodeIterator<type>(), DefinedNodeIterator<type>()}; \
+    } else { \
+      return {DefinedNodeIterator<type>(range[n]->sub_access.begin()), \
+              DefinedNodeIterator<type>(range[n]->sub_access.end())}; \
+    } \
+  }
+
+#define USED_RANGE_N(name, method, type, access, sub_access) \
+  UsedNodeRange<type> name::method(unsigned n) const { \
+    auto &range = impl->access; \
+    if (n >= range.size()) { \
+      return {UsedNodeIterator<T>(), UsedNodeIterator<T>()}; \
+    } else { \
+      return {range[n]->sub_access.begin()), range[n]->sub_access.end()}; \
+    } \
+  }
+
 namespace hyde {
 namespace parse {
 
@@ -104,12 +126,9 @@ ParsedClauseImpl::ParsedClauseImpl(ParsedModuleImpl *module_)
       User(this),
       module(module_),
       head_variables(this),
-      body_variables(this),
-      comparisons(this),
-      assignments(this),
-      aggregates(this),
-      positive_predicates(this),
-      negated_predicates(this) {}
+      body_variables(this) {
+  groups.emplace_back(new Group(this));
+}
 
 ParsedDeclarationImpl::~ParsedDeclarationImpl(void) {}
 
@@ -957,6 +976,12 @@ unsigned ParsedClause::Arity(void) const noexcept {
   return impl->head_variables.Size();
 }
 
+// Returns the number of groups of this clause. Each group is separated by
+// a `@barrier` pragma. Most clauses just have a single group.
+unsigned ParsedClause::NumGroups(void) const noexcept {
+  return static_cast<unsigned>(impl->groups.size());
+}
+
 // Return the `n`th parameter of this clause.
 ParsedVariable ParsedClause::NthParameter(unsigned n) const noexcept {
   assert(n < Arity());
@@ -970,19 +995,19 @@ DEFINED_RANGE(ParsedClause, Parameters, ParsedVariable, head_variables)
 DEFINED_RANGE(ParsedClause, Variables, ParsedVariable, body_variables)
 
 // All positive predicates in the clause.
-DEFINED_RANGE(ParsedClause, PositivePredicates, ParsedPredicate, positive_predicates)
+DEFINED_RANGE_N(ParsedClause, PositivePredicates, ParsedPredicate, groups, positive_predicates)
 
 // All negated predicates in the clause.
-DEFINED_RANGE(ParsedClause, NegatedPredicates, ParsedPredicate, negated_predicates)
+DEFINED_RANGE_N(ParsedClause, NegatedPredicates, ParsedPredicate, groups, negated_predicates)
 
 // All assignments of variables to constant literals.
-DEFINED_RANGE(ParsedClause, Assignments, ParsedAssignment, assignments)
+DEFINED_RANGE_N(ParsedClause, Assignments, ParsedAssignment, groups, assignments)
 
 // All comparisons between two variables.
-DEFINED_RANGE(ParsedClause, Comparisons, ParsedComparison, comparisons)
+DEFINED_RANGE_N(ParsedClause, Comparisons, ParsedComparison, groups, comparisons)
 
 // All aggregations.
-DEFINED_RANGE(ParsedClause, Aggregates, ParsedAggregate, aggregates)
+DEFINED_RANGE_N(ParsedClause, Aggregates, ParsedAggregate, groups, aggregates)
 
 DisplayRange ParsedClauseHead::SpellingRange(void) const noexcept {
   return DisplayRange(clause.impl->name.Position(),

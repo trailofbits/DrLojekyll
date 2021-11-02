@@ -422,28 +422,33 @@ static void ShuffleClause(DrContext &cxt, hyde::OutputStream &os,
     strings.push_back(stream.str());
   };
 
-  for (auto assign : clause.Assignments()) {
-    AddString(assign);
+  for (auto g = 0u, num_groups = clause.NumGroups();
+       g < num_groups; ++g) {
+
+    for (auto assign : clause.Assignments(g)) {
+      AddString(assign);
+    }
+
+    for (auto compare : clause.Comparisons(g)) {
+      AddString(compare);
+    }
+
+    for (auto pred : clause.PositivePredicates(g)) {
+      AddString(pred);
+    }
+
+    for (auto pred : clause.NegatedPredicates(g)) {
+      AddString(pred);
+    }
+
+    for (auto agg : clause.Aggregates(g)) {
+      AddString(agg);
+    }
+
+    Shuffle(strings.begin(), strings.end(), gen);
   }
 
-  for (auto compare : clause.Comparisons()) {
-    AddString(compare);
-  }
-
-  for (auto pred : clause.PositivePredicates()) {
-    AddString(pred);
-  }
-
-  for (auto pred : clause.NegatedPredicates()) {
-    AddString(pred);
-  }
-
-  for (auto agg : clause.Aggregates()) {
-    AddString(agg);
-  }
-
-  Shuffle(strings.begin(), strings.end(), gen);
-
+  // TODO(pag): Make this `@barrier`-aware?
   auto delim = "";
   for (auto str : strings) {
     os << delim << str;

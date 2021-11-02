@@ -138,7 +138,8 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
     case TypeKind::kDouble: default_val = "0"; break;
 
     // Default constructors
-    case TypeKind::kBytes: break;
+    case TypeKind::kBytes:
+      break;
     case TypeKind::kForeignType:
       if (auto type = module.ForeignType(loc); type) {
         if (auto constructor = type->Constructor(Language::kCxx); constructor) {
@@ -154,7 +155,15 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
   }
 
   std::stringstream value;
-  value << "{" << prefix;
+  value << "{";
+
+  auto close_intern = "";
+  if (!loc.IsReferentiallyTransparent(module, Language::kCxx)) {
+    value << "storage.template Intern<" << TypeName(module, loc) << ">(";
+    close_intern = ")";
+  }
+
+  value << prefix;
   auto has_val = false;
   if (val) {
     if (std::optional<ParsedLiteral> lit = val->Literal()) {
@@ -164,13 +173,13 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
         value << type->NameAsString() << "::" << enumerator.NameAsString();
         has_val = true;
 
-      } else if (lit->IsConstant()) {
+      } else if (lit->IsConstant() || lit->IsNumber() || lit->IsBoolean() ||
+                 lit->IsString()) {
         if (auto spelling_cxx = lit->Spelling(Language::kCxx)) {
           value << *spelling_cxx;
           has_val = true;
         }
       }
-
     }
   }
 
@@ -178,7 +187,7 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
     value << default_val;
   }
 
-  value << suffix << "}";
+  value << suffix << close_intern << "}";
   return value.str();
 }
 

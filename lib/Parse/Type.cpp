@@ -79,7 +79,14 @@ bool TypeLoc::IsReferentiallyTransparent(const ParsedModule &module,
     case TypeKind::kDouble:
       return true;
     case TypeKind::kBytes:
-      return false;
+      if (Language::kPython == lang) {
+        return true;
+      } else if (Language::kCxx == lang ||
+                 Language::kFlatBuffer == lang) {
+        return false;
+      } else {
+        return false;
+      }
     case TypeKind::kForeignType: {
       if (auto type = module.ForeignType(Kind())) {
         return type->IsReferentiallyTransparent(lang);

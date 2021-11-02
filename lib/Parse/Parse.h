@@ -294,11 +294,23 @@ class ParsedClauseImpl : public Def<ParsedClauseImpl>, public User {
   DefList<ParsedVariableImpl> head_variables;
   DefList<ParsedVariableImpl> body_variables;
 
-  DefList<ParsedComparisonImpl> comparisons;
-  DefList<ParsedAssignmentImpl> assignments;
-  DefList<ParsedAggregateImpl> aggregates;
-  DefList<ParsedPredicateImpl> positive_predicates;
-  DefList<ParsedPredicateImpl> negated_predicates;
+  struct Group {
+    inline Group(ParsedClauseImpl *owner_)
+        : comparisons(owner_),
+          assignments(owner_),
+          aggregates(owner_),
+          positive_predicates(owner_),
+          negated_predicates(owner_) {}
+
+    Token barrier;
+    DefList<ParsedComparisonImpl> comparisons;
+    DefList<ParsedAssignmentImpl> assignments;
+    DefList<ParsedAggregateImpl> aggregates;
+    DefList<ParsedPredicateImpl> positive_predicates;
+    DefList<ParsedPredicateImpl> negated_predicates;
+  };
+
+  std::vector<std::unique_ptr<Group>> groups;
 
   std::unordered_map<unsigned, unsigned> named_var_ids;
   unsigned next_var_id{1};
