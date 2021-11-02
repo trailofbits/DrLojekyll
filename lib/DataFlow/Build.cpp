@@ -1823,8 +1823,6 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     return false;
   }
 
-  assert(pred_views.size() == 1u);
-
   auto clause_head =
       ConvertToClauseHead(query, clause, context, log,
                           context.view_groups.back()[0]);
