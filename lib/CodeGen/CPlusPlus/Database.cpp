@@ -67,13 +67,7 @@ static void DeclareDescriptors(OutputStream &os, Program program,
          << os.Indent() << "using Type = ";
 
       TypeLoc col_type(col.Type());
-      if (col_type.IsReferentiallyTransparent(module, Language::kCxx)) {
-        os << TypeName(module, col_type);
-      } else {
-        os << "::hyde::rt::InternRef<" << TypeName(module, col_type) << ">";
-      }
-
-      os   << ";\n";
+      os << TypeName(os, module, col_type) << ";\n";
       os.PopIndent();
       os << os.Indent() << "};\n";
     }
@@ -240,12 +234,7 @@ static void DefineGlobal(OutputStream &os, ParsedModule module,
     }
   }
 
-  if (type.IsReferentiallyTransparent(module, Language::kCxx)) {
-    os << TypeName(module, type);
-  } else {
-    os << "::hyde::rt::InternRef<" << TypeName(module, type) << ">";
-  }
-  os << " " << Var(os, global) << ";\n";
+  os << TypeName(os, module, type) << " " << Var(os, global) << ";\n";
 }
 
 static bool CanInlineDefineConstant(ParsedModule module, DataVariable global) {
@@ -276,13 +265,9 @@ static void DefineConstant(OutputStream &os, ParsedModule module,
     os << os.Indent() << "static constexpr " << TypeName(module, type) << " "
        << Var(os, global) << " = "
        << TypeValueOrDefault(module, type, global) << ";\n";
-
-  } else if (type.IsReferentiallyTransparent(module, Language::kCxx)) {
-    os << os.Indent() << "const " << TypeName(module, type) << " "
-       << Var(os, global) << ";\n";
   } else {
-    os << os.Indent() << "const ::hyde::rt::InternRef<"
-       << TypeName(module, type) << "> " << Var(os, global) << ";\n";
+    os << os.Indent() << "const " << TypeName(os, module, type)
+       << Var(os, global) << ";\n";
   }
 }
 //
@@ -431,7 +416,6 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
   }
 
   void Visit(ProgramGenerateRegion region) override {
-    assert(false && "Revisit with internal iterator\n");
     os << Comment(os, region, "ProgramGenerateRegion");
 
     const auto functor = region.Functor();
@@ -477,43 +461,52 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
       case FunctorRange::kOneOrMore:
       case FunctorRange::kZeroOrMore: {
         if (output_vars.size() == 1u) {
-          os << os.Indent() << "auto tmp_" << id << " = ";
+          auto out_var = output_vars[0];
+          const auto out_type = out_var.Type();
+          const auto out_type_is_transparent =
+              out_type.IsReferentiallyTransparent(module, Language::kCxx);
+          os << os.Indent() << "for (auto tmp_" << id << " : ";
           call_functor();
-          os << ";\n";
-          auto optional = range == FunctorRange::kZeroOrMore;
-          if (optional) {
-            os << os.Indent() << "if (tmp_" << id << ") {\n";
-            os.PushIndent();
-          }
-          os << os.Indent() << "for (auto " << Var(os, output_vars[0]) << " : ";
-          if (optional) {
-
-            // Dereference optional
-            os << "*";
-          }
-          os << "tmp_" << id << ") {\n";
+          os << ") {\n";
           os.PushIndent();
+
+          os << os.Indent() << TypeName(os, module, out_type)
+             << " " << Var(os, out_var) << " = ";
+          if (!out_type_is_transparent) {
+            os << "storage.Intern(";
+          }
+          os << "std::move(tmp_" << id << ")";
+          if (!out_type_is_transparent) {
+            os << ")";
+          }
+          os << ";\n";
           do_body();
           os.PopIndent();
           os << os.Indent() << "}\n";
-          if (optional) {
-            os.PopIndent();
-            os << os.Indent() << "}\n";
-          }
 
         } else {
           assert(!output_vars.empty());
 
-          os << os.Indent();
-          auto sep = "for (auto [";
-          for (auto out_var : output_vars) {
-            os << sep << Var(os, out_var);
-            sep = ", ";
-          }
-          os << "] : ";
+          os << os.Indent() << "for (auto tmp_" << id << " : ";
           call_functor();
           os << ") {\n";
           os.PushIndent();
+          auto out_var_index = 0u;
+          for (auto out_var : output_vars) {
+            const auto out_type = out_var.Type();
+            const auto out_type_is_transparent =
+                out_type.IsReferentiallyTransparent(module, Language::kCxx);
+            os << os.Indent() << TypeName(os, module, out_type)
+               << " " << Var(os, out_var) << " = ";
+            if (!out_type_is_transparent) {
+              os << "storage.Intern(";
+            }
+            os << "std::move(std::get<" << (out_var_index++) << ">(tmp_" << id << "))";
+            if (!out_type_is_transparent) {
+              os << ")";
+            }
+            os << ";\n";
+          }
           do_body();
           os.PopIndent();
           os << os.Indent() << "}\n";
@@ -522,8 +515,56 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
         break;
       }
 
-      // These behave like returns of tuples/values/optionals.
+      // These behave like returns of tuples/values.
       case FunctorRange::kOneToOne:
+        assert(!functor.IsFilter());
+
+        // Produces a single value.
+        if (output_vars.size() == 1u) {
+
+          const auto out_var = output_vars[0];
+          const auto out_type = out_var.Type();
+          const auto out_type_is_transparent =
+              out_type.IsReferentiallyTransparent(module, Language::kCxx);
+          os << os.Indent() << TypeName(os, module, out_type)
+             << " " << Var(os, out_var) << " = ";
+          if (!out_type_is_transparent) {
+            os << "storage.Intern(";
+          }
+          call_functor();
+          if (!out_type_is_transparent) {
+            os << ")";
+          }
+          os << ";\n";
+          do_body();
+
+        // Produces a tuple of values.
+        } else {
+
+          os << os.Indent() << "auto tmp_" << id << " = ";
+          call_functor();
+          os << ";\n";
+          auto out_var_index = 0u;
+          for (auto out_var : output_vars) {
+            const auto out_type = out_var.Type();
+            const auto out_type_is_transparent =
+                out_type.IsReferentiallyTransparent(module, Language::kCxx);
+            os << os.Indent() << TypeName(os, module, out_type)
+               << " " << Var(os, out_var) << " = ";
+            if (!out_type_is_transparent) {
+              os << "storage.Intern(";
+            }
+            os << "std::move(std::get<" << (out_var_index++) << ">(tmp_" << id << "))";
+            if (!out_type_is_transparent) {
+              os << ")";
+            }
+            os << ";\n";
+          }
+          do_body();
+        }
+        break;
+
+      // These behave like returns of optional tuples/values.
       case FunctorRange::kZeroOrOne:
 
         // Only takes bound inputs, acts as a filter functor.
@@ -543,26 +584,27 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
           assert(!functor.IsFilter());
 
           const auto out_var = output_vars[0];
+          const auto out_type = out_var.Type();
+          const auto out_type_is_transparent =
+              out_type.IsReferentiallyTransparent(module, Language::kCxx);
           os << os.Indent() << "auto tmp_" << id << " = ";
           call_functor();
           os << ";\n";
-          auto optional = range == FunctorRange::kZeroOrOne;
-          if (optional) {
-            os << os.Indent() << "if (tmp_" << id << ") {\n";
-            os.PushIndent();
+          os << os.Indent() << "if (tmp_" << id << ") {\n";
+          os.PushIndent();
+          os << os.Indent() << TypeName(os, module, out_type)
+             << " " << Var(os, out_var) << " = ";
+          if (!out_type_is_transparent) {
+            os << "storage.Intern(";
           }
-          os << os.Indent() << "auto " << Var(os, out_var) << " = ";
-          if (optional) {
-
-            // Dereference optional
-            os << "*";
+          os << "std::move(tmp_" << id << ".value())";
+          if (!out_type_is_transparent) {
+            os << ")";
           }
-          os << "tmp_" << id << ";\n";
+          os << ";\n";
           do_body();
-          if (optional) {
-            os.PopIndent();
-            os << os.Indent() << "}\n";
-          }
+          os.PopIndent();
+          os << os.Indent() << "}\n";
 
         // Produces a tuple of values.
         } else {
@@ -574,8 +616,19 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
           os.PushIndent();
           auto out_var_index = 0u;
           for (auto out_var : output_vars) {
-            os << os.Indent() << Var(os, out_var) << " = tmp_" << id
-               << ".value()[" << (out_var_index++) << "];\n";
+            const auto out_type = out_var.Type();
+            const auto out_type_is_transparent =
+                out_type.IsReferentiallyTransparent(module, Language::kCxx);
+            os << os.Indent() << TypeName(os, module, out_type)
+               << " " << Var(os, out_var) << " = ";
+            if (!out_type_is_transparent) {
+              os << "storage.Intern(";
+            }
+            os << "std::move(std::get<" << (out_var_index++) << ">(tmp_" << id << "))";
+            if (!out_type_is_transparent) {
+              os << ")";
+            }
+            os << ";\n";
           }
           do_body();
           os.PopIndent();
@@ -962,12 +1015,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     for (auto table : region.Tables()) {
       (void) table;
       for (auto var : region.OutputVariables(i++)) {
-        if (var.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
-          os << ", " << TypeName(module, var.Type());
-        } else {
-          os << ", ::hyde::rt::InternRef<" << TypeName(module, var.Type())
-             << ">";
-        }
+        os << ", " << TypeName(os, module, var.Type());
       }
     }
 
@@ -1334,11 +1382,7 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
     const auto &col_types = vec.ColumnTypes();
     for (auto type : col_types) {
       auto type_loc = TypeLoc(type);
-      if (type_loc.IsReferentiallyTransparent(module, Language::kCxx)) {
-        os << ", " << TypeName(module, type);
-      } else {
-        os << ", ::hyde::rt::InternRef<" << TypeName(module, type) << ">";
-      }
+      os << ", " << TypeName(os, module, type_loc);
     }
     os << "> ";
 
@@ -1353,12 +1397,7 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
 
   // Then, declare all variable parameters.
   for (auto param : var_params) {
-    if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
-      os << sep << TypeName(module, param.Type()) << ' ' << Var(os, param);
-    } else {
-      os << sep << "::hyde::rt::InternRef<" << TypeName(module, param.Type())
-         << "> " << Var(os, param);
-    }
+    os << sep << TypeName(os, module, param.Type()) << ' ' << Var(os, param);
     sep = ", ";
   }
 
@@ -1372,11 +1411,7 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
 
     for (auto type : vec.ColumnTypes()) {
       auto type_loc = TypeLoc(type);
-      if (type_loc.IsReferentiallyTransparent(module, Language::kCxx)) {
-        os << ", " << TypeName(module, type);
-      } else {
-        os << ", ::hyde::rt::InternRef<" << TypeName(module, type) << ">";
-      }
+      os << ", " << TypeName(os, module, type_loc);
     }
 
     os << "> " << Vector(os, vec) << "(storage, " << vec.Id() << "u);\n";

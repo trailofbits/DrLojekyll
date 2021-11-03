@@ -88,6 +88,16 @@ std::string TypeName(ParsedModule module, TypeLoc kind) {
   }
 }
 
+OutputStream &TypeName(OutputStream &os, ParsedModule module, TypeLoc type) {
+  if (type.IsReferentiallyTransparent(module, Language::kCxx)) {
+    os << TypeName(module, type);
+  } else {
+    os << "::hyde::rt::InternRef<" << TypeName(module, type)
+       << ">";
+  }
+  return os;
+}
+
 const char *OperatorString(ComparisonOperator op) {
   switch (op) {
     case ComparisonOperator::kEqual: return "==";

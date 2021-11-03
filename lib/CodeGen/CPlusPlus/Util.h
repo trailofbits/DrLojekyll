@@ -55,6 +55,8 @@ std::string TypeName(ParsedForeignType type);
 // CPlusPlus representation of TypeKind
 std::string TypeName(ParsedModule module, TypeLoc kind);
 
+OutputStream &TypeName(OutputStream &os, ParsedModule module, TypeLoc type);
+
 const char *OperatorString(ComparisonOperator op);
 
 std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
