@@ -1312,9 +1312,10 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
           ParsedParameterImpl *const new_p = decl->parameters[i];
           if (old_p->opt_binding.Lexeme() != new_p->opt_binding.Lexeme()) {
             all_same = false;
+            break;
           }
         }
-        if (!all_same) {
+        if (all_same) {
           return;  // Not a unique redecl.
         }
       }

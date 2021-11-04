@@ -287,6 +287,7 @@ static void DeclareQueries(ParsedModule module,
                            const std::vector<ParsedQuery> &queries,
                            OutputStream &os) {
 
+  // First, print out the result types.
   for (ParsedQuery query : queries) {
     ParsedDeclaration decl(query);
     if (!decl.IsFirstDeclaration()) {
