@@ -124,15 +124,7 @@ static void DeclareType(ParsedModule module, TypeLoc type,
 //  return ret;
 //}
 
-static void DeclareMessages(ParsedModule module,
-                            const std::vector<ParsedMessage> &messages,
-                            OutputStream &os) {
-
-  bool any_outputs = false;
-  bool any_differential_outputs = false;
-  bool any_inputs = false;
-  bool any_differential_inputs = false;
-
+static void DeclareEnums(ParsedModule module, OutputStream &os) {
   for (ParsedEnumType type : module.EnumTypes()) {
     os << os.Indent() << "enum " << type.Name();
     if (auto ut = type.UnderlyingType(); ut.IsValid()) {
@@ -154,6 +146,16 @@ static void DeclareMessages(ParsedModule module,
     os.PopIndent();
     os << "}\n\n";
   }
+}
+
+static void DeclareMessages(ParsedModule module,
+                            const std::vector<ParsedMessage> &messages,
+                            OutputStream &os) {
+
+  bool any_outputs = false;
+  bool any_differential_outputs = false;
+  bool any_inputs = false;
+  bool any_differential_inputs = false;
 
   // Declare each message as a structure.
   for (ParsedMessage message : messages) {
@@ -392,6 +394,8 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   auto queries = Queries(module);
   auto messages = Messages(module);
   auto inlines = Inlines(module, Language::kFlatBuffer);
+
+  DeclareEnums(module, os);
 
   // Ideally, type names.
   for (auto code : inlines) {
