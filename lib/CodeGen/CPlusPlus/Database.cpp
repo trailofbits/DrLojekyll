@@ -1799,7 +1799,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << os.Indent() << "}\n\n"
      << os.Indent() << "void DumpStats(void) const {\n";
   os.PushIndent();
-  os << os.Indent() << "if constexpr (false) {\n";
+  os << os.Indent() << "if constexpr (true) {\n";
   os.PushIndent();
   os << os.Indent() << "return;  /* change to false to enable */\n";
   os.PopIndent();
