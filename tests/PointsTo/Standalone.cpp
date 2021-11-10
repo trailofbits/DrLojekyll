@@ -18,33 +18,6 @@
 #include <drlojekyll/Runtime/StdRuntime.h>
 #include "points_to.db.h"  // Auto-generated.
 
-template <typename DB>
-void dump(DB &db) {
-  std::cout << "Dump:\n";
-
-  for (auto func_ea = 0; func_ea < 50; func_ea++) {
-    db.function_instructions_bf(func_ea, [] (uint64_t func_ea_, uint64_t inst_ea) {
-      std::cout << "  FuncEA=" << func_ea_ << " InstEA=" << inst_ea << "\n";
-      return true;
-    });
-  }
-
-  std::cout << "\n";
-}
-
-template <typename DB>
-size_t NumFunctionInstructions(DB &db, uint64_t func_ea) {
-  std::vector<uint64_t> eas;
-  db.function_instructions_bf(func_ea, [&eas] (uint64_t, uint64_t inst_ea) {
-    eas.push_back(inst_ea);
-    return true;
-  });
-  std::sort(eas.begin(), eas.end());
-  auto it = std::unique(eas.begin(), eas.end());
-  eas.erase(it, eas.end());
-  return eas.size();
-}
-
 using DatabaseStorage = hyde::rt::StdStorage;
 using DatabaseFunctors = points_to::DatabaseFunctors<DatabaseStorage>;
 using DatabaseLog = points_to::DatabaseLog;
@@ -74,7 +47,6 @@ class Timed {
   }
 };
 
-// A simple Google Test example
 TEST(PointsTo, RunOnFacts) {
 
   DatabaseFunctors functors;
