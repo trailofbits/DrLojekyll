@@ -4,7 +4,7 @@ find_package(GTest CONFIG REQUIRED)
 include(GoogleTest)
 
 compile_datalog(
-  DATABASE_NAME database
+  DATABASE_NAME mini_disassembler
   LIBRARY_NAME mini_disassembler
   SERVICE_NAME mini_disassembler_server
   CXX_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}"

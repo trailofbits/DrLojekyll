@@ -11,7 +11,7 @@
 #include <cinttypes>
 
 #include <drlojekyll/Runtime/StdRuntime.h>
-#include "database.db.h"  // Auto-generated.
+#include "mini_disassembler.db.h"  // Auto-generated.
 
 template <typename DB>
 void dump(DB &db) {
@@ -41,9 +41,9 @@ size_t NumFunctionInstructions(DB &db, uint64_t func_ea) {
 }
 
 using DatabaseStorage = hyde::rt::StdStorage;
-using DatabaseFunctors = database::DatabaseFunctors<DatabaseStorage>;
-using DatabaseLog = database::DatabaseLog;
-using Database = database::Database<DatabaseStorage, DatabaseLog, DatabaseFunctors>;
+using DatabaseFunctors = mini_disassembler::DatabaseFunctors<DatabaseStorage>;
+using DatabaseLog = mini_disassembler::DatabaseLog;
+using Database = mini_disassembler::Database<DatabaseStorage, DatabaseLog, DatabaseFunctors>;
 
 template <typename... Args>
 using Vector = hyde::rt::Vector<DatabaseStorage, Args...>;
@@ -77,13 +77,13 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
 
   // Now we add the fall-through edges, and 10 is the only instruction with
   // no predecessor, so its the function head.
-  Vector<uint64_t, uint64_t, database::EdgeType> transfers(storage, 0);
+  Vector<uint64_t, uint64_t, mini_disassembler::EdgeType> transfers(storage, 0);
 
-  transfers.Add(10, 11, database::EdgeType::FALL_THROUGH);
-  transfers.Add(11, 12, database::EdgeType::FALL_THROUGH);
-  transfers.Add(12, 13, database::EdgeType::FALL_THROUGH);
-  transfers.Add(13, 14, database::EdgeType::FALL_THROUGH);
-  transfers.Add(14, 15, database::EdgeType::FALL_THROUGH);
+  transfers.Add(10, 11, mini_disassembler::EdgeType::FALL_THROUGH);
+  transfers.Add(11, 12, mini_disassembler::EdgeType::FALL_THROUGH);
+  transfers.Add(12, 13, mini_disassembler::EdgeType::FALL_THROUGH);
+  transfers.Add(13, 14, mini_disassembler::EdgeType::FALL_THROUGH);
+  transfers.Add(14, 15, mini_disassembler::EdgeType::FALL_THROUGH);
   db.raw_transfer_3(std::move(transfers));
 
   dump(db);
@@ -114,8 +114,8 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   // Now add a fall-through between 9 and 10. 10 now has a successor, so it's
   // not a function head anymore, so all of the function instructions transfer
   // over to function 9.
-  Vector<uint64_t, uint64_t, database::EdgeType> transfers2(storage, 0);
-  transfers2.Add(9, 10, database::EdgeType::FALL_THROUGH);
+  Vector<uint64_t, uint64_t, mini_disassembler::EdgeType> transfers2(storage, 0);
+  transfers2.Add(9, 10, mini_disassembler::EdgeType::FALL_THROUGH);
   db.raw_transfer_3(std::move(transfers2));
 
   dump(db);
@@ -130,8 +130,8 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   // Now add a function call between 10 and 14. That makes 14 look like
   // a function head, and so now that 14 is a function head, it's no longer
   // part of function 9.
-  Vector<uint64_t, uint64_t, database::EdgeType> transfers3(storage, 0);
-  transfers3.Add(10, 14, database::EdgeType::CALL);
+  Vector<uint64_t, uint64_t, mini_disassembler::EdgeType> transfers3(storage, 0);
+  transfers3.Add(10, 14, mini_disassembler::EdgeType::CALL);
   db.raw_transfer_3(std::move(transfers3));
 
   dump(db);

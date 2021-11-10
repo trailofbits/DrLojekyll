@@ -1,0 +1,41 @@
+; simple call-insensitive field-sensitive points-to analysis in Datalog
+;
+; This code is adapted from Souffle.
+
+
+#foreign Variable ```c++ uint32_t``` @transparent.
+#foreign Allocation ```c++ uint32_t``` @transparent.
+#foreign Field ```c++ uint32_t``` @transparent.
+
+#foreign Variable ```flat uint32``` @transparent.
+#foreign Allocation ```flat uint32``` @transparent.
+#foreign Field ```flat uint32``` @transparent.
+
+
+#message load(Variable Base, Variable Dest, Field AccessedField).
+#message assign_alloc(Variable Var, Allocation Heap).
+#message primitive_assign(Variable Source, Variable Dest).
+#message store(Variable Source, Variable Base, Field AccessedField).
+
+
+#query assign(free Variable Source, free Variable Dest).
+#query var_points_to(free Variable Var, free Allocation Heap).
+#query alias(free Variable X, free Variable Y).
+
+
+assign(Var1, Var2)
+    : primitive_assign(Var1, Var2)
+    : store(Var1, InstanceVar2, AccessedField)
+    , alias(InstanceVar2, InstanceVar1)
+    , load(InstanceVar1, Var2, AccessedField).
+
+
+var_points_to(Var, Heap)
+    : assign_alloc(Var, Heap)
+    : assign(Var2, Var)
+    , var_points_to(Var2, Heap).
+
+
+alias(InstanceVar, IVar)
+    : var_points_to(InstanceVar, InstanceHeap)
+    , var_points_to(IVar, InstanceHeap).

@@ -2,11 +2,11 @@
 
 #include <gtest/gtest.h>
 
-#include "database.client.h"  // Auto-generated.
+#include "mini_disassembler.client.h"  // Auto-generated.
 
 template <typename DB>
 void dump(DB &db,
-          ::hyde::rt::ClientResultStream<database::DatalogClientMessage> &updates,
+          ::hyde::rt::ClientResultStream<mini_disassembler::DatalogClientMessage> &updates,
           bool wait=true) {
   if (wait) {
 
@@ -57,13 +57,13 @@ TEST(MiniDisassembler, ServerConnectionWorks) {
 
   ASSERT_NE(recv_channel.get(), send_channel.get());
 
-  database::DatalogClient db(std::move(send_channel),
+  mini_disassembler::DatalogClient db(std::move(send_channel),
                              std::move(recv_channel),
                              std::move(query_channel));
 
   auto updates = db.Subscribe("MiniDisassemblerTest");
 
-  database::DatalogMessageBuilder builder;
+  mini_disassembler::DatalogMessageBuilder builder;
 
   // Start with a few instructions, with no control-flow between them.
   builder.instruction_1(10);
@@ -92,11 +92,11 @@ TEST(MiniDisassembler, ServerConnectionWorks) {
 
   // Now we add the fall-through edges, and 10 is the only instruction with
   // no predecessor, so its the function head.
-  builder.raw_transfer_3(10, 11, database::EdgeType::FALL_THROUGH);
-  builder.raw_transfer_3(11, 12, database::EdgeType::FALL_THROUGH);
-  builder.raw_transfer_3(12, 13, database::EdgeType::FALL_THROUGH);
-  builder.raw_transfer_3(13, 14, database::EdgeType::FALL_THROUGH);
-  builder.raw_transfer_3(14, 15, database::EdgeType::FALL_THROUGH);
+  builder.raw_transfer_3(10, 11, mini_disassembler::EdgeType::FALL_THROUGH);
+  builder.raw_transfer_3(11, 12, mini_disassembler::EdgeType::FALL_THROUGH);
+  builder.raw_transfer_3(12, 13, mini_disassembler::EdgeType::FALL_THROUGH);
+  builder.raw_transfer_3(13, 14, mini_disassembler::EdgeType::FALL_THROUGH);
+  builder.raw_transfer_3(14, 15, mini_disassembler::EdgeType::FALL_THROUGH);
   db.Publish(builder);
 
   dump(db, updates);
@@ -140,7 +140,7 @@ TEST(MiniDisassembler, ServerConnectionWorks) {
   // Now add a fall-through between 9 and 10. 10 now has a successor, so it's
   // not a function head anymore, so all of the function instructions transfer
   // over to function 9.
-  builder.raw_transfer_3(9, 10, database::EdgeType::FALL_THROUGH);
+  builder.raw_transfer_3(9, 10, mini_disassembler::EdgeType::FALL_THROUGH);
   db.Publish(builder);
 
   dump(db, updates);
@@ -162,7 +162,7 @@ TEST(MiniDisassembler, ServerConnectionWorks) {
   // Now add a function call between 10 and 14. That makes 14 look like
   // a function head, and so now that 14 is a function head, it's no longer
   // part of function 9.
-  builder.raw_transfer_3(10, 14, database::EdgeType::CALL);
+  builder.raw_transfer_3(10, 14, mini_disassembler::EdgeType::CALL);
   db.Publish(builder);
 
   dump(db, updates);

@@ -6,3 +6,4 @@ enable_testing()
 include("${CMAKE_SOURCE_DIR}/cmake/Compiler.cmake")
 
 add_subdirectory(MiniDisassembler)
+add_subdirectory(PointsTo)

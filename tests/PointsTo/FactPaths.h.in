@@ -1,0 +1,9 @@
+
+static constexpr auto kAssignAllocPath = "@PT_ASSIGN_ALLOC_PATH@";
+static constexpr auto kLoadPath = "@PT_LOAD_PATH@";
+static constexpr auto kPrimitiveAssignPath = "@PT_PRIMITIVE_ASSIGN_PATH@";
+static constexpr auto kStorePath = "@PT_STORE_PATH@";
+
+static constexpr auto kAliasPath = "@PT_ALIAS_PATH@";
+static constexpr auto kAssignPath = "@PT_ASSIGN_PATH@";
+static constexpr auto kVarPointsToPath = "@PT_VAR_POINTS_TO_PATH@";
