@@ -349,6 +349,10 @@ a range, such as `@range(.)` to say that the functor produces a single
 output (for the set of `free`-attributed variables) given its input
 `bound`-attributed parameters.
 
+Functor declarations can also be marked as `@inline`. This means that they
+are provided by function, and not via the `DatalogFunctors` class which is
+code-generated.
+
 ```antlr
 
 functor_decl: "#functor" atom "(" param_list_2 ")" constraints "." ;
@@ -359,6 +363,8 @@ constraints: "@range" "(" "+" ")" constraints ;
 constraints: "@range" "(" "*" ")" constraints ;
 constraints: "@range" "(" "?" ")" constraints ;
 constraints: "@impure" constraints ;
+constraints: "@inline" "(" code_data ")" constraints ;
+constraints: "@inline" constraints ;
 
 param_list_2: binding_specifier_2 type named_var "," param_list_2 ;
 param_list_2: binding_specifier_2 type named_var ;

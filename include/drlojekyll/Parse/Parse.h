@@ -672,6 +672,23 @@ class ParsedFunctor : public Node<ParsedFunctor, ParsedFunctorImpl> {
   // `FunctorRange::kZeroOrOne`.
   bool IsFilter(void) const noexcept;
 
+  // Is this an inline functor? This means that is will have a direct definition
+  // provided in some file or in the auto-generated code (via a `#prologue` or
+  // `#epilogue`). This is really a symbol visibility thing.
+  //
+  // An alternative meaning is when a custom symbol is provided, e.g. via
+  // the `@inline(```c++ foo```)` syntax; in this case, it means the target code
+  // should call this function using the code `foo`.
+  bool IsInline(Language lang) const noexcept;
+
+  // Returns the custom inline name, if any. For example:
+  //
+  //      #functor foo(bound u32 X, free u32 Y) @inline(```c++ foo```).
+  //
+  // Normally, in C++, the function name would be `foo_bf` for the `bound`
+  // and `free`, but in this case, it would just be `foo`.
+  std::optional<std::string> InlineName(Language lang) const noexcept;
+
   unsigned NumPositiveUses(void) const noexcept;
   unsigned NumNegatedUses(void) const noexcept;
 

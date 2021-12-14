@@ -15,8 +15,13 @@ namespace python {
 namespace {
 
 static OutputStream &Functor(OutputStream &os, const ParsedFunctor func) {
-  return os << "self._functors." << func.Name() << '_'
-            << ParsedDeclaration(func).BindingPattern();
+  if (auto name = func.InlineName(Language::kPython); name.has_value()) {
+    os << name.value();
+  } else {
+    os << "self._functors." << func.Name() << '_'
+       << ParsedDeclaration(func).BindingPattern();
+  }
+  return os;
 }
 
 static OutputStream &Table(OutputStream &os, const DataTable table) {
@@ -1284,11 +1289,11 @@ static void DeclareFunctors(OutputStream &os, Program program,
   for (auto module : ParsedModuleIterator(root_module)) {
     for (auto first_func : module.Functors()) {
       ParsedDeclaration func_decl(first_func);
-      if (!func_decl.IsFirstDeclaration()) {
+      if (!func_decl.IsFirstDeclaration() || func_decl.IsInline()) {
         continue;
       }
 
-      for (auto redecl : func_decl.Redeclarations()) {
+      for (auto redecl : func_decl.UniqueRedeclarations()) {
         std::stringstream ss;
         ss << redecl.Id() << ':' << redecl.BindingPattern();
         if (auto [it, inserted] = seen.emplace(ss.str()); inserted) {

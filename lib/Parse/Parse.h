@@ -350,7 +350,9 @@ class ParsedDeclarationImpl : public Def<ParsedDeclarationImpl>, public User {
   ParsedDeclarationImpl *next{nullptr};
 
   // The next redeclaration of this declaration. This could be in any module.
+  // This redecl will exactly match in terms of bound/free attributes.
   ParsedDeclarationImpl *next_redecl{nullptr};
+  ParsedDeclarationImpl *first_redecl{nullptr};
 
   // The context that collects all of the declarations together.
   std::shared_ptr<parse::DeclarationContext> context;
@@ -388,6 +390,12 @@ class ParsedDeclarationImpl : public Def<ParsedDeclarationImpl>, public User {
 
   DefList<ParsedParameterImpl> parameters;
   std::string binding_pattern;
+
+  std::string inline_code[kNumLanguages];
+  bool inline_code_is_default[kNumLanguages];
+  bool inline_code_is_generic[kNumLanguages];
+
+  const std::string &BindingPattern(void) noexcept;
 
  private:
   ParsedDeclarationImpl(void) = delete;

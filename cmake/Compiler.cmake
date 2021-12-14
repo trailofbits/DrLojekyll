@@ -4,7 +4,7 @@ function(compile_datalog)
   set(one_val_args LIBRARY_NAME SERVICE_NAME DATABASE_NAME CXX_OUTPUT_DIR
                    PY_OUTPUT_DIR DOT_OUTPUT_FILE DR_OUTPUT_FILE IR_OUTPUT_FILE
                    DRLOJEKYLL_CC DRLOJEKYLL_RT FB_OUTPUT_FILE WORKING_DIRECTORY)
-  set(multi_val_args SOURCES LIBRARIES)
+  set(multi_val_args SOURCES DEPENDS LIBRARIES)
   cmake_parse_arguments(DR "" "${one_val_args}" "${multi_val_args}" ${ARGN})
   
   # Allow the caller to change the path of the Dr. Lojekyll compiler that
@@ -112,6 +112,14 @@ function(compile_datalog)
     message(FATAL_ERROR "compile_datalog function requires at least one SOURCES parameter")
   endif()
   list(APPEND dr_args ${DR_SOURCES})
+  
+  foreach(source_file ${DR_SOURCES})
+    if(EXISTS "${DR_WORKING_DIRECTORY}/${source_file}")
+      list(APPEND absolute_sources "${DR_WORKING_DIRECTORY}/${source_file}")
+    else()
+      list(APPEND absolute_sources "${source_file}")
+    endif()
+  endforeach(source_file)
 
   if(DR_LIBRARY_NAME OR DR_SERVICE_NAME)
     find_package(gRPC CONFIG REQUIRED)
@@ -128,12 +136,13 @@ function(compile_datalog)
     COMMAND
       ${dr_args}
     COMMENT
-      "Compiling ${DATABASE_NAME} datalog code"
+      "Compiling ${DATABASE_NAME} datalog code in directory ${DR_WORKING_DIRECTORY}"
     WORKING_DIRECTORY
       "${DR_WORKING_DIRECTORY}"
     DEPENDS
       "${DR_DRLOJEKYLL_CC}"
-      ${DR_SOURCES})
+      ${absolute_sources}
+      ${DR_DEPENDS})
 
   add_custom_target("${DR_DATABASE_NAME}_outputs" DEPENDS
     ${dr_cxx_output_files}

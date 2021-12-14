@@ -1265,7 +1265,7 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
   }
 
   os << " " << func.Name() << '_'
-     << ParsedDeclaration(func).BindingPattern() << "(";
+     << ParsedDeclaration(func).BindingPattern() << '(';
 
   auto arg_sep = "";
   for (ParsedParameter arg : args) {
@@ -1280,7 +1280,7 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
     arg_sep = ", ";
   }
 
-  os << ")";
+  os << ')';
 }
 
 static void DefineFunctor(OutputStream &os, ParsedModule module,
@@ -1316,7 +1316,9 @@ static void DeclareFunctors(OutputStream &os, Program program,
   os.PushIndent();
 
   for (ParsedFunctor func : Functors(root_module)) {
-    DefineFunctor(os, root_module, func, ns_name);
+    if (!func.IsInline(Language::kCxx)) {
+      DefineFunctor(os, root_module, func, ns_name);
+    }
   }
 
   os.PopIndent();
@@ -1685,8 +1687,10 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
 
   // Forward-declare user-provided functors
   for (ParsedFunctor func : Functors(module)) {
-    DeclareFunctor(os, module, func);
-    os << ";\n";
+    if (!func.IsInline(Language::kCxx)) {
+      DeclareFunctor(os, module, func);
+      os << ";\n";
+    }
   }
   os << "\n";
 
