@@ -50,6 +50,20 @@ void ParserImpl::ParseFunctor(ParsedModuleImpl *module) {
   unsigned num_bound_params = 0;
   unsigned num_free_params = 0;
 
+  std::string_view code;
+  // Strip out leading and trailing whitespace.
+  auto fixup_code = [&code](void) -> bool {
+    while (!code.empty() && (code.front() == ' ' || code.front() == '\n')) {
+      code = code.substr(1u);
+    }
+
+    while (!code.empty() && (code.back() == ' ' || code.back() == '\n')) {
+      code = code.substr(0, code.size() - 1u);
+    }
+
+    return !code.empty();
+  };
+
   for (next_pos = tok.NextPosition(); ReadNextSubToken(tok);
        next_pos = tok.NextPosition()) {
 
@@ -241,6 +255,58 @@ void ParserImpl::ParseFunctor(ParsedModuleImpl *module) {
             return;
           }
 
+        } else if (Lexeme::kPragmaPerfInline == lexeme) {
+          // Duplicate `@inline`.
+          if (functor->inline_attribute.IsValid()) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "Unexpected '@inline' pragma here; functor " << name
+                << " was already marked as inline";
+
+            err.Note(scope_range, functor->inline_attribute.SpellingRange())
+                << "Previous '@inline' pragma was here";
+
+            RemoveDecl(functor);
+            return;
+          }
+
+          // We need to functor name for the inline name.
+          std::stringstream ss;
+          std::string_view name_out;
+          if (!context->display_manager.TryReadData(name.SpellingRange(),
+                                                    &name_out)) {
+            assert(false);
+            context->error_log.Append(scope_range, name.SpellingRange())
+                << "Internal error: Unable to read functor name";
+
+            RemoveDecl(functor);
+            return;
+          }
+
+          // Default initialize all the inline code names if an `@inline` is
+          // used. The idea of the default versions is that they match what
+          // codegen will actually do.
+          ss << name_out << '_' << functor->BindingPattern();
+          for (auto i = 0u; i < kNumLanguages; ++i) {
+            functor->inline_code[i] = ss.str();
+            functor->inline_code_is_default[i] = true;
+            functor->inline_code_is_generic[i] = false;
+          }
+
+          // They all need to be `@inline`, but only one needs to actually
+          // specify the code.
+          functor->inline_attribute = tok;
+          state = 6;
+
+          // See if this is an inline with
+          if (Token peek_tok; ReadNextSubToken(peek_tok)) {
+            if (peek_tok.Lexeme() == Lexeme::kPuncOpenParen) {
+              state = 12;
+            } else {
+              UnreadSubToken();
+            }
+          }
+          continue;
+
         } else if (Lexeme::kPuncPeriod == lexeme) {
           functor->last_tok = tok;
           state = 10;
@@ -308,6 +374,101 @@ void ParserImpl::ParseFunctor(ParsedModuleImpl *module) {
           return;
         }
       case 10: state = 11; break;
+      case 11: state = 11; break;
+
+      // Have read `@inline(`.
+      case 12: {
+        if (Lexeme::kLiteralString == lexeme) {
+          const auto code_id = tok.StringId();
+          if (!context->string_pool.TryReadString(
+                  code_id, tok.StringLength(), &code) ||
+              !fixup_code()) {
+            context->error_log.Append(scope_range, tok_range)
+                << "Empty or invalid generic code literal in '@inline' "
+                << "pragma on functor '" << name << "'";
+            RemoveDecl(functor);
+            return;
+          } else {
+            for (auto lang = 1u; lang < kNumLanguages; ++lang) {
+               functor->inline_code_is_generic[lang] = false;
+               functor->inline_code[lang] = code;
+            }
+            state = 13;
+            continue;
+          }
+        } else if (Lexeme::kLiteralCode == lexeme) {
+          const auto code_id = tok.CodeId();
+          if (!context->string_pool.TryReadCode(code_id, &code) ||
+              !fixup_code()) {
+            context->error_log.Append(scope_range, tok_range)
+                << "Empty or invalid generic code literal in '@inline' "
+                << "pragma on functor '" << name << "'";
+            RemoveDecl(functor);
+            return;
+          } else {
+            for (auto lang = 1u; lang < kNumLanguages; ++lang) {
+               functor->inline_code_is_generic[lang] = false;
+               functor->inline_code[lang] = code;
+            }
+            state = 13;
+            continue;
+          }
+        } else if (Lexeme::kLiteralCxxCode == lexeme) {
+          const auto code_id = tok.CodeId();
+          if (!context->string_pool.TryReadCode(code_id, &code) ||
+              !fixup_code()) {
+            context->error_log.Append(scope_range, tok_range)
+                << "Empty or invalid C++ code literal in '@inline' "
+                << "pragma on functor '" << name << "'";
+            RemoveDecl(functor);
+            return;
+          } else {
+            auto lang = static_cast<unsigned>(Language::kCxx);
+            functor->inline_code_is_default[lang] = false;
+            functor->inline_code[lang] = code;
+            state = 13;
+            continue;
+          }
+        } else if (Lexeme::kLiteralPythonCode == lexeme) {
+          const auto code_id = tok.CodeId();
+          if (!context->string_pool.TryReadCode(code_id, &code) ||
+              !fixup_code()) {
+            context->error_log.Append(scope_range, tok_range)
+                << "Empty or invalid Python code literal in '@inline' "
+                << "pragma on functor '" << name << "'";
+            RemoveDecl(functor);
+            return;
+          } else {
+            auto lang = static_cast<unsigned>(Language::kCxx);
+            functor->inline_code_is_default[lang] = false;
+            functor->inline_code[lang] = code;
+            state = 13;
+            continue;
+          }
+        } else {
+          context->error_log.Append(scope_range, tok_range)
+              << "Unexpected token in '@inline' pragma of functor '"
+              << name << "'; expected a string or code literal (but not a "
+              << "flatbuffer code literal)";
+          RemoveDecl(functor);
+          return;
+        }
+      }
+
+      case 13:
+        // Done the `@inline` pragma.
+        if (Lexeme::kPuncCloseParen == lexeme) {
+          state = 6;
+          continue;
+
+        } else {
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected a closing parenthesis here to end the '@inline' "
+              << "specifier for functor '" << name << "'; got '" << tok
+              << "' instead";
+          RemoveDecl(functor);
+          return;
+        }
     }
   }
 
@@ -339,6 +500,10 @@ void ParserImpl::ParseFunctor(ParsedModuleImpl *module) {
 
   DisplayRange range_spec(functor->range_begin_opt.Position(),
                           functor->range_end_opt.NextPosition());
+
+
+  ParsedDeclarationImpl *first_matching_redecl = nullptr;
+  ParsedDeclarationImpl *last_matching_redecl = nullptr;
 
   // Aggregating functors can't have range specifiers.
   if (is_aggregate && functor->range_begin_opt.IsValid()) {
@@ -403,65 +568,89 @@ void ParserImpl::ParseFunctor(ParsedModuleImpl *module) {
   // declarations. Functors require special handling for things like aggregate/
   // summary parameters.
   } else if (1u < functor->context->redeclarations.Size()) {
+    for (auto redecl : functor->context->redeclarations) {
+      if (redecl == functor) {
+        continue;
+      }
 
-    const auto redecl = functor->context->redeclarations[0];
-    DisplayRange redecl_range(redecl->parsed_tokens.front().Position(),
-                              redecl->parsed_tokens.back().NextPosition());
-    auto i = 0u;
+      DisplayRange redecl_range(redecl->parsed_tokens.front().Position(),
+                                redecl->parsed_tokens.back().NextPosition());
+      auto i = 0u;
 
-    const auto arity = functor->parameters.Size();
+      const auto arity = functor->parameters.Size();
 
-    // Didn't match the purity.
-    if (functor->is_pure && !redecl->is_pure) {
-      auto err = context->error_log.Append(scope_range, tok.NextPosition());
-      err << "Missing '@impure' attribute here to match with prior declaration "
-          << "of functor '" << name << "/" << arity << "'";
+      // Didn't match the purity.
+      if (functor->is_pure && !redecl->is_pure) {
+        auto err = context->error_log.Append(scope_range, tok.NextPosition());
+        err << "Missing '@impure' attribute here to match with prior declaration "
+            << "of functor '" << name << "/" << arity << "'";
 
-      err.Note(redecl_range)
-          << "Prior declaration of functor was here";
-      RemoveDecl(functor);
-      return;
-
-    // Didn't match the purity.
-    } else if (!functor->is_pure && redecl->is_pure) {
-      auto err = context->error_log.Append(scope_range, impure.SpellingRange());
-      err << "Unexpected '@impure' attribute here doesn't match with prior "
-          << "declaration of functor '" << name << "/" << arity << "'";
-
-      err.Note(redecl_range)
-          << "Prior declaration of functor was here";
-      RemoveDecl(functor);
-      return;
-    }
-
-    // Make sure the binding specifiers all agree.
-    for (ParsedParameterImpl *redecl_param : redecl->parameters) {
-      const auto &orig_param = functor->parameters[i++];
-      const auto lexeme = orig_param->opt_binding.Lexeme();
-      const auto redecl_lexeme = redecl_param->opt_binding.Lexeme();
-
-      // We can redeclare bound/free parameters with other variations of
-      // bound/free, but the aggregation binding types must be equivalent.
-      if (lexeme != redecl_lexeme && is_aggregate) {
-
-        auto err = context->error_log.Append(
-            scope_range, ParsedParameter(orig_param).SpellingRange());
-        err << "Aggregation functor '" << functor->name << "/" << arity
-            << "' cannot be re-declared with different parameter attributes";
-
-        auto note =
-            err.Note(ParsedDeclaration(redecl).SpellingRange(),
-                     ParsedParameter(redecl_param).SpellingRange());
-        note << "Conflicting parameter is declared here";
-
+        err.Note(redecl_range)
+            << "Prior declaration of functor was here";
         RemoveDecl(functor);
         return;
+
+      // Didn't match the purity.
+      } else if (!functor->is_pure && redecl->is_pure) {
+        auto err = context->error_log.Append(scope_range, impure.SpellingRange());
+        err << "Unexpected '@impure' attribute here doesn't match with prior "
+            << "declaration of functor '" << name << "/" << arity << "'";
+
+        err.Note(redecl_range)
+            << "Prior declaration of functor was here";
+        RemoveDecl(functor);
+        return;
+      }
+
+      // Make sure the binding specifiers all agree.
+      auto all_same = true;
+      for (ParsedParameterImpl *redecl_param : redecl->parameters) {
+        const auto &orig_param = functor->parameters[i++];
+        const auto lexeme = orig_param->opt_binding.Lexeme();
+        const auto redecl_lexeme = redecl_param->opt_binding.Lexeme();
+
+        // We can redeclare bound/free parameters with other variations of
+        // bound/free, but the aggregation binding types must be equivalent.
+        if (lexeme != redecl_lexeme) {
+          all_same = false;
+
+          if (is_aggregate) {
+            auto err = context->error_log.Append(
+                scope_range, ParsedParameter(orig_param).SpellingRange());
+            err << "Aggregation functor '" << functor->name << "/" << arity
+                << "' cannot be re-declared with different parameter attributes";
+
+            auto note =
+                err.Note(ParsedDeclaration(redecl).SpellingRange(),
+                         ParsedParameter(redecl_param).SpellingRange());
+            note << "Conflicting parameter is declared here";
+
+            RemoveDecl(functor);
+            return;
+          }
+        }
+      }
+
+      if (all_same) {
+        if (!first_matching_redecl) {
+          first_matching_redecl = redecl;
+        }
+        last_matching_redecl = redecl;
       }
     }
   }
 
   // Do generic consistency checking.
-  FinalizeDeclAndCheckConsistency(functor);
+  if (FinalizeDeclAndCheckConsistency(functor)) {
+    if (last_matching_redecl) {
+      last_matching_redecl->next_redecl = functor;
+    }
+    if (first_matching_redecl) {
+      functor->first_redecl = first_matching_redecl;
+    } else {
+      functor->first_redecl = functor;
+    }
+  }
 }
 
 }  // namespace hyde

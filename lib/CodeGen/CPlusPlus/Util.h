@@ -32,9 +32,15 @@ static Stream &Var(Stream &os, const DataVariable var) {
   return os;
 }
 
-inline static OutputStream &Functor(OutputStream &os, const ParsedFunctor func) {
-  return os << "functors." << func.Name() << '_'
-            << ParsedDeclaration(func).BindingPattern();
+inline static OutputStream &Functor(OutputStream &os,
+                                    const ParsedFunctor func) {
+  if (auto name = func.InlineName(Language::kCxx); name.has_value()) {
+    os << name.value();
+  } else {
+    os << "functors." << func.Name() << '_'
+       << ParsedDeclaration(func).BindingPattern();
+  }
+  return os;
 }
 
 inline static OutputStream &Table(OutputStream &os, const DataTable table) {

@@ -1290,7 +1290,7 @@ void ParserImpl::RemoveDecl(ParsedDeclarationImpl *decl) {
 
 // Add `decl` to the end of `decl_list`, and make sure `decl` is consistent
 // with any prior declarations of the same name.
-void ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
+bool ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
 
   const auto scope_range = SubTokenRange();
   const auto num_params = decl->parameters.Size();
@@ -1316,7 +1316,7 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
           }
         }
         if (all_same) {
-          return;  // Not a unique redecl.
+          return true;  // Not a unique redecl.
         }
       }
 
@@ -1333,7 +1333,7 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
 
   auto num_redecls = redecls.Size();
   if (1u >= num_redecls) {
-    return;
+    return true;
   }
 
   ParsedDeclarationImpl *const prev_decl = redecls[num_redecls - 1u];
@@ -1442,7 +1442,7 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
     }
 
     RemoveDecl(decl);
-    return;
+    return false;
   }
 
   const DeclarationKind prev_decl_kind = prev_decl->context->kind;
@@ -1465,7 +1465,7 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
       note << "Previous parameter binding attribute is here";
 
       RemoveDecl(decl);
-      return;
+      return false;
     }
 
     // Make sure the names of the parameters match, as these are all "exported"
@@ -1486,7 +1486,7 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
       note << "Previous parameter name here";
 
       RemoveDecl(decl);
-      return;
+      return false;
     }
 
     if (prev_param->opt_merge != curr_param->opt_merge) {
@@ -1499,7 +1499,7 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
       note << "Previous mutable attribute declaration is here";
 
       RemoveDecl(decl);
-      return;
+      return false;
     }
 
     if (prev_param->opt_type.Kind() != curr_param->opt_type.Kind()) {
@@ -1512,7 +1512,7 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
       note << "Previous type specification is here";
 
       RemoveDecl(decl);
-      return;
+      return false;
     }
   }
 
@@ -1527,8 +1527,10 @@ void ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
                          prev_decl->inline_attribute.SpellingRange());
     note << "Previous inline attribute is here";
     RemoveDecl(decl);
-    return;
+    return false;
   }
+
+  return true;
 }
 
 // Try to parse `sub_range` as a database name declaration.

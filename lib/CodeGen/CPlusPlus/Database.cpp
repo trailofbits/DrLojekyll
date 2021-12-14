@@ -1265,7 +1265,7 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
   }
 
   os << " " << func.Name() << '_'
-     << ParsedDeclaration(func).BindingPattern() << "(";
+     << ParsedDeclaration(func).BindingPattern() << '(';
 
   auto arg_sep = "";
   for (ParsedParameter arg : args) {
@@ -1280,7 +1280,7 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
     arg_sep = ", ";
   }
 
-  os << ")";
+  os << ')';
 }
 
 static void DefineFunctor(OutputStream &os, ParsedModule module,
@@ -1316,7 +1316,9 @@ static void DeclareFunctors(OutputStream &os, Program program,
   os.PushIndent();
 
   for (ParsedFunctor func : Functors(root_module)) {
-    DefineFunctor(os, root_module, func, ns_name);
+    if (!func.IsInline(Language::kCxx)) {
+      DefineFunctor(os, root_module, func, ns_name);
+    }
   }
 
   os.PopIndent();
@@ -1491,7 +1493,8 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
          << "(storage.Intern(std::move(val_param_" << param.Index() << ")));\n";
     }
   }
-  os << os.Indent() << "::hyde::rt::index_t num_generated = 0;\n";
+  os << os.Indent() << "::hyde::rt::index_t num_generated = 0;\n"
+     << os.Indent() << "(void) num_generated;\n";
 
   if (spec.forcing_function) {
     os << os.Indent() << Procedure(os, *(spec.forcing_function)) << '(';
@@ -1650,6 +1653,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
 
   os << "/* Auto-generated file */\n\n"
      << "#pragma once\n\n"
+     << "#define DRLOJEKYLL_DATABASE_CODE\n\n"
      << "#include <drlojekyll/Runtime/Runtime.h>\n\n"
      << "#include \"" << file_name << "_generated.h\"\n"
      << "#ifndef __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n"
@@ -1685,8 +1689,10 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
 
   // Forward-declare user-provided functors
   for (ParsedFunctor func : Functors(module)) {
-    DeclareFunctor(os, module, func);
-    os << ";\n";
+    if (!func.IsInline(Language::kCxx)) {
+      DeclareFunctor(os, module, func);
+      os << ";\n";
+    }
   }
   os << "\n";
 

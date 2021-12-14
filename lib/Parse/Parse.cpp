@@ -154,6 +154,40 @@ ParsedDeclarationImpl::ParsedDeclarationImpl(
   context->redeclarations.AddUse(this);
 }
 
+const std::string &ParsedDeclarationImpl::BindingPattern(void) noexcept {
+  if (binding_pattern.empty()) {
+    binding_pattern.reserve(parameters.Size());
+    for (ParsedParameterImpl * const param : parameters) {
+      switch (param->opt_binding.Lexeme()) {
+        case Lexeme::kKeywordMutable:
+          binding_pattern.push_back('m');
+          break;
+        case Lexeme::kKeywordFree:
+          binding_pattern.push_back('f');
+          break;
+
+        case Lexeme::kKeywordBound:
+          binding_pattern.push_back('b');
+          break;
+
+        case Lexeme::kKeywordSummary:
+          binding_pattern.push_back('s');
+          break;
+
+        case Lexeme::kKeywordAggregate:
+          binding_pattern.push_back('a');
+          break;
+
+        default:
+          assert(false);
+          binding_pattern.push_back('i');  // Implicit.
+          break;
+      }
+    }
+  }
+  return binding_pattern;
+}
+
 ParsedForeignTypeImpl::~ParsedForeignTypeImpl(void) {
   for (auto &entry : info) {
     entry.constants->ClearWithoutErasure();
@@ -864,36 +898,7 @@ bool ParsedDeclaration::IsDivergent(void) const noexcept {
 }
 
 std::string_view ParsedDeclaration::BindingPattern(void) const noexcept {
-  if (impl->binding_pattern.empty()) {
-    impl->binding_pattern.reserve(impl->parameters.Size());
-    for (ParsedParameterImpl * const param : impl->parameters) {
-      switch (ParsedParameter(param).Binding()) {
-        case ParameterBinding::kImplicit:
-          impl->binding_pattern.push_back('i');
-          break;
-        case ParameterBinding::kMutable:
-          impl->binding_pattern.push_back('m');
-          break;
-        case ParameterBinding::kFree:
-          impl->binding_pattern.push_back('f');
-          break;
-
-        case ParameterBinding::kBound:
-          impl->binding_pattern.push_back('b');
-          break;
-
-        case ParameterBinding::kSummary:
-          impl->binding_pattern.push_back('s');
-          break;
-
-        case ParameterBinding::kAggregate:
-          impl->binding_pattern.push_back('a');
-          break;
-      }
-    }
-  }
-
-  return impl->binding_pattern;
+  return impl->BindingPattern();
 }
 
 // Return the declaration associated with a clause. This is the first
@@ -1107,6 +1112,46 @@ bool ParsedFunctor::IsFilter(void) const noexcept {
   } else {
     return false;
   }
+}
+
+// Is this an inline functor? This means that is will have a direct definition
+// provided in some file or in the auto-generated code (via a `#prologue` or
+// `#epilogue`). This is really a symbol visibility thing.
+//
+// An alternative meaning is when a custom symbol is provided, e.g. via
+// the `@inline(```c++ foo```)` syntax; in this case, it means the target code
+// should call this function using the code `foo`.
+bool ParsedFunctor::IsInline(Language lang) const noexcept {
+  return impl->inline_attribute.IsValid();
+}
+
+// Returns the custom inline name, if any. For example:
+//
+//      #functor foo(bound u32 X, free u32 Y) @inline(```c++ foo```).
+//
+// Normally, in C++, the function name would be `foo_bf` for the `bound`
+// and `free`, but in this case, it would just be `foo`.
+std::optional<std::string> ParsedFunctor::InlineName(
+    Language lang) const noexcept {
+  if (impl->inline_attribute.IsInvalid()) {
+    return std::nullopt;
+  }
+
+  auto i = static_cast<unsigned>(lang);
+  auto backup = &(impl->inline_code[i]);
+
+  // Try to find a non-default override for this language.
+  for (auto redecl = impl->first_redecl; redecl; redecl = redecl->next_redecl) {
+    if (!redecl->inline_code_is_default[i]) {
+      return redecl->inline_code[i];
+
+    // Change the default.
+    } else if (redecl->inline_code_is_generic[i]) {
+      backup = &(redecl->inline_code[i]);
+    }
+  }
+
+  return *backup;  // Return the default.
 }
 
 const ParsedFunctor &ParsedFunctor::From(const ParsedDeclaration &decl) {

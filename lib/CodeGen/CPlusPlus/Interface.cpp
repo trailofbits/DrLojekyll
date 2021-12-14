@@ -88,6 +88,7 @@ static void DeclareAppendMessageMethod(OutputStream &os, ParsedModule module,
 void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   os << "/* Auto-generated file */\n\n"
      << "#pragma once\n\n"
+     << "#define DRLOJEKYLL_INTERFACE_CODE\n\n"
      << "#include <memory>\n"
      << "#include <string>\n"
      << "#include <tuple>\n"

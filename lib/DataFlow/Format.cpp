@@ -14,7 +14,7 @@ namespace hyde {
 namespace {
 
 static const char *kBeginTable =
-    "<TABLE cellpadding=\"0\" cellspacing=\"0\" border=\"1\"><TR>";
+    "<TABLE cellpadding=\"0\" cellspacing=\"0\" border=\"1\" bgcolor=\"white\"><TR>";
 static const char *kEndTable = "</TR></TABLE>";
 
 static const char *kColors[] = {
@@ -29,6 +29,7 @@ static constexpr auto kNumColors = sizeof(kColors)/sizeof(kColors[0]);
 
 OutputStream &operator<<(OutputStream &os, Query query) {
   os << "digraph {\n"
+     << "bgcolor=\"#f0f4f7\";\n"
      << "node [shape=none margin=0 nojustify=false labeljust=l font=courier];\n";
 
   auto link_conds = [&](auto view_) {
@@ -110,9 +111,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       do_const(QueryConstant::From(col));
 
     } else {
-      os << col.Variable() << ":" << *(col.Index());
+      os << col.Variable(); // << ":" << *(col.Index());
     }
-    os << ", Id:" << col.Id();
+//    os << ", Id:" << col.Id();
 //    os << "<BR />" << "F: " << col.ForwardsTaintIds();
 //    os << "<BR />" << "B: " << col.BackwardsTaintIds();
     return os;

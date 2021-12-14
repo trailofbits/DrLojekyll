@@ -186,7 +186,8 @@ static void DefineQuery(ParsedModule module, ParsedQuery query,
     }
 
     os.PopIndent();  // End of lambda to query callback.
-    os << os.Indent() << "});\n";
+    os << os.Indent() << "});\n"
+       << os.Indent() << "(void) num_generated;\n";
 
   // If there are not any free parameters, then we're sending back a message
   // to the client using `response`.
@@ -787,6 +788,7 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
      << "#include <string>\n"
      << "#include <thread>\n"
      << "#include <vector>\n\n"
+     << "#define DRLOJEKYLL_SERVER_CODE\n\n"
      << "#include <drlojekyll/Runtime/FlatBuffers.h>\n"
      << "#include <drlojekyll/Runtime/StdRuntime.h>\n\n";
 

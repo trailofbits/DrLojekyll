@@ -4,7 +4,7 @@ function(compile_datalog)
   set(one_val_args LIBRARY_NAME SERVICE_NAME DATABASE_NAME CXX_OUTPUT_DIR
                    PY_OUTPUT_DIR DOT_OUTPUT_FILE DR_OUTPUT_FILE IR_OUTPUT_FILE
                    DRLOJEKYLL_CC DRLOJEKYLL_RT FB_OUTPUT_FILE WORKING_DIRECTORY)
-  set(multi_val_args SOURCES LIBRARIES)
+  set(multi_val_args SOURCES DEPENDS INCLUDE_DIRECTORIES LIBRARIES)
   cmake_parse_arguments(DR "" "${one_val_args}" "${multi_val_args}" ${ARGN})
   
   # Allow the caller to change the path of the Dr. Lojekyll compiler that
@@ -112,6 +112,14 @@ function(compile_datalog)
     message(FATAL_ERROR "compile_datalog function requires at least one SOURCES parameter")
   endif()
   list(APPEND dr_args ${DR_SOURCES})
+  
+  foreach(source_file ${DR_SOURCES})
+    if(EXISTS "${DR_WORKING_DIRECTORY}/${source_file}")
+      list(APPEND absolute_sources "${DR_WORKING_DIRECTORY}/${source_file}")
+    else()
+      list(APPEND absolute_sources "${source_file}")
+    endif()
+  endforeach(source_file)
 
   if(DR_LIBRARY_NAME OR DR_SERVICE_NAME)
     find_package(gRPC CONFIG REQUIRED)
@@ -128,12 +136,13 @@ function(compile_datalog)
     COMMAND
       ${dr_args}
     COMMENT
-      "Compiling ${DATABASE_NAME} datalog code"
+      "Compiling ${DATABASE_NAME} datalog code in directory ${DR_WORKING_DIRECTORY}"
     WORKING_DIRECTORY
       "${DR_WORKING_DIRECTORY}"
     DEPENDS
       "${DR_DRLOJEKYLL_CC}"
-      ${DR_SOURCES})
+      ${absolute_sources}
+      ${DR_DEPENDS})
 
   add_custom_target("${DR_DATABASE_NAME}_outputs" DEPENDS
     ${dr_cxx_output_files}
@@ -171,8 +180,12 @@ function(compile_datalog)
     target_link_libraries("${DR_LIBRARY_NAME}" PUBLIC
       ${runtime_libs})
 
-    target_include_directories("${DR_LIBRARY_NAME}" PUBLIC
-      $<BUILD_INTERFACE:${DR_CXX_OUTPUT_DIR}>)
+    target_include_directories("${DR_LIBRARY_NAME}"
+      PUBLIC
+        $<BUILD_INTERFACE:${DR_CXX_OUTPUT_DIR}>
+      PRIVATE
+        $<BUILD_INTERFACE:${DR_WORKING_DIRECTORY}>
+        ${DR_INCLUDE_DIRECTORIES})
   
   endif()
   
@@ -188,8 +201,11 @@ function(compile_datalog)
     add_dependencies("${DR_SERVICE_NAME}"
       "${DR_DATABASE_NAME}_outputs")
 
-    target_include_directories("${DR_SERVICE_NAME}" PRIVATE
-      $<BUILD_INTERFACE:${DR_CXX_OUTPUT_DIR}>)
+    target_include_directories("${DR_SERVICE_NAME}"
+      PRIVATE
+        $<BUILD_INTERFACE:${DR_CXX_OUTPUT_DIR}>
+        $<BUILD_INTERFACE:${DR_WORKING_DIRECTORY}>
+        ${DR_INCLUDE_DIRECTORIES})
 
     target_link_libraries("${DR_SERVICE_NAME}" PRIVATE
       ${runtime_libs})

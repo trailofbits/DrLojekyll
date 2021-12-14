@@ -122,7 +122,7 @@ class ParserImpl {
   // Remove a declaration.
   void RemoveDecl(ParsedDeclarationImpl *decl);
 
-  void FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl);
+  bool FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl);
 
   // Try to parse an inline predicate.
   bool ParseAggregatedPredicate(ParsedModuleImpl *module,
