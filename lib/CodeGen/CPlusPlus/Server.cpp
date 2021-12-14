@@ -787,6 +787,7 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
      << "#include <string>\n"
      << "#include <thread>\n"
      << "#include <vector>\n\n"
+     << "#define DRLOJEKYLL_SERVER_CODE\n\n"
      << "#include <drlojekyll/Runtime/FlatBuffers.h>\n"
      << "#include <drlojekyll/Runtime/StdRuntime.h>\n\n";
 
