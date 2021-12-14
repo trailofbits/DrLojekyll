@@ -186,7 +186,8 @@ static void DefineQuery(ParsedModule module, ParsedQuery query,
     }
 
     os.PopIndent();  // End of lambda to query callback.
-    os << os.Indent() << "});\n";
+    os << os.Indent() << "});\n"
+       << os.Indent() << "(void) num_generated;\n";
 
   // If there are not any free parameters, then we're sending back a message
   // to the client using `response`.

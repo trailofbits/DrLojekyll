@@ -1493,7 +1493,8 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
          << "(storage.Intern(std::move(val_param_" << param.Index() << ")));\n";
     }
   }
-  os << os.Indent() << "::hyde::rt::index_t num_generated = 0;\n";
+  os << os.Indent() << "::hyde::rt::index_t num_generated = 0;\n"
+     << os.Indent() << "(void) num_generated;\n";
 
   if (spec.forcing_function) {
     os << os.Indent() << Procedure(os, *(spec.forcing_function)) << '(';
