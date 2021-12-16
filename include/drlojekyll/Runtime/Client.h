@@ -44,8 +44,12 @@ inline std::shared_ptr<T> Query(
     grpc::Channel *channel, const grpc::internal::RpcMethod &method,
     const grpc::Slice &data) {
   auto ret = internal::Call(channel, method, data, sizeof(T), alignof(T));
-  std::shared_ptr<T> new_ret(ret, flatbuffers::GetMutableRoot<T>(ret.get()));
-  return new_ret;
+  if (auto ptr = ret.get()) {
+    std::shared_ptr<T> new_ret(std::move(ret), flatbuffers::GetMutableRoot<T>(ptr));
+    return new_ret;
+  } else {
+    return {};
+  }
 }
 
 class ClientResultStreamEndIterator {};

@@ -94,18 +94,23 @@ std::shared_ptr<uint8_t> Call(
     const grpc::Slice &data, size_t min_size, size_t align) {
 
   grpc::ClientContext context;
+
+  // Make sure that the trailing metadata array count is zero.
   grpc::Slice slice;
   grpc::Status status =
       ::grpc::internal::BlockingUnaryCall<grpc::Slice, grpc::Slice>(
           channel, method, &context, data, &slice);
+  if (status.ok()) {
+    auto size = std::max<size_t>(slice.size(), min_size);
+    std::shared_ptr<uint8_t> out(
+        new (std::align_val_t{align}) uint8_t[size],
+        [](uint8_t *p ){ delete [] p; });
 
-  auto size = std::max<size_t>(slice.size(), min_size);
-  std::shared_ptr<uint8_t> out(
-      new (std::align_val_t{align}) uint8_t[size],
-      [](uint8_t *p ){ delete [] p; });
-
-  memcpy(out.get(), slice.begin(), slice.size());
-  return out;
+    memcpy(out.get(), slice.begin(), slice.size());
+    return out;
+  } else {
+    return {};
+  }
 }
 
 // Kill a stream.
