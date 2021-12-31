@@ -101,6 +101,7 @@ static int GenerateFlatBufferOutput(const Parser &dr_parser,
   for (const auto &path : include_dirs) {
     include_dirs_cstrs.emplace_back(path.c_str());
   }
+  include_dirs_cstrs.push_back(nullptr);
 
   std::string source_file_name = gDatabaseName + ".fbs";
 
