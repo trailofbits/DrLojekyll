@@ -143,8 +143,10 @@ function(compile_datalog)
       "${DR_DRLOJEKYLL_CC}"
       ${absolute_sources}
       ${DR_DEPENDS})
-  
-  string(MD5 target_base "${DR_DATABASE_NAME}/${DR_CXX_OUTPUT_DIR}/${DR_PY_OUTPUT_DIR}")
+
+  # Allow ourselves to use the same `DATABASE_NAME` in different locations.  
+  string(MD5 target_hash "${DR_CXX_OUTPUT_DIR}/${DR_PY_OUTPUT_DIR}")
+  set(target_base "${DR_DATABASE_NAME}_${target_hash}")
 
   add_custom_target("${target_base}_outputs" DEPENDS
     ${dr_cxx_output_files}
