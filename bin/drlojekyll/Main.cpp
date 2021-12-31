@@ -91,6 +91,10 @@ static int GenerateFlatBufferOutput(const Parser &dr_parser,
                           flatbuffers::IDLOptions::kPython;
   opts.generate_name_strings = true;
 
+  // If we have an include inside of a FlatBuffer `#prologue`, then don't
+  // generate code for that.
+  opts.generate_all = false;
+
   flatbuffers::Parser parser(opts);
 
   std::vector<std::string> include_dirs;
@@ -103,7 +107,7 @@ static int GenerateFlatBufferOutput(const Parser &dr_parser,
   }
   include_dirs_cstrs.push_back(nullptr);
 
-  std::string source_file_name = gDatabaseName + ".fbs";
+  std::string source_file_name = gDatabaseName + ":in-memory.fbs";
 
   auto ret = parser.Parse(schema.c_str(), &(include_dirs_cstrs[0]),
                           source_file_name.c_str());
@@ -175,6 +179,12 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
     if (gCxxOutDir || gPyOutDir || gFlatCodeStream) {
       GenerateFlatBufferSchema(
           display_manager, *program_opt, &fb_schema);
+
+      // FlatBuffer schema output.
+      if (gFlatCodeStream) {
+        (*gFlatCodeStream) << fb_schema;
+        gFlatCodeStream->Flush();
+      }
     }
 
     if (gIRStream) {
@@ -240,11 +250,6 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
 //          hyde::python::GenerateInterfaceCode(*program_opt,
 //                                              *gPyInterfaceCodeStream);
 //        }
-
-    // FlatBuffer schema output.
-    if (gFlatCodeStream) {
-      (*gFlatCodeStream) << fb_schema;
-    }
   } catch (...) {
     ret = EXIT_FAILURE;
   }
@@ -265,18 +270,9 @@ static int ProcessModule(const Parser &parser, DisplayManager display_manager,
                          ErrorLog error_log, ParsedModule module) {
 
   // Figure out the database name to use. This affects code generation.
-  auto maybe_name = module.DatabaseName();
-  if (gHasDatabaseName && maybe_name.has_value()) {
-    if (gDatabaseName != maybe_name->NameAsString()) {
-      error_log.Append(maybe_name->SpellingRange(),
-                       maybe_name->Name().SpellingRange())
-          << "Command-line specifies database name as '" << gDatabaseName
-          << "', which is different than '" << maybe_name->Name()
-          << "', which is specified in the code";
-    }
-  } else if (maybe_name.has_value()) {
+  if (auto maybe_name = module.DatabaseName()) {
     gHasDatabaseName = true;
-    gDatabaseName = maybe_name->NameAsString();
+    gDatabaseName = maybe_name->FileName();
   }
 
   // Output the amalgamation of all files.
@@ -493,25 +489,6 @@ extern "C" int main(int argc, const char *argv[]) {
       } else {
         std::filesystem::path path(argv[++i]);
         parser.AddModuleSearchPath(std::move(path));
-      }
-
-    // Name of the datalog database.
-    } else if (!strcmp(argv[i], "-database") ||
-               !strcmp(argv[i], "--database")) {
-      ++i;
-      if (i >= argc) {
-        error_log.Append()
-            << "Command-line argument '-database' must be followed by a string";
-
-      } else if (hyde::gHasDatabaseName) {
-        error_log.Append()
-            << "Command-line argument '-database' has already been specified";
-
-      } else {
-        hyde::gHasDatabaseName = true;
-        hyde::gDatabaseName = argv[i];
-
-        linked_module << "#database " << argv[i] << ".\n";
       }
 
     // Help message :-)

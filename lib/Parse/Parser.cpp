@@ -1551,13 +1551,36 @@ void ParserImpl::ParseDatabase(ParsedModuleImpl *module) {
     return;
   }
 
+  bool try_split = false;
+  std::string_view data_view;
+  std::function<bool(void)> read_data = [] (void) { return false; };
+
   const Token db_name = tok;
   switch (db_name.Lexeme()) {
     case Lexeme::kIdentifierAtom:
     case Lexeme::kIdentifierVariable:
     case Lexeme::kIdentifierConstant:
     case Lexeme::kIdentifierType:
+      read_data = [&] (void) {
+        return context->display_manager.TryReadData(db_name.SpellingRange(),
+                                                    &data_view);
+      };
       break;
+    case Lexeme::kLiteralString:
+      try_split = true;
+      read_data = [&] (void) {
+        return context->string_pool.TryReadString(db_name.StringId(),
+                                                  db_name.StringLength(),
+                                                  &data_view);
+      };
+      break;
+    case Lexeme::kLiteralCode:
+      try_split = true;
+      read_data = [&] (void) {
+        return context->string_pool.TryReadCode(db_name.CodeId(), &data_view);
+      };
+      break;
+
     default:
       context->error_log.Append(scope_range, introducer_tok.NextPosition())
           << "Expected an atom or variable identifier, but got '"
@@ -1572,10 +1595,7 @@ void ParserImpl::ParseDatabase(ParsedModuleImpl *module) {
     return;
   }
 
-  std::string_view data_view;
-  if (!context->display_manager.TryReadData(db_name.SpellingRange(),
-                                            &data_view) ||
-      data_view.empty()) {
+  if (!read_data() || data_view.empty()) {
     context->error_log.Append(scope_range, db_name.SpellingRange())
         << "Unable to read database name, or database name is empty";
     return;
@@ -1584,16 +1604,46 @@ void ParserImpl::ParseDatabase(ParsedModuleImpl *module) {
   const Token dot = tok;
   std::string name_str(data_view.data(), data_view.size());
 
+  std::vector<std::string> parts;
+  if (try_split) {
+    std::string part;
+    for (auto ch : name_str) {
+      if (std::isalpha(ch) || ch == '_') {
+        part.push_back(ch);
+      } else if (std::isdigit(ch)) {
+        if (part.empty()) {
+          continue;
+        } else {
+          part.push_back(ch);
+        }
+      } else if (!part.empty()) {
+        parts.emplace_back(std::move(part));
+      }
+    }
+    if (!part.empty()) {
+      parts.emplace_back(std::move(part));
+    }
+
+    if (parts.empty()) {
+      context->error_log.Append(scope_range, db_name.SpellingRange())
+          << "Database name could not be split into parts matching the "
+          << "pattern '[a-zA-Z_][a-zA-Z0-9_]*'";
+      return;
+    }
+  } else {
+    parts.emplace_back(std::move(name_str));
+  }
+
   const auto name = module->root_module->names.Create(
-      introducer_tok, db_name, dot, std::move(name_str));
+      introducer_tok, db_name, dot, std::move(parts));
   const auto first_name = module->root_module->names[0];
 
-  if (name->name != first_name->name) {
+  if (name->name_parts != first_name->name_parts) {
     auto err = context->error_log.Append(scope_range, db_name.SpellingRange());
 
     err
         << "Unexpected change in database name here; previous name was '"
-        << first_name->name << "'";
+        << first_name->name_tok << "'";
 
     err.Note(DisplayRange(first_name->introducer_tok.Position(),
                           first_name->dot_tok.NextPosition()),

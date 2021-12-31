@@ -399,7 +399,8 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   }
 
   if (db_name) {
-    os << "namespace " << db_name->NameAsString() << ";\n\n";
+    os << "namespace " << db_name->NamespaceName(Language::kFlatBuffer)
+       << ";\n\n";
   }
 
   DeclareEnums(module, os);

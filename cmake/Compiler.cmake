@@ -4,7 +4,7 @@ function(compile_datalog)
   set(one_val_args LIBRARY_NAME SERVICE_NAME DATABASE_NAME CXX_OUTPUT_DIR
                    PY_OUTPUT_DIR DOT_OUTPUT_FILE DR_OUTPUT_FILE IR_OUTPUT_FILE
                    DRLOJEKYLL_CC DRLOJEKYLL_RT FB_OUTPUT_FILE WORKING_DIRECTORY)
-  set(multi_val_args SOURCES DEPENDS INCLUDE_DIRECTORIES LIBRARIES)
+  set(multi_val_args SOURCES DEPENDS INCLUDE_DIRECTORIES MODULE_DIRECTORIES LIBRARIES)
   cmake_parse_arguments(DR "" "${one_val_args}" "${multi_val_args}" ${ARGN})
   
   # Allow the caller to change the path of the Dr. Lojekyll compiler that
@@ -43,12 +43,21 @@ function(compile_datalog)
   
   # Database name. This influences file names. Otherwise the database name
   # is `datalog`. Database names can also be defined in the Datalog code itself.
-  if(DR_DATABASE_NAME)
-    list(APPEND dr_args -database "${DR_DATABASE_NAME}")
-  else()
+  #
+  # If the Datalog source code uses `#database foo.` then you should use
+  # `DATABASE_NAME foo` to `compile_datalog`. Similarly, if the Datalog code
+  # uses `#database "foo.bar".`, then you should use `DATABASE_NAME bar` to
+  # `compile_datalog`.
+  if(NOT DR_DATABASE_NAME)
     set(DR_DATABASE_NAME "datalog")
   endif()
-
+  
+  if(DR_MODULE_DIRECTORIES)
+    foreach(module_dir ${DR_MODULE_DIRECTORIES})
+      list(APPEND dr_args -M "${module_dir}")
+    endforeach(module_dir)
+  endif()
+  
   if(NOT DR_WORKING_DIRECTORY)
     set(DR_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
   endif()
@@ -120,7 +129,7 @@ function(compile_datalog)
       list(APPEND absolute_sources "${source_file}")
     endif()
   endforeach(source_file)
-
+  
   if(DR_LIBRARY_NAME OR DR_SERVICE_NAME)
     find_package(gRPC CONFIG REQUIRED)
     find_package(Flatbuffers CONFIG REQUIRED)

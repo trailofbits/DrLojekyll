@@ -501,15 +501,9 @@ class ParsedEnumTypeImpl : public ParsedForeignTypeImpl {
 
 class ParsedInlineImpl : public Def<ParsedInlineImpl> {
  public:
-  inline ParsedInlineImpl(
+  ParsedInlineImpl(
       DisplayRange range_, std::string_view code_, Language language_,
-      bool is_prologue_)
-      : Def<ParsedInlineImpl>(this),
-        range(range_),
-        code(code_.data(), code_.size()),
-        language(language_),
-        location(is_prologue_ ? InlineLocation::kPrologue :
-                    InlineLocation::kEpilogue) {}
+      bool is_prologue_);
 
   // Next inline in this module.
   ParsedInlineImpl *next{nullptr};
@@ -522,18 +516,14 @@ class ParsedInlineImpl : public Def<ParsedInlineImpl> {
 
 class ParsedDatabaseNameImpl : public Def<ParsedDatabaseNameImpl> {
  public:
-  inline ParsedDatabaseNameImpl(Token introducer_tok_, Token name_tok_,
-                                Token dot_, std::string name_)
-      : Def<ParsedDatabaseNameImpl>(this),
-        introducer_tok(introducer_tok_),
-        name_tok(name_tok_),
-        dot_tok(dot_),
-        name(std::move(name_)) {}
+  ParsedDatabaseNameImpl(Token introducer_tok_, Token name_tok_,
+                                Token dot_,
+                                std::vector<std::string> name_parts_);
 
   const Token introducer_tok;
   const Token name_tok;
   const Token dot_tok;
-  const std::string name;
+  const std::vector<std::string> name_parts;
 };
 
 class ParsedModuleImpl

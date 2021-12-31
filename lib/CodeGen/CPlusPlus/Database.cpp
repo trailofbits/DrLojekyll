@@ -1647,8 +1647,8 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   std::string file_name = "datalog";
   std::string ns_name;
   if (const auto db_name = module.DatabaseName()) {
-    ns_name = db_name->NameAsString();
-    file_name = ns_name;
+    ns_name = db_name->NamespaceName(Language::kCxx);
+    file_name = db_name->FileName();
   }
 
   os << "/* Auto-generated file */\n\n"

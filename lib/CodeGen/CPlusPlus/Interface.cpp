@@ -100,7 +100,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   ParsedModule module = program.ParsedModule();
   std::string ns_name;
   if (const auto db_name = module.DatabaseName()) {
-    ns_name = db_name->NameAsString();
+    ns_name = db_name->NamespaceName(Language::kCxx);
   }
 
   for (ParsedEnumType type : module.EnumTypes()) {

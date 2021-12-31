@@ -799,8 +799,8 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
   std::string ns_name;
   std::string ns_name_prefix;
   if (db_name) {
-    file_name = db_name->NameAsString();
-    ns_name = file_name;
+    file_name = db_name->FileName();
+    ns_name = db_name->NamespaceName(Language::kCxx);
     ns_name_prefix = ns_name + "::";
   }
 

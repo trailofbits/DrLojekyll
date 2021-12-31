@@ -546,8 +546,8 @@ void GenerateClientCode(const Program &program, OutputStream &header_os,
   std::string ns_name;
   std::string ns_name_prefix;
   if (const auto db_name = module.DatabaseName()) {
-    ns_name = db_name->NameAsString();
-    file_name = ns_name;
+    ns_name = db_name->NamespaceName(Language::kCxx);
+    file_name = db_name->FileName();
     ns_name_prefix = ns_name + "::";
   }
 

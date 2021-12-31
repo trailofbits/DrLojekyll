@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <cstring>
+#include <sstream>
 
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC diagnostic push
@@ -80,6 +81,25 @@ ParsedVariableImpl::ParsedVariableImpl(ParsedClauseImpl *clause_, Token name_,
       name(name_),
       is_parameter(is_parameter_),
       is_argument(is_argument_) {}
+
+ParsedInlineImpl::ParsedInlineImpl(
+      DisplayRange range_, std::string_view code_, Language language_,
+      bool is_prologue_)
+    : Def<ParsedInlineImpl>(this),
+      range(range_),
+      code(code_.data(), code_.size()),
+      language(language_),
+      location(is_prologue_ ? InlineLocation::kPrologue :
+                  InlineLocation::kEpilogue) {}
+
+ParsedDatabaseNameImpl::ParsedDatabaseNameImpl(
+    Token introducer_tok_, Token name_tok_, Token dot_,
+    std::vector<std::string> name_parts)
+    : Def<ParsedDatabaseNameImpl>(this),
+      introducer_tok(introducer_tok_),
+      name_tok(name_tok_),
+      dot_tok(dot_),
+      name_parts(std::move(name_parts)) {}
 
 ParsedModuleImpl::~ParsedModuleImpl(void) {
 
@@ -1232,8 +1252,30 @@ Token ParsedDatabaseName::Name(void) const noexcept {
   return impl->name_tok;
 }
 
-std::string ParsedDatabaseName::NameAsString(void) const noexcept {
-  return impl->name;
+std::string ParsedDatabaseName::NamespaceName(Language lang) const noexcept {
+  auto sep = "";
+  auto next_sep = "";
+  switch (lang) {
+    case Language::kCxx:
+      next_sep = "::";
+      break;
+    case Language::kPython:
+    case Language::kFlatBuffer:
+      next_sep = ".";
+      break;
+  }
+  std::stringstream ss;
+  for (const auto &part : impl->name_parts) {
+    ss << sep << part;
+    sep = next_sep;
+  }
+  return ss.str();
+}
+
+// Name of this database as a string, acceptable for a file name for
+// any language.
+std::string ParsedDatabaseName::FileName(void) const noexcept {
+  return impl->name_parts.back();
 }
 
 // Return the name of the database, if any.

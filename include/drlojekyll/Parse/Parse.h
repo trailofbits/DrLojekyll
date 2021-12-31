@@ -770,7 +770,11 @@ class ParsedDatabaseName
   Token Name(void) const noexcept;
 
   // Name of this database as a string.
-  std::string NameAsString(void) const noexcept;
+  std::string NamespaceName(Language lang) const noexcept;
+
+  // Name of this database as a string, acceptable for a file name for
+  // any language.
+  std::string FileName(void) const noexcept;
 
  protected:
   friend class ParsedModule;

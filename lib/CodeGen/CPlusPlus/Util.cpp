@@ -74,7 +74,7 @@ std::string TypeName(ParsedModule module, TypeLoc kind) {
         if (type->IsEnum()) {
           std::stringstream ss;
           if (auto ns_name = module.DatabaseName()) {
-            ss << ns_name->NameAsString() << "::";
+            ss << ns_name->NamespaceName(Language::kCxx) << "::";
           }
           ss << type->NameAsString();
           return ss.str();

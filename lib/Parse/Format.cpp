@@ -353,7 +353,7 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignConstant constant) {
 }
 
 OutputStream &operator<<(OutputStream &os, ParsedDatabaseName name) {
-  os << "#database " << name.NameAsString() << '.';
+  os << "#database " << name.Name() << '.';
   return os;
 }
 
