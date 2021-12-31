@@ -43,8 +43,10 @@ function(compile_datalog)
   
   # Database name. This influences file names. Otherwise the database name
   # is `datalog`. Database names can also be defined in the Datalog code itself.
-  if(NOT DR_DATABASE_NAME)
-    message(FATAL_ERROR "DATABASE_NAME parameter of compile_datalog is required")
+  if(DR_DATABASE_NAME)
+    list(APPEND dr_args -database "${DR_DATABASE_NAME}")
+  else()
+    set(DR_DATABASE_NAME "datalog")
   endif()
 
   if(NOT DR_WORKING_DIRECTORY)
@@ -141,8 +143,10 @@ function(compile_datalog)
       "${DR_DRLOJEKYLL_CC}"
       ${absolute_sources}
       ${DR_DEPENDS})
+  
+  string(MD5 target_base "${DR_DATABASE_NAME}/${DR_CXX_OUTPUT_DIR}/${DR_PY_OUTPUT_DIR}")
 
-  add_custom_target("${DR_DATABASE_NAME}_outputs" DEPENDS
+  add_custom_target("${target_base}_outputs" DEPENDS
     ${dr_cxx_output_files}
     ${dr_py_output_files})
   
@@ -173,7 +177,7 @@ function(compile_datalog)
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.h")
     
     add_dependencies("${DR_LIBRARY_NAME}"
-      "${DR_DATABASE_NAME}_outputs")
+      "${target_base}_outputs")
 
     target_link_libraries("${DR_LIBRARY_NAME}" PUBLIC
       ${runtime_libs})
@@ -197,7 +201,7 @@ function(compile_datalog)
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.grpc.fb.cc")
 
     add_dependencies("${DR_SERVICE_NAME}"
-      "${DR_DATABASE_NAME}_outputs")
+      "${target_base}_outputs")
 
     target_include_directories("${DR_SERVICE_NAME}"
       PRIVATE
