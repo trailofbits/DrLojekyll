@@ -136,7 +136,7 @@ function(compile_datalog)
     COMMAND
       ${dr_args}
     COMMENT
-      "Compiling ${DATABASE_NAME} datalog code in directory ${DR_WORKING_DIRECTORY}"
+      "Compiling ${DR_DATABASE_NAME} datalog code in directory ${DR_WORKING_DIRECTORY}"
     WORKING_DIRECTORY
       "${DR_WORKING_DIRECTORY}"
     DEPENDS
