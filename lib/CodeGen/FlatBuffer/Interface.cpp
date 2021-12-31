@@ -387,20 +387,26 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
 
   const auto module = program.ParsedModule();
   const auto db_name = module.DatabaseName();
+  auto queries = Queries(module);
+  auto messages = Messages(module);
+  auto inlines = Inlines(module, Language::kFlatBuffer);
+
+  // Ideally, type names.
+  for (auto code : inlines) {
+    if (code.IsPrologue()) {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
 
   if (db_name) {
     os << "namespace " << db_name->NameAsString() << ";\n\n";
   }
 
-  auto queries = Queries(module);
-  auto messages = Messages(module);
-  auto inlines = Inlines(module, Language::kFlatBuffer);
-
   DeclareEnums(module, os);
 
-  // Ideally, type names.
+  // Other things??
   for (auto code : inlines) {
-    if (code.IsPrologue()) {
+    if (code.IsEpilogue()) {
       os << code.CodeToInline() << "\n\n";
     }
   }
@@ -412,13 +418,6 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   DeclareMessages(module, messages, os);
   DeclareQueries(module, queries, os);
   DeclareService(program, module, queries, os);
-
-  // Other things??
-  for (auto code : inlines) {
-    if (code.IsEpilogue()) {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
 
   os << os.Indent() << "root_type DatalogServerMessage;\n\n";
 }
