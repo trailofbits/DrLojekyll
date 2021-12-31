@@ -43,9 +43,7 @@ function(compile_datalog)
   
   # Database name. This influences file names. Otherwise the database name
   # is `datalog`. Database names can also be defined in the Datalog code itself.
-  if(DR_DATABASE_NAME)
-    list(APPEND dr_args -database "${DR_DATABASE_NAME}")
-  else()
+  if(NOT DR_DATABASE_NAME)
     message(FATAL_ERROR "DATABASE_NAME parameter of compile_datalog is required")
   endif()
 

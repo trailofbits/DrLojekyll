@@ -2,6 +2,7 @@
 ;
 ; This code is adapted from Souffle.
 
+#database points_to.
 
 #foreign Variable ```c++ uint32_t``` @transparent.
 #foreign Allocation ```c++ uint32_t``` @transparent.

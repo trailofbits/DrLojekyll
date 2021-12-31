@@ -1,5 +1,7 @@
 ; This example shows how to implement a recursive disassembler with Dr. Lojekyll
 
+#database mini_disassembler.
+
 #enum EdgeType u8.
 
 #constant EdgeType FALL_THROUGH 0.
