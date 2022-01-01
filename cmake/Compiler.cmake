@@ -97,23 +97,27 @@ function(compile_datalog)
   # Debug output of the FlatBuffers schema. 
   if(DR_FB_OUTPUT_FILE)
     list(APPEND dr_args -flat-out "${DR_FB_OUTPUT_FILE}")
+    list(APPEND dr_other_outputs "${DR_FB_OUTPUT_FILE}")
   endif()
 
   # Debug output of the parsed representation as a single Dr. Lojekyll
   # Datalog file.
   if(DR_DR_OUTPUT_FILE)
     list(APPEND dr_args -dr-out "${DR_DR_OUTPUT_FILE}")
+    list(APPEND dr_other_outputs "${DR_DR_OUTPUT_FILE}")
   endif()
 
   # Debug output of the data flow intermediate representation as a
   # GraphViz DOT digraph.
   if(DR_DOT_OUTPUT_FILE)
     list(APPEND dr_args -dot-out "${DR_DOT_OUTPUT_FILE}")
+    list(APPEND dr_other_outputs "${DR_DOT_OUTPUT_FILE}")
   endif()
 
   # Debug output of the control-flow intermediate representation.
   if(DR_IR_OUTPUT_FILE)
     list(APPEND dr_args -ir-out "${DR_IR_OUTPUT_FILE}")
+    list(APPEND dr_other_outputs "${DR_IR_OUTPUT_FILE}")
   endif()
 
   # Datalog source files to compile.
@@ -139,9 +143,11 @@ function(compile_datalog)
     OUTPUT
       ${dr_cxx_output_files}
       ${dr_py_output_files}
+      ${dr_other_outputs}
     BYPRODUCTS
       ${dr_cxx_output_files}
       ${dr_py_output_files}
+      ${dr_other_outputs}
     COMMAND
       ${dr_args}
     COMMENT
@@ -159,7 +165,8 @@ function(compile_datalog)
 
   add_custom_target("${target_base}_outputs" DEPENDS
     ${dr_cxx_output_files}
-    ${dr_py_output_files})
+    ${dr_py_output_files}
+    ${dr_other_outputs})
   
   set(runtime_libs
     ${DR_DRLOJEKYLL_RT}
