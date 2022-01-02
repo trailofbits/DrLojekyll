@@ -23,7 +23,7 @@ ParserImpl::ResolvePath(const std::filesystem::path &path,
       continue;
     }
 
-    out_resolved_path = joined_path;
+    out_resolved_path = std::filesystem::canonical(joined_path, ec);
     break;
   }
 

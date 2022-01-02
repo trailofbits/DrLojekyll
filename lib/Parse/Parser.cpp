@@ -2083,8 +2083,9 @@ std::optional<ParsedModule>
 Parser::ParsePath(std::string_view path_,
                   const DisplayConfiguration &config) const {
 
-  auto display = impl->context->display_manager.OpenPath(path_, config);
-  std::filesystem::path path(path_);
+  auto path = std::filesystem::canonical(std::filesystem::path(path_));
+  auto display = impl->context->display_manager.OpenPath(
+      path.generic_string(), config);
 
   // Special case for path parsing, we need to change the parser's current
   // working directory to the directory containing the file being parsed
