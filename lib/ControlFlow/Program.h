@@ -1602,7 +1602,7 @@ class ProgramImpl : public User {
  public:
   ~ProgramImpl(void);
 
-  explicit ProgramImpl(Query query_);
+  explicit ProgramImpl(Query query_, unsigned next_id_);
 
   void Optimize(void);
 
@@ -1618,7 +1618,7 @@ class ProgramImpl : public User {
   const Query query;
 
   // Globally numbers things like procedures, variables, vectors, etc.
-  unsigned next_id{0u};
+  unsigned next_id;
 
   // List of query entry points.
   std::vector<ProgramQuery> queries;

@@ -1140,7 +1140,7 @@ class ProgramQuery {
 class Program {
  public:
   // Build a program from a query.
-  static std::optional<Program> Build(const Query &query);
+  static std::optional<Program> Build(const Query &query, unsigned first_id=0);
 
   // All persistent tables needed to store data.
   DefinedNodeRange<DataTable> Tables(void) const;

@@ -150,9 +150,10 @@ ProgramImpl::~ProgramImpl(void) {
   }
 }
 
-ProgramImpl::ProgramImpl(Query query_)
+ProgramImpl::ProgramImpl(Query query_, unsigned next_id_)
     : User(this),
       query(query_),
+      next_id(next_id_),
       query_checkers(this),
       procedure_regions(this),
       series_regions(this),

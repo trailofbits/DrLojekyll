@@ -3,7 +3,8 @@
 function(compile_datalog)
   set(one_val_args LIBRARY_NAME SERVICE_NAME DATABASE_NAME CXX_OUTPUT_DIR
                    PY_OUTPUT_DIR DOT_OUTPUT_FILE DR_OUTPUT_FILE IR_OUTPUT_FILE
-                   DRLOJEKYLL_CC DRLOJEKYLL_RT FB_OUTPUT_FILE WORKING_DIRECTORY)
+                   DRLOJEKYLL_CC DRLOJEKYLL_RT FB_OUTPUT_FILE WORKING_DIRECTORY
+                   FIRST_ID)
   set(multi_val_args SOURCES DEPENDS INCLUDE_DIRECTORIES MODULE_DIRECTORIES LIBRARIES)
   cmake_parse_arguments(DR "" "${one_val_args}" "${multi_val_args}" ${ARGN})
   
@@ -98,27 +99,33 @@ function(compile_datalog)
   if(DR_FB_OUTPUT_FILE)
     list(APPEND dr_args -flat-out "${DR_FB_OUTPUT_FILE}")
     list(APPEND dr_other_outputs "${DR_FB_OUTPUT_FILE}")
-  endif()
+  endif(DR_FB_OUTPUT_FILE)
 
   # Debug output of the parsed representation as a single Dr. Lojekyll
   # Datalog file.
   if(DR_DR_OUTPUT_FILE)
     list(APPEND dr_args -dr-out "${DR_DR_OUTPUT_FILE}")
     list(APPEND dr_other_outputs "${DR_DR_OUTPUT_FILE}")
-  endif()
+  endif(DR_DR_OUTPUT_FILE)
 
   # Debug output of the data flow intermediate representation as a
   # GraphViz DOT digraph.
   if(DR_DOT_OUTPUT_FILE)
     list(APPEND dr_args -dot-out "${DR_DOT_OUTPUT_FILE}")
     list(APPEND dr_other_outputs "${DR_DOT_OUTPUT_FILE}")
-  endif()
+  endif(DR_DOT_OUTPUT_FILE)
 
   # Debug output of the control-flow intermediate representation.
   if(DR_IR_OUTPUT_FILE)
     list(APPEND dr_args -ir-out "${DR_IR_OUTPUT_FILE}")
     list(APPEND dr_other_outputs "${DR_IR_OUTPUT_FILE}")
-  endif()
+  endif(DR_IR_OUTPUT_FILE)
+  
+  # For changing the codegen to start with a different ID than 0. Helps when
+  # multiple auto-generated headers are included in the same spot.
+  if(DR_FIRST_ID)
+    list(APPEND dr_args -first-id "${DR_FIRST_ID}")
+  endif(DR_FIRST_ID)
 
   # Datalog source files to compile.
   if(NOT DR_SOURCES)

@@ -52,15 +52,16 @@ struct FileStream {
 
 namespace {
 
-std::string gDatabaseName = "datalog";
-bool gHasDatabaseName = false;
-const char *gCxxOutDir = nullptr;
-const char *gPyOutDir = nullptr;
+static unsigned gFirstId = 0u;
+static std::string gDatabaseName = "datalog";
+static bool gHasDatabaseName = false;
+static const char *gCxxOutDir = nullptr;
+static const char *gPyOutDir = nullptr;
 
-OutputStream *gDOTStream = nullptr;
-OutputStream *gDRStream = nullptr;
-OutputStream *gFlatCodeStream = nullptr;
-OutputStream *gIRStream = nullptr;
+static OutputStream *gDOTStream = nullptr;
+static OutputStream *gDRStream = nullptr;
+static OutputStream *gFlatCodeStream = nullptr;
+static OutputStream *gIRStream = nullptr;
 
 // Generate a flatbuffer schema in memory.
 static void GenerateFlatBufferSchema(
@@ -171,7 +172,7 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
   try {
     std::string fb_schema;
 
-    auto program_opt = Program::Build(*query_opt);
+    auto program_opt = Program::Build(*query_opt, gFirstId);
     if (!program_opt) {
       return EXIT_FAILURE;
     }
@@ -336,9 +337,10 @@ static int HelpMessage(const char *argv[]) {
       << "  -cpp-out <DIR>            Emit transpiled C++ output files into DIR." << std::endl
       << "  -py-out <DIR>             Emit transpiled Python output files into DIR." << std::endl
       << "  -flat-out <PATH>          Emit a FlatBuffer schema to PATH." << std::endl
-      << "  -dr-out <PATH>            Emit an amalgamation of all the input and transitively" << std::endl
+      << "  -dr-out <PATH>            Emit an amalgamation of all the input and transitively." << std::endl
       << "                            imported modules to PATH." << std::endl
       << "  -dot-out <PATH>           Emit the data flow graph in GraphViz DOT format to PATH." << std::endl
+      << "  -first-id <N>             The first integer number used for identifiers in the control-flow IR." << std::endl
       << std::endl
       << "COMPILATION OPTIONS:" << std::endl
       << "  -M <PATH>                 Directory where import statements can find needed Datalog modules." << std::endl
@@ -480,14 +482,28 @@ extern "C" int main(int argc, const char *argv[]) {
         hyde::gDOTStream = &(dot_out->os);
       }
 
+    // First ID for the control-flow IR. Helps when we use multiple auto-
+    // generated headers in a single file.
+    } else if (!strcmp(argv[i], "-first-id") ||
+               !strcmp(argv[i], "--first-id")) {
+      if (i >= argc) {
+        error_log.Append()
+            << "Command-line argument '" << argv[i - 1]
+            << "' must be followed by a integer";
+
+      } else {
+        hyde::gFirstId = static_cast<unsigned>(strtoul(argv[i], nullptr, 10));
+      }
+
     // Datalog module file search path.
     } else if (!strcmp(argv[i], "-M")) {
+      ++i;
       if (i >= argc) {
         error_log.Append()
             << "Command-line argument '-M' must be followed by a directory path";
 
       } else {
-        std::filesystem::path path(argv[++i]);
+        std::filesystem::path path(argv[i]);
         parser.AddModuleSearchPath(std::move(path));
       }
 

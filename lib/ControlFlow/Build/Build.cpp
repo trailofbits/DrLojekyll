@@ -2110,8 +2110,9 @@ WorkItem::WorkItem(Context &context, unsigned order_) : order(order_) {}
 WorkItem::~WorkItem(void) {}
 
 // Build a program from a query.
-std::optional<Program> Program::Build(const ::hyde::Query &query) {
-  auto impl = std::make_shared<ProgramImpl>(query);
+std::optional<Program> Program::Build(const ::hyde::Query &query,
+                                      unsigned first_id) {
+  auto impl = std::make_shared<ProgramImpl>(query, first_id);
   const auto program = impl.get();
 
   Context context;
