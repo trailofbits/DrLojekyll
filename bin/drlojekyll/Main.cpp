@@ -417,8 +417,8 @@ extern "C" int main(int argc, const char *argv[]) {
       ++i;
       if (i >= argc) {
         error_log.Append()
-            << "Command-line argument " << argv[i]
-            << " must be followed by a directory path for C++ code output";
+            << "Command-line argument '" << argv[i - 1]
+            << "' must be followed by a directory path for C++ code output";
       } else {
         hyde::gCxxOutDir = argv[i];
       }
@@ -428,8 +428,8 @@ extern "C" int main(int argc, const char *argv[]) {
       ++i;
       if (i >= argc) {
         error_log.Append()
-            << "Command-line argument " << argv[i]
-            << " must be followed by a directory path for Python code output";
+            << "Command-line argument '" << argv[i - 1]
+            << "' must be followed by a directory path for Python code output";
       } else {
         hyde::gPyOutDir = argv[i];
       }
@@ -439,8 +439,8 @@ extern "C" int main(int argc, const char *argv[]) {
       ++i;
       if (i >= argc) {
         error_log.Append()
-            << "Command-line argument " << argv[i]
-            << " must be followed by a file path for FlatBuffer "
+            << "Command-line argument '" << argv[i - 1]
+            << "' must be followed by a file path for FlatBuffer "
             << "schema output";
       } else {
         fb_out.reset(new hyde::FileStream(display_manager, argv[i]));
@@ -450,8 +450,8 @@ extern "C" int main(int argc, const char *argv[]) {
     } else if (!strcmp(argv[i], "-ir-out") || !strcmp(argv[i], "--ir-out")) {
       ++i;
       if (i >= argc) {
-        error_log.Append() << "Command-line argument " << argv[i]
-                           << " must be followed by a file path for IR output";
+        error_log.Append() << "Command-line argument '" << argv[i - 1]
+                           << "' must be followed by a file path for IR output";
       } else {
         ir_out.reset(new hyde::FileStream(display_manager, argv[i]));
         hyde::gIRStream = &(ir_out->os);
@@ -464,7 +464,7 @@ extern "C" int main(int argc, const char *argv[]) {
       if (i >= argc) {
         error_log.Append() << "Command-line argument '" << argv[i - 1]
                            << "' must be followed by a file path for "
-                           << "alamgamated Datalog output";
+                           << "amalgamated Datalog output";
       } else {
         dr_out.reset(new hyde::FileStream(display_manager, argv[i]));
         hyde::gDRStream = &(dr_out->os);
@@ -486,6 +486,7 @@ extern "C" int main(int argc, const char *argv[]) {
     // generated headers in a single file.
     } else if (!strcmp(argv[i], "-first-id") ||
                !strcmp(argv[i], "--first-id")) {
+      ++i;
       if (i >= argc) {
         error_log.Append()
             << "Command-line argument '" << argv[i - 1]
