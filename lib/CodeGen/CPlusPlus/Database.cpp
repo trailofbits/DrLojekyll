@@ -1286,24 +1286,10 @@ static void DeclareFunctor(OutputStream &os, ParsedModule module,
 static void DefineFunctor(OutputStream &os, ParsedModule module,
                           ParsedFunctor func, const std::string &ns_name) {
   ParsedDeclaration decl(func);
+
+  os << os.Indent() << "virtual\n";
   DeclareFunctor(os, module, func);
-  os << " {\n";
-  os.PushIndent();
-  os << os.Indent() << "return ::";
-  if (!ns_name.empty()) {
-    os << ns_name << "::";
-  }
-  os << func.Name() << '_' << ParsedDeclaration(func).BindingPattern() << "(";
-  auto sep_ret = "";
-  for (auto param : decl.Parameters()) {
-    if (param.Binding() == ParameterBinding::kBound) {
-      os << sep_ret << param.Name();
-      sep_ret = ", ";
-    }
-  }
-  os << ");\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n\n";
+  os << " = 0;\n";
 }
 
 static void DeclareFunctors(OutputStream &os, Program program,
@@ -1313,6 +1299,8 @@ static void DeclareFunctors(OutputStream &os, Program program,
      << os.Indent() << "class " << gClassName << "Functors {\n";
   os.PushIndent();
   os << os.Indent() << "public:\n";
+  os << os.Indent() << " virtual ~" << gClassName
+     << "Functors(void) = default;\n";
   os.PushIndent();
 
   for (ParsedFunctor func : Functors(root_module)) {
