@@ -305,7 +305,7 @@ DataTableImpl *DataTableImpl::GetOrCreate(ProgramImpl *impl, Context &,
 // Get or create an index on the table.
 TABLEINDEX *
 DataTableImpl::GetOrCreateIndex(ProgramImpl *impl,
-                                  std::vector<unsigned> col_indexes) {
+                                std::vector<unsigned> col_indexes) {
   SortAndUnique(col_indexes);
 
 //  // The index covers all columns, i.e. we don't want/need it.
