@@ -1671,23 +1671,6 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
      << "#include <unordered_map>\n"
      << "#include <vector>\n\n";
 
-  if (!ns_name.empty()) {
-    os << "namespace " << ns_name << " {\n";
-  }
-
-  // Forward-declare user-provided functors
-  for (ParsedFunctor func : Functors(module)) {
-    if (!func.IsInline(Language::kCxx)) {
-      DeclareFunctor(os, module, func);
-      os << ";\n";
-    }
-  }
-  os << "\n";
-
-  if (!ns_name.empty()) {
-    os << "}  // namespace " << ns_name << "\n\n";
-  }
-
   DeclareDescriptors(os, program, module);
 
   if (!ns_name.empty()) {
