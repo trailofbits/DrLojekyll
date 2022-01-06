@@ -151,10 +151,6 @@ function(compile_datalog)
       ${dr_cxx_output_files}
       ${dr_py_output_files}
       ${dr_other_outputs}
-    BYPRODUCTS
-      ${dr_cxx_output_files}
-      ${dr_py_output_files}
-      ${dr_other_outputs}
     COMMAND
       ${dr_args}
     COMMENT
