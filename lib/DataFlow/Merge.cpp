@@ -837,7 +837,7 @@ static COL *CreateTag(QueryImpl *impl, unsigned &num_used_tags) {
 }  // namespace
 
 bool QueryMergeImpl::SinkThroughNegations(QueryImpl *impl,
-                                            std::vector<VIEW *> &inout_views) {
+                                          std::vector<VIEW *> &inout_views) {
 
   auto first_negate_index = 0u;
   NEGATION *first_negate = nullptr;
@@ -913,10 +913,10 @@ bool QueryMergeImpl::SinkThroughNegations(QueryImpl *impl,
     // We've found some negations that are same-shaped, but use different
     // negated views. We can convert these into a union of the different
     // negated views, and inject in an additional "tag" column that allows
-    // new tag-aware versions of the negations to be comined via a merge.
+    // new tag-aware versions of the negations to be combined via a merge.
     if (using_tags) {
 
-      if (!output) {
+      if (!negated_view_merge) {
 
         COL *const first_tag_col = CreateTag(impl, num_used_tags);
 
