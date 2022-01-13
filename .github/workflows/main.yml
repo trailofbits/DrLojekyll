@@ -64,31 +64,31 @@ jobs:
           ccache \
           ninja
 
-		- name: Set cxx-common pakage name
-			id: cxxname
-			shell: bash
-			run: |
-				XCODE=""
+    - name: Set cxx-common pakage name
+      id: cxxname
+      shell: bash
+      run: |
+        XCODE=""
         if [[ "$OSTYPE" == "darwin"* ]]; then XCODE="_xcode-13.0"; fi
-				echo ::set-output name=CXX_COMMON_NAME::vcpkg_${{ matrix.os }}_llvm-${{ matrix.llvm }}${XCODE}_amd64
+        echo ::set-output name=CXX_COMMON_NAME::vcpkg_${{ matrix.os }}_llvm-${{ matrix.llvm }}${XCODE}_amd64
 
     - name: Fetch latest cxx-common
-			id: cxxdir
+      id: cxxdir
       run: |
         URL="https://github.com/lifting-bits/cxx-common/releases/latest/download/${URL_PART}.tar.xz"
         GITHUB_LIBS="cxx-common.tar.xz"
         pushd "downloads"
         curl -o "${GITHUB_LIBS}" -L "${URL}"
         tar -xJf "${GITHUB_LIBS}"
-				echo ::set-output name=CXX_COMMON_DIR::$(pwd)/${URL_PART}
+        echo ::set-output name=CXX_COMMON_DIR::$(pwd)/${URL_PART}
       env:
-				URL_PART: ${{ steps.cxxname.outputs.CXX_COMMON_NAME }}
+        URL_PART: ${{ steps.cxxname.outputs.CXX_COMMON_NAME }}
 
     - name: Configure & build
       run: |
         export CCACHE_DIR="$(realpath ccache)"
-				export INSTALL_DIR=$(pwd)/../install
-				scripts/build-preset.sh ${{ matrix.build_type }}
+        export INSTALL_DIR=$(pwd)/../install
+        scripts/build-preset.sh ${{ matrix.build_type }}
       env:
-				VCPKG_ROOT: ${{ steps.cxxdir.outputs.CXX_COMMON_DIR }} 
+        VCPKG_ROOT: ${{ steps.cxxdir.outputs.CXX_COMMON_DIR }} 
 
