@@ -66,6 +66,14 @@ $ cmake --build build
 $ cmake --install build
 ```
 
+**Building using CMake Presets (MacOS or Linux):**
+```
+export VCPKG_ROOT=/path/to/cxx-common/vcpkg-12-release/vcpkg
+export INSTALL_DIR=/path/to/install
+scripts/build-preset.sh debug #or use 'release'
+```
+
+
 See the [continuous integration](.github/workflows/ci.yml) for
 additional concrete examples of how this software is built.
 
