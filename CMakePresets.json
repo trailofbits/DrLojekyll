@@ -48,7 +48,7 @@
           "name": "vcpkg-common",
           "hidden": true,
           "binaryDir": "$env{INSTALL_DIR}/build/DrLojekyll",
-          "generator": "Unix Makefiles",
+          "generator": "Ninja",
           "cacheVariables": {
               "VCPKG_TARGET_TRIPLET": "$env{VCPKG_TARGET_TRIPLET}",
               "VCPKG_ROOT": "$env{VCPKG_ROOT}",
