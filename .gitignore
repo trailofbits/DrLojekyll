@@ -13,3 +13,6 @@ cmake-build-debug
 /fuzz-run
 /install
 /venv
+
+DrLojekyll-build.log
+DrLojekyll-configure.log

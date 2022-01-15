@@ -15,8 +15,9 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-10.15]
-        build_type: [RelWithDebInfo, Debug]
+        os: [ubuntu-20.04, macos-11]
+        build_type: [debug, release]
+        llvm: [12]
 
     steps:
     - uses: actions/checkout@v1
@@ -38,7 +39,7 @@ jobs:
         key: ${{ steps.cache_key.outputs.VALUE }}_gitsubmodules
 
     - name: Create the build folders
-      run: mkdir -p ccache build install downloads package
+      run: mkdir -p ccache ../install downloads
 
     - name: Synchronize the submodules
       run: git submodule sync --recursive
@@ -63,27 +64,31 @@ jobs:
           ccache \
           ninja
 
-    - name: Configure the project
+    - name: Set cxx-common pakage name
+      id: cxxname
+      shell: bash
+      run: |
+        XCODE=""
+        if [[ "$OSTYPE" == "darwin"* ]]; then XCODE="_xcode-13.0"; fi
+        echo ::set-output name=CXX_COMMON_NAME::vcpkg_${{ matrix.os }}_llvm-${{ matrix.llvm }}${XCODE}_amd64
+
+    - name: Fetch latest cxx-common
+      id: cxxdir
+      run: |
+        URL="https://github.com/lifting-bits/cxx-common/releases/latest/download/${URL_PART}.tar.xz"
+        GITHUB_LIBS="cxx-common.tar.xz"
+        pushd "downloads"
+        curl -o "${GITHUB_LIBS}" -L "${URL}"
+        tar -xJf "${GITHUB_LIBS}"
+        echo ::set-output name=CXX_COMMON_DIR::$(pwd)/${URL_PART}
+      env:
+        URL_PART: ${{ steps.cxxname.outputs.CXX_COMMON_NAME }}
+
+    - name: Configure & build
       run: |
         export CCACHE_DIR="$(realpath ccache)"
+        export INSTALL_DIR=$(pwd)/../install
+        scripts/build-preset.sh ${{ matrix.build_type }}
+      env:
+        VCPKG_ROOT: ${{ steps.cxxdir.outputs.CXX_COMMON_DIR }} 
 
-        cmake \
-          -S . \
-          -B build \
-          -G Ninja \
-          -DCMAKE_C_COMPILER=clang \
-          -DCMAKE_CXX_COMPILER=clang++ \
-          -DCMAKE_BUILD_TYPE:STRING=${{ matrix.build_type }}
-
-    - name: Build the project
-      run: |
-        export CCACHE_DIR="$(realpath ccache)"
-
-        cmake \
-          --build build \
-          --target grpc \
-          -- -v
-
-        cmake \
-          --build build \
-          -- -v
