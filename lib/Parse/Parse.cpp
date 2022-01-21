@@ -1263,6 +1263,8 @@ std::string ParsedDatabaseName::NamespaceName(Language lang) const noexcept {
     case Language::kFlatBuffer:
       next_sep = ".";
       break;
+    case Language::kUnknown:
+      break;
   }
   std::stringstream ss;
   for (const auto &part : impl->name_parts) {
