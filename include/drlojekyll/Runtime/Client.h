@@ -77,7 +77,7 @@ class ClientResultStreamIterator {
                              sizeof(Response))) {
       const auto message_ptr = flatbuffers::GetMutableRoot<Response>(data.get());
 #if __cplusplus > 201703L
-      std::shared_ptr<Response> ret(std:move(data), message_ptr);
+      std::shared_ptr<Response> ret(std::move(data), message_ptr);
 #else
       std::shared_ptr<Response> ret(data, message_ptr);
 #endif
@@ -96,7 +96,7 @@ class ClientResultStreamIterator {
                               sizeof(Response))) {
       const auto message_ptr = flatbuffers::GetMutableRoot<Response>(data.get());
 #if __cplusplus > 201703L
-      std::shared_ptr<Response> ret(std:move(data), message_ptr);
+      std::shared_ptr<Response> ret(std::move(data), message_ptr);
 #else
       std::shared_ptr<Response> ret(data, message_ptr);
 #endif
