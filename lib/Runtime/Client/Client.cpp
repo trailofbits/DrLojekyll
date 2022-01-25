@@ -22,7 +22,7 @@ ClientResultStreamImpl::ClientResultStreamImpl(
     : channel(std::move(channel_)),
       context() {
 
-//  context.set_compression_algorithm(GRPC_COMPRESS_STREAM_GZIP);
+  context.set_compression_algorithm(GRPC_COMPRESS_STREAM_GZIP);
   context.set_wait_for_ready(true);
   reader.reset(
       grpc::internal::ClientReaderFactory<grpc::Slice>::Create<grpc::Slice>(
