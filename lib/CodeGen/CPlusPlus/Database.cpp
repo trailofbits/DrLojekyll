@@ -1294,7 +1294,8 @@ static void DefineFunctor(OutputStream &os, ParsedModule module,
 
 static void DeclareFunctors(OutputStream &os, Program program,
                             ParsedModule root_module,
-                            const std::string &ns_name) {
+                            const std::string &ns_name,
+                            const std::vector<ParsedInline> &inlines) {
   os << os.Indent() << "template <typename StorageT>\n"
      << os.Indent() << "class " << gClassName << "Functors {\n";
   os.PushIndent();
@@ -1303,9 +1304,21 @@ static void DeclareFunctors(OutputStream &os, Program program,
      << "Functors(void) = default;\n";
   os.PushIndent();
 
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:database:functors:prologue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
   for (ParsedFunctor func : Functors(root_module)) {
     if (!func.IsInline(Language::kCxx)) {
       DefineFunctor(os, root_module, func, ns_name);
+    }
+  }
+
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:database:functors:epilogue") {
+      os << code.CodeToInline() << "\n\n";
     }
   }
 
@@ -1337,15 +1350,29 @@ static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
 }
 
 static void DeclareMessageLog(OutputStream &os, Program program,
-                              ParsedModule root_module) {
-  os << os.Indent() << "class " << gClassName << "Log {\n";
+                              ParsedModule root_module,
+                              const std::vector<ParsedInline> &inlines) {
+  os << os.Indent() << "template <typename StorageT>\n"
+     << os.Indent() << "class " << gClassName << "Log {\n";
   os.PushIndent();
   os << os.Indent() << "public:\n";
   os.PushIndent();
 
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:database:log:prologue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
   for (auto message : Messages(root_module)) {
     if (message.IsPublished()) {
       DeclareMessageLogger(os, root_module, message);
+    }
+  }
+
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:database:log:epilogue") {
+      os << code.CodeToInline() << "\n\n";
     }
   }
 
@@ -1632,11 +1659,23 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
 // Emits C++ code for the given program to `os`.
 void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   const auto module = program.ParsedModule();
+  const auto inlines = Inlines(module, Language::kCxx);
+
   std::string file_name = "datalog";
   std::string ns_name;
+  std::string macro_name;
   if (const auto db_name = module.DatabaseName()) {
     ns_name = db_name->NamespaceName(Language::kCxx);
     file_name = db_name->FileName();
+    for (auto ch : ns_name) {
+      if (std::isalnum(ch)) {
+        macro_name += ch;
+      } else {
+        macro_name += '_';
+      }
+    }
+  } else {
+    macro_name = gClassName;
   }
 
   os << "/* Auto-generated file */\n\n"
@@ -1644,25 +1683,6 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
      << "#define DRLOJEKYLL_DATABASE_CODE\n\n"
      << "#include <drlojekyll/Runtime/Runtime.h>\n\n"
      << "#include \"" << file_name << "_generated.h\"\n"
-     << "#ifndef __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n"
-     << "#  define __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n";
-
-  for (ParsedEnumType type : module.EnumTypes()) {
-    os << "DRLOJEKYLL_MAKE_ENUM_SERIALIZER("
-       << TypeName(module, type.Type()) << ", "
-       << TypeName(module, type.UnderlyingType()) << ")\n";
-  }
-
-  const auto inlines = Inlines(module, Language::kCxx);
-
-  // Output prologue code.
-  for (auto code : inlines) {
-    if (code.IsPrologue()) {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
-
-  os << "#endif  // __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n\n"
      << "#include <algorithm>\n"
      << "#include <cstdio>\n"
      << "#include <cinttypes>\n"
@@ -1671,18 +1691,49 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
      << "#include <unordered_map>\n"
      << "#include <vector>\n\n";
 
-  DeclareDescriptors(os, program, module);
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:database:prologue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
 
   if (!ns_name.empty()) {
     os << "namespace " << ns_name << " {\n";
   }
 
-  DeclareFunctors(os, program, module, ns_name);
-  DeclareMessageLog(os, program, module);
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:database:prologue:namespace") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
 
+  // Declare these up here so that prologue code can specialize them.
+  DeclareFunctors(os, program, module, ns_name, inlines);
+  DeclareMessageLog(os, program, module, inlines);
+
+  if (!ns_name.empty()) {
+    os << "}  // namespace " << ns_name << "\n\n";
+  }
+
+  os << "#ifndef __DRLOJEKYLL_SERIALIZER_CODE_" << macro_name << "\n"
+     << "#  define __DRLOJEKYLL_SERIALIZER_CODE_" << macro_name << "\n";
+
+  for (ParsedEnumType type : module.EnumTypes()) {
+    os << "DRLOJEKYLL_MAKE_ENUM_SERIALIZER("
+       << TypeName(module, type.Type()) << ", "
+       << TypeName(module, type.UnderlyingType()) << ")\n";
+  }
+
+  os << "#endif  // __DRLOJEKYLL_SERIALIZER_CODE_" << macro_name << "\n\n";
+
+  DeclareDescriptors(os, program, module);
+
+  if (!ns_name.empty()) {
+    os << "namespace " << ns_name << " {\n";
+  }
   // A program gets its own class
   os << "template <typename StorageT, typename LogT=" << gClassName
-     << "Log, typename FunctorsT=" << gClassName << "Functors<StorageT>>\n";
+     << "Log<StorageT>, typename FunctorsT=" << gClassName << "Functors<StorageT>>\n";
   os << "class " << gClassName << " {\n";
   os.PushIndent();  // class
 
@@ -1821,21 +1872,21 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os.PopIndent();  // class:
   os << "};\n\n";
 
-  if (!ns_name.empty()) {
-    os << "}  // namespace " << ns_name << "\n\n";
-  }
-
-  os << "#ifndef __DRLOJEKYLL_EPILOGUE_CODE_" << gClassName << "\n"
-     << "#  define __DRLOJEKYLL_EPILOGUE_CODE_" << gClassName << "\n";
-
-  // Output epilogue code.
   for (auto code : inlines) {
-    if (code.IsEpilogue()) {
+    if (code.Stage() == "c++:database:epilogue:namespace") {
       os << code.CodeToInline() << "\n\n";
     }
   }
 
-  os << "#endif  // __DRLOJEKYLL_EPILOGUE_CODE_" << gClassName << "\n\n";
+  if (!ns_name.empty()) {
+    os << "}  // namespace " << ns_name << "\n\n";
+  }
+
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:database:epilogue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
 }
 
 }  // namespace cxx

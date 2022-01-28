@@ -1727,7 +1727,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
       switch (code.Language()) {
         case Language::kUnknown:
         case Language::kPython:
-          if (code.IsPrologue()) {
+          if (code.Stage() == "python:database:prologue") {
             os << code.CodeToInline() << "\n\n";
           }
           break;
@@ -1791,7 +1791,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
       switch (code.Language()) {
         case Language::kUnknown:
         case Language::kPython:
-          if (code.IsEpilogue()) {
+          if (code.Stage() == "python:database:epilogue") {
             os << code.CodeToInline() << "\n\n";
           }
           break;

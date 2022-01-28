@@ -259,11 +259,7 @@ OutputStream &operator<<(OutputStream &os, ParsedInline code_) {
     return os;
   }
 
-  if (code_.IsPrologue()) {
-    os << "#prologue ```";
-  } else {
-    os << "#epilogue ```";
-  }
+  os << "#inline(" << code_.Stage() << ") ```";
 
   switch (code_.Language()) {
     case Language::kUnknown: os << '\n'; break;
@@ -416,19 +412,11 @@ OutputStream &operator<<(OutputStream &os, ParsedModule module) {
 
   for (ParsedModule sub_module : ParsedModuleIterator(module)) {
     for (ParsedInline code : sub_module.Inlines()) {
-      if (code.IsPrologue()) {
-        os << code << "\n";
-      }
+      os << code << "\n";
     }
 
     for (ParsedClause clause : sub_module.Clauses()) {
       os << clause << "\n";
-    }
-
-    for (ParsedInline code : sub_module.Inlines()) {
-      if (!code.IsPrologue()) {
-        os << code << "\n";
-      }
     }
   }
 

@@ -122,7 +122,7 @@ static void DefineQuery(ParsedModule module, ParsedQuery query,
      << os.Indent() << "if (auto params = request->GetRoot()) {\n";
   os.PushIndent();
   os << os.Indent() << "std::shared_lock<std::shared_mutex> locker(gDatabaseLock);\n"
-     << os.Indent() << "const auto num_generated = gDatabase." << query.Name()
+     << os.Indent() << "const auto num_generated = gDatabase->" << query.Name()
      << "_" << decl.BindingPattern();
 
   auto sep = "(";
@@ -265,12 +265,7 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
   os << os.Indent() << "outbox.name = client_name->str();\n";
   os.PopIndent();
   os << os.Indent() << "}\n\n"
-     << os.Indent() << "if (gLog) {\n";
-  os.PushIndent();
-  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
-     << os.Indent() << "std::cerr << \"Client '\" << outbox.name << \"' connected\" << std::endl;\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n\n"
+     << os.Indent() << "LOG(INFO) << \"Client '\" << outbox.name << \"' connected\";\n"
      << os.Indent() << "alignas(64) std::vector<std::shared_ptr<flatbuffers::grpc::Message<DatalogClientMessage>>> messages;\n"
      << os.Indent() << "messages.reserve(4u);\n\n"
      << os.Indent() << "{\n";
@@ -301,23 +296,12 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
   os << os.Indent() << "continue;\n";
   os.PopIndent();
   os << os.Indent() << "}\n\n"
-     << os.Indent() << "if (gLog) {\n";
-  os.PushIndent();
-  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
-     << os.Indent() << "std::cerr << \"Sending \" << messages.size() << \" outputs to client '\" << outbox.name << \"'\" << std::endl;\n";
-  os.PopIndent();
-
-  os << os.Indent() << "}\n\n"
+     << os.Indent() << "LOG(INFO) << \"Sending \" << messages.size() << \" outputs to client '\" << outbox.name << \"'\";\n"
      << os.Indent() << "auto num_sent = 0ul;\n"
      << os.Indent() << "auto num_failed = 0ul;\n"
      << os.Indent() << "for (const auto &message : messages) {\n";
   os.PushIndent();
-  os << os.Indent() << "if (gLog) {\n";
-  os.PushIndent();
-  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
-     << os.Indent() << "std::cerr << \"Message size is \" << message->BorrowSlice().size() << \" bytes\" << std::endl;\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n"
+  os << os.Indent() << "LOG(INFO) << \"Message size is \" << message->BorrowSlice().size() << \" bytes\";\n\n"
      << os.Indent() << "if (!writer->Write(*message, options)) {\n";
   os.PushIndent();
   os << os.Indent() << "++num_failed;\n";
@@ -330,12 +314,7 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
   os.PopIndent();
   os << os.Indent() << "}\n\n"  // for
      << os.Indent() << "messages.clear();\n"
-     << os.Indent() << "if (gLog) {\n";
-  os.PushIndent();
-  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
-     << os.Indent() << "std::cerr << \"Sent \" << num_sent << \"/\" << (num_sent+num_failed) << \" outputs to client '\" << outbox.name << \"'\" << std::endl;\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n"
+     << os.Indent() << "LOG(INFO) << \"Sent \" << num_sent << \"/\" << (num_sent+num_failed) << \" outputs to client '\" << outbox.name << \"'\";\n\n"
      << os.Indent() << "if (num_failed) {\n";
   os.PushIndent();
   os << os.Indent() << "break;\n";
@@ -356,12 +335,7 @@ static void DefineSubscribeMethod(const std::vector<ParsedMessage> &messages,
      << os.Indent() << "*(outbox.prev_next) = outbox.next;\n";
   os.PopIndent();
   os << os.Indent() << "}\n"  // End of unlink.
-     << os.Indent() << "if (gLog) {\n";
-  os.PushIndent();
-  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
-     << os.Indent() << "std::cerr << \"Client '\" << outbox.name << \"' disconnected\" << std::endl;\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n\n"
+     << os.Indent() << "LOG(INFO) << \"Client '\" << outbox.name << \"' disconnected\";\n\n"
      << os.Indent() << "return grpc::Status::OK;\n";
   os.PopIndent();
   os << "}";  // End of Subscribe.
@@ -383,13 +357,8 @@ static void DefinePublishMethod(ParsedModule module,
   os.PopIndent();
 
   os << os.Indent() << "}\n\n"
-     << os.Indent() << "if (gLog) {\n";
-  os.PushIndent();
-  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
-     << os.Indent() << "std::cerr << \"Received message size is \" << request->BorrowSlice().size() << \" bytes\" << std::endl;\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n"
-     << os.Indent() << "auto input_msg = std::make_unique<DatabaseInputMessageType>(gStorage);\n";
+     << os.Indent() << "LOG(INFO) << \"Received message size is \" << request->BorrowSlice().size() << \" bytes\";\n"
+     << os.Indent() << "auto input_msg = std::make_unique<DatabaseInputMessageType>(*gStorage);\n";
 
   auto do_message = [&] (ParsedMessage message, const char *vector,
                          const char *method_prefix) {
@@ -458,13 +427,7 @@ static void DefinePublishMethod(ParsedModule module,
 
   os << os.Indent() << "if (auto size = input_msg->Size()) {\n";
   os.PushIndent();
-  os << os.Indent() << "if (gLog) {\n";
-  os.PushIndent();
-  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
-     << os.Indent() << "std::cerr << \"Received \" << size << \" messages\" << std::endl;\n";
-  os.PopIndent();
-
-  os << os.Indent() << "}\n\n"
+  os << os.Indent() << "LOG(INFO) << \"Received \" << size << \" messages\";\n\n"
      << os.Indent() << "std::unique_lock<std::mutex> locker(gInputMessagesLock);\n"
      << os.Indent() << "gInputMessages.push_back(std::move(input_msg));\n"
      << os.Indent() << "gInputMessagesSemaphore.Signal();\n";
@@ -707,6 +670,23 @@ static void DefineDatabaseLog(ParsedModule module,
 static void DefineDatabaseThread(const std::vector<ParsedMessage> &messages,
                                  OutputStream &os) {
 
+  // Make a function to publish messages.
+  os << "static void PublishMessages(void) {\n";
+  os.PushIndent();
+  os << os.Indent() << "auto output = std::make_shared<flatbuffers::grpc::Message<DatalogClientMessage>>(gDatabaseLog->Build());\n"
+     << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
+     << os.Indent() << "for (auto outbox = gFirstOutbox; outbox;) {\n";
+  os.PushIndent();
+  os << os.Indent() << "LOG(INFO) << \"Sending updates to client subscriber '\" << outbox->name << \"'\";\n\n"  // if
+     << os.Indent() << "std::unique_lock<std::mutex> outbox_locker(outbox->messages_lock);\n"
+     << os.Indent() << "outbox->messages.push_back(output);\n"
+     << os.Indent() << "outbox->messages_sem.Signal();\n"
+     << os.Indent() << "outbox = outbox->next;\n";
+  os.PopIndent();
+  os << os.Indent() << "}\n";  // for
+  os.PopIndent();
+  os << "}\n\n";
+
   // Make the main database thread.
   os << "static void DatabaseWriterThread(void) {\n";
   os.PushIndent();
@@ -729,41 +709,14 @@ static void DefineDatabaseThread(const std::vector<ParsedMessage> &messages,
      << os.Indent() << "for (const auto &input : inputs) {\n";
   os.PushIndent();
   os << os.Indent() << "total_num_applied += input->Size();\n"
-     << os.Indent() << "if (gLog) {\n";
-  os.PushIndent();
-  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
-     << os.Indent() << "std::cerr << \"Applying \" << input->Size() << \" messages to the database\" << std::endl;\n";
-  os.PopIndent();
-
-  os << os.Indent() << "}\n\n"
+     << os.Indent() << "LOG(INFO) << \"Applying \" << input->Size() << \" messages to the database\";\n\n"
      << os.Indent() << "std::unique_lock<std::shared_mutex> locker(gDatabaseLock);\n"
-     << os.Indent() << "input->Apply(gDatabase);\n";
+     << os.Indent() << "input->Apply(*gDatabase);\n";
   os.PopIndent();
   os << os.Indent() << "}\n"  // for
      << os.Indent() << "inputs.clear();\n"
-     << os.Indent() << "if (gLog) {\n";
-  os.PushIndent();
-  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
-     << os.Indent() << "std::cerr << \"Applied \" << total_num_applied << \" messages to the database\" << std::endl;\n";
-  os.PopIndent();
-
-  os << os.Indent() << "}\n\n"
-     << os.Indent() << "auto output = std::make_shared<flatbuffers::grpc::Message<DatalogClientMessage>>(gDatabaseLog.Build());\n"
-     << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
-     << os.Indent() << "for (auto outbox = gFirstOutbox; outbox;) {\n";
-  os.PushIndent();
-  os << os.Indent() << "if (gLog) {\n";
-  os.PushIndent();
-  os << os.Indent() << "std::unique_lock<std::mutex> log_locker(gLogLock);\n"
-     << os.Indent() << "std::cerr << \"Sending updates to client subscriber '\" << outbox->name << \"'\" << std::endl;\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n\n"
-     << os.Indent() << "std::unique_lock<std::mutex> outbox_locker(outbox->messages_lock);\n"
-     << os.Indent() << "outbox->messages.push_back(output);\n"
-     << os.Indent() << "outbox->messages_sem.Signal();\n"
-     << os.Indent() << "outbox = outbox->next;\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n";  // for
+     << os.Indent() << "LOG(INFO) << \"Applied \" << total_num_applied << \" messages to the database\";\n\n"
+     << os.Indent() << "PublishMessages();\n";
 
   os.PopIndent();
   os << os.Indent() << "}\n";  // while true
@@ -793,6 +746,7 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
      << "#include <drlojekyll/Runtime/StdRuntime.h>\n\n";
 
   const auto module = program.ParsedModule();
+  const auto inlines = Inlines(module, Language::kCxx);
   const auto db_name = module.DatabaseName();
 
   std::string file_name = "datalog";
@@ -809,18 +763,36 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
      << "#include <grpcpp/grpcpp.h>\n"
      << "#include <grpcpp/impl/grpc_library.h>\n"
      << "#include <flatbuffers/flatbuffers.h>\n"
+     << "#include <glog/logging.h>\n"
+     << "#include <gflags/gflags.h>\n\n"
      << "#include \"" << file_name << "_generated.h\"\n"
      << "#include \"" << file_name << ".grpc.fb.h\"\n"
      << "#include \"" << file_name << ".interface.h\"\n"
-     << "#include \"" << file_name << ".db.h\"\n\n"
-     << "static bool gLog = false;\n"
-     << "static std::mutex gLogLock;\n\n";
+     << "#include \"" << file_name << ".db.h\"\n\n";
 
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:server:prologue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
+  if (db_name) {
+    os << "DEFINE_string(host, \"localhost\", \"Hostname of the " << db_name.value() << " server\");\n"
+        << "DEFINE_uint32(port, 50051, \"Port of the " << db_name.value() << " server\");\n\n";
+  } else {
+    os << "DEFINE_string(host, \"localhost\", \"Hostname of this server\");\n"
+       << "DEFINE_uint32(port, 50051, \"Port of this server\");\n\n";
+  }
   auto queries = Queries(module);
   auto messages = Messages(module);
 
   if (!ns_name.empty()) {
     os << "namespace " << ns_name << " {\n\n";
+    for (auto code : inlines) {
+      if (code.Stage() == "c++:server:prologue:namespace") {
+        os << code.CodeToInline() << "\n\n";
+      }
+    }
   }
 
   DefineDatabaseLog(module, messages, os);
@@ -844,12 +816,12 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
      << "static std::vector<std::unique_ptr<DatabaseInputMessageType>> gInputMessages;\n"
      << "static std::mutex gInputMessagesLock;\n"
      << "static hyde::rt::Semaphore gInputMessagesSemaphore;\n"
-     << "static PublishedMessageBuilder gDatabaseLog;\n"
-     << "static DatabaseStorageType gStorage;\n"
+     << "static PublishedMessageBuilder *gDatabaseLog = nullptr;\n"
+     << "static DatabaseStorageType *gStorage = nullptr;\n"
      << "static std::shared_mutex gDatabaseLock;\n"
-     << "static DatabaseFunctors<DatabaseStorageType> gFunctors;\n"
-     << "static Database<DatabaseStorageType, PublishedMessageBuilder> gDatabase(\n"
-     << "    gStorage, gDatabaseLog, gFunctors);\n";
+     << "static Database<DatabaseStorageType, PublishedMessageBuilder> *gDatabase = nullptr;\n";
+//    (\n"
+//     << "    gStorage, gDatabaseLog, gFunctors);\n";
 
   // Define the query methods out-of-line.
   DefineQueryMethods(module, queries, ns_name_prefix, os);
@@ -862,47 +834,43 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
   DefineDatabaseThread(messages, os);
 
   if (!ns_name.empty()) {
+    for (auto code : inlines) {
+      if (code.Stage() == "c++:server:epilogue:namespace") {
+        os << code.CodeToInline() << "\n\n";
+      }
+    }
+
     os << "}  // namespace " << ns_name << "\n\n";
   }
 
-  os << "extern \"C\" int main(int argc, const char *argv[]) {\n";
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:server:epilogue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
+  os << "extern \"C\" int main(int argc, char *argv[]) {\n";
   os.PushIndent();
+
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:server:prologue:main") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
+  os << os.Indent() << "google::ParseCommandLineFlags(&argc, &argv, false);\n"
+     << os.Indent() << "google::InitGoogleLogging(argv[0]);\n\n";
+
+  // Start by locking the database. We haven't actually constructed it, so this
+  // is a way of making sure that nothing else tries to access it.
+  os << os.Indent() << ns_name_prefix << "gDatabaseLock.lock();\n"
 
   // Make some vectors reasonably big to avoid allocations at runtime, and start
   // the database thread.
-  os << os.Indent() << ns_name_prefix << "gInputMessages.reserve(128);\n"
-     << os.Indent() << "std::thread db_thread(" << ns_name_prefix << "DatabaseWriterThread);\n\n";
-  // Default argument values.
-  os << os.Indent() << "std::string host = \"localhost\";\n"
-     << os.Indent() << "unsigned port = 50051u;\n"
-
-  // Make a vector of arguments with a bit of fudge space.
-     << os.Indent() << "std::vector<const char *> args;\n"
-     << os.Indent() << "for (auto i = 1; i < argc; ++i) {\n";
-  os.PushIndent();
-  os << os.Indent() << "args.push_back(argv[i]);\n";
-
-  os.PopIndent();
-  os << os.Indent() << "}\n"
-     << os.Indent() << "args.push_back(\"\");\n"
-
-  // Parse the arguments.
-     << os.Indent() << "for (auto i = 0ul; i < args.size() - 1ul; ) {\n";
-  os.PushIndent();
-  os << os.Indent() << "const auto arg = args[i++];\n"
-     << os.Indent() << "     if (!strcmp(arg, \"--host\")) host = args[i++];\n"
-     << os.Indent() << "else if (!strcmp(arg, \"--port\")) port = static_cast<unsigned>(atol(args[i++]));\n"
-     << os.Indent() << "else if (!strcmp(arg, \"--log\")) gLog = true;\n"
-     << os.Indent() << "else {\n";
-  os.PushIndent();
-  os << os.Indent() << "std::cerr << \"Unrecognized option: \" << arg << std::endl;\n"
-     << os.Indent() << "return EXIT_FAILURE;\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n\n"
+     << os.Indent() << ns_name_prefix << "gInputMessages.reserve(128);\n"
+     << os.Indent() << "std::thread db_thread(" << ns_name_prefix << "DatabaseWriterThread);\n\n"
      << os.Indent() << "std::stringstream address_ss;\n"
-     << os.Indent() << "address_ss << host << ':' << port;\n\n"
+     << os.Indent() << "address_ss << FLAGS_host << ':' << FLAGS_port;\n\n"
      << os.Indent() << ns_name_prefix << "DatalogService service;\n"
 
   // Build a gRPC server builder, configuring it with host/port.
@@ -915,11 +883,37 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
      << os.Indent() << "builder.AddListeningPort(address_ss.str(), grpc::InsecureServerCredentials());\n"
      << os.Indent() << "builder.RegisterService(&service);\n"
 
+  // Create the database.
+     << os.Indent() << ns_name_prefix << "DatabaseStorageType storage;\n"
+     << os.Indent() << ns_name_prefix << "gStorage = &storage;\n"
+     << os.Indent() << ns_name_prefix << "PublishedMessageBuilder log;\n"
+     << os.Indent() << ns_name_prefix << "gDatabaseLog = &log;\n"
+     << os.Indent() << ns_name_prefix << "DatabaseFunctors<"
+                    << ns_name_prefix << "DatabaseStorageType> functors;\n"
+     << os.Indent() << ns_name_prefix << "Database<"
+                    << ns_name_prefix << "DatabaseStorageType, "
+                    << ns_name_prefix << "PublishedMessageBuilder> db(storage, log, functors);\n"
+     << os.Indent() << ns_name_prefix << "gDatabase = &db;\n"
+
   // Build the actual server.
      << os.Indent() << "auto server = builder.BuildAndStart();\n"
+
+  // Initializing the database may have triggered message publication, so handle that.
+     << os.Indent() << ns_name_prefix << "PublishMessages();\n"
+     << os.Indent() << ns_name_prefix << "gDatabaseLock.unlock();\n"
+
+  // Wait for the server to stop.
      << os.Indent() << "server->Wait();\n"
-     << os.Indent() << "db_thread.join();\n"
-     << os.Indent() << "return EXIT_SUCCESS;\n";
+     << os.Indent() << "db_thread.join();\n";
+
+
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:server:epilogue:main") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
+  os << os.Indent() << "return EXIT_SUCCESS;\n";
   os.PopIndent();
   os << "}\n\n";
 }

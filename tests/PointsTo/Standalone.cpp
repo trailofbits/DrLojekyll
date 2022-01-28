@@ -20,7 +20,7 @@
 
 using DatabaseStorage = hyde::rt::StdStorage;
 using DatabaseFunctors = points_to::DatabaseFunctors<DatabaseStorage>;
-using DatabaseLog = points_to::DatabaseLog;
+using DatabaseLog = points_to::DatabaseLog<DatabaseStorage>;
 using Database = points_to::Database<DatabaseStorage, DatabaseLog, DatabaseFunctors>;
 
 template <typename... Args>

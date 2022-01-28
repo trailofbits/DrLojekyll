@@ -2,6 +2,8 @@
 
 #include "DisplayPosition.h"
 
+#include <drlojekyll/Lex/Token.h>
+
 namespace hyde {
 namespace display {
 
@@ -164,6 +166,9 @@ bool DisplayPosition::TryComputeDistanceTo(DisplayPosition to,
 
   return true;
 }
+
+DisplayRange::DisplayRange(const Token &from_, const Token &to_)
+    : DisplayRange(from_.Position(), to_.NextPosition()) {}
 
 bool DisplayRange::IsValid(void) const {
   const auto from_pos = from.As<display::Position>();

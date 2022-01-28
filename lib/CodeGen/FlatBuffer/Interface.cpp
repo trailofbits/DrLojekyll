@@ -335,6 +335,7 @@ static void DeclareQueries(ParsedModule module,
 
 static void DeclareService(Program program, ParsedModule module,
                            const std::vector<ParsedQuery> &queries,
+                           const std::vector<ParsedInline> &inlines,
                            OutputStream &os) {
 
   os << os.Indent() << "table Client {\n";
@@ -348,6 +349,12 @@ static void DeclareService(Program program, ParsedModule module,
      << os.Indent() << "table Empty {}\n\n"
      << os.Indent() << "rpc_service Datalog {\n";
   os.PushIndent();
+
+  for (auto code : inlines) {
+    if (code.Stage() == "flat:interface:service:prologue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
 
   for (ParsedQuery query : queries) {
     ParsedDeclaration decl(query);
@@ -375,8 +382,14 @@ static void DeclareService(Program program, ParsedModule module,
   os << os.Indent() << "Publish(DatalogServerMessage):Empty;\n"
      << os.Indent() << "Subscribe(Client):DatalogClientMessage (streaming: \"server\");\n";
 
+  for (auto code : inlines) {
+    if (code.Stage() == "flat:interface:service:epilogue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
   os.PopIndent();
-  os << os.Indent() << "}\n\n";
+  os << os.Indent() << "}\n\n";  // rpc_service
 }
 
 }  // namespace
@@ -391,9 +404,8 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   auto messages = Messages(module);
   auto inlines = Inlines(module, Language::kFlatBuffer);
 
-  // Ideally, type names.
   for (auto code : inlines) {
-    if (code.IsPrologue()) {
+    if (code.Stage() == "flat:interface:prologue") {
       os << code.CodeToInline() << "\n\n";
     }
   }
@@ -403,11 +415,22 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
        << ";\n\n";
   }
 
+  for (auto code : inlines) {
+    if (code.Stage() == "flat:interface:prologue:namespace") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
+  for (auto code : inlines) {
+    if (code.Stage() == "flat:interface:enums:prologue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
   DeclareEnums(module, os);
 
-  // Other things??
   for (auto code : inlines) {
-    if (code.IsEpilogue()) {
+    if (code.Stage() == "flat:interface:enums:epilogue") {
       os << code.CodeToInline() << "\n\n";
     }
   }
@@ -416,9 +439,41 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
 
 //  auto table_ios = FindMessageTables(program);
 
+  for (auto code : inlines) {
+    if (code.Stage() == "flat:interface:messages:prologue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
   DeclareMessages(module, messages, os);
+
+  for (auto code : inlines) {
+    if (code.Stage() == "flat:interface:messages:epilogue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
+  for (auto code : inlines) {
+    if (code.Stage() == "flat:interface:queries:prologue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
   DeclareQueries(module, queries, os);
-  DeclareService(program, module, queries, os);
+
+  for (auto code : inlines) {
+    if (code.Stage() == "flat:interface:queries:epilogue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
+  DeclareService(program, module, queries, inlines, os);
+
+  for (auto code : inlines) {
+    if (code.Stage() == "flat:interface:epilogue:namespace") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
 
   os << os.Indent() << "root_type DatalogServerMessage;\n\n";
 }

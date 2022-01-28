@@ -331,6 +331,7 @@ void GenerateClientHeader(Program program, ParsedModule module,
                           const std::string &ns_name_prefix,
                           const std::vector<ParsedQuery> &queries,
                           const std::vector<ParsedMessage> &messages,
+                          const std::vector<ParsedInline> &inlines,
                           bool has_inputs, bool has_outputs,
                           bool has_removed_inputs, bool has_removed_outputs,
                           OutputStream &os) {
@@ -348,8 +349,20 @@ void GenerateClientHeader(Program program, ParsedModule module,
      << "#include <drlojekyll/Runtime/Client.h>\n"
      << "#include \"" << file_name << "_generated.h\"\n\n";
 
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:client:interface:prologue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
   if (!ns_name.empty()) {
     os << "namespace " << ns_name << " {\n\n";
+
+    for (auto code : inlines) {
+      if (code.Stage() == "c++:client:interface:prologue:namespace") {
+        os << code.CodeToInline() << "\n\n";
+      }
+    }
   }
 
   // Declare the message builder, which accumulates messages for publication.
@@ -403,7 +416,19 @@ void GenerateClientHeader(Program program, ParsedModule module,
   os << "};\n\n";
 
   if (!ns_name.empty()) {
+    for (auto code : inlines) {
+      if (code.Stage() == "c++:client:interface:epilogue:namespace") {
+        os << code.CodeToInline() << "\n\n";
+      }
+    }
+
     os << "}  // namespace " << ns_name << "\n\n";
+  }
+
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:client:interface:epilogue") {
+      os << code.CodeToInline() << "\n\n";
+    }
   }
 }
 
@@ -413,6 +438,7 @@ void GenerateClientImpl(Program program, ParsedModule module,
                         const std::string &ns_name_prefix,
                         const std::vector<ParsedQuery> &queries,
                         const std::vector<ParsedMessage> &messages,
+                        const std::vector<ParsedInline> &inlines,
                         bool has_inputs, bool has_outputs,
                         bool has_removed_inputs, bool has_removed_outputs,
                         OutputStream &os) {
@@ -423,8 +449,19 @@ void GenerateClientImpl(Program program, ParsedModule module,
      << "#include \"" << file_name << ".grpc.fb.h\"\n"
      << "#include \"" << file_name << ".client.h\"\n\n";
 
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:client:database:prologue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
   if (!ns_name.empty()) {
     os << "namespace " << ns_name << " {\n\n";
+    for (auto code : inlines) {
+      if (code.Stage() == "c++:client:database:prologue:namespace") {
+        os << code.CodeToInline() << "\n\n";
+      }
+    }
   }
 
   os << "DatalogClient::~DatalogClient(void) {}\n\n"
@@ -529,7 +566,19 @@ void GenerateClientImpl(Program program, ParsedModule module,
   os << "}\n\n";
 
   if (!ns_name.empty()) {
+    for (auto code : inlines) {
+      if (code.Stage() == "c++:client:database:epilogue:namespace") {
+        os << code.CodeToInline() << "\n\n";
+      }
+    }
+
     os << "}  // namespace " << ns_name << "\n\n";
+  }
+
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:client:database:epilogue") {
+      os << code.CodeToInline() << "\n\n";
+    }
   }
 }
 
@@ -539,6 +588,7 @@ void GenerateClientImpl(Program program, ParsedModule module,
 void GenerateClientCode(const Program &program, OutputStream &header_os,
                         OutputStream &impl_os) {
   const auto module = program.ParsedModule();
+  const auto inlines = Inlines(module, Language::kCxx);
   const auto queries = Queries(module);
   const auto messages = Messages(module);
 
@@ -572,10 +622,10 @@ void GenerateClientCode(const Program &program, OutputStream &header_os,
   }
 
   GenerateClientHeader(program, module, file_name, ns_name, ns_name_prefix,
-                       queries, messages, has_inputs, has_outputs,
+                       queries, messages, inlines, has_inputs, has_outputs,
                        has_removed_inputs, has_removed_outputs, header_os);
   GenerateClientImpl(program, module, file_name, ns_name, ns_name_prefix,
-                     queries, messages, has_inputs, has_outputs,
+                     queries, messages, inlines, has_inputs, has_outputs,
                      has_removed_inputs, has_removed_outputs, impl_os);
 }
 

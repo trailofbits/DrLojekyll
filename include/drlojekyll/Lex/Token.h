@@ -149,18 +149,12 @@ enum class Lexeme : uint8_t {
   // Used to insert some C/C++/Python code inline into the Datalog code. The
   // usage looks like:
   //
-  //    #prologue ```<lang>
+  //    #inline(stage-name) ```<lang>
   //    ... code here ...
   //    ```
   //
-  //    #epilogue ```<lang>
-  //    ... code here ...
-  //    ```
-  //
-  // Inline code can either be in the "prologue" (before) or "epilogue" (after)
-  // any of the generated code.
-  kHashInlinePrologueStmt,
-  kHashInlineEpilogueStmt,
+  // Inline code names a code generation stage where the code will be placed.
+  kHashInlineStmt,
 
   // Use to name the database. For example:
   //

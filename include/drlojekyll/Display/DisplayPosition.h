@@ -80,6 +80,8 @@ class DisplayRange {
     return !IsValid();
   }
 
+  explicit DisplayRange(const Token &from_, const Token &to_);
+
   inline explicit DisplayRange(DisplayPosition from_, DisplayPosition to_)
       : from(from_),
         to(to_) {}

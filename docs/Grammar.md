@@ -85,9 +85,20 @@ code_data: "```python" <anything...> "```" ;
 code_data: "```flat" <anything...> "```" ;
 code_data: <double quoted string literal> ;
 
+cxx_target: "server" ":" ;
+cxx_target: "client" ":" ;
+cxx_target: "database" ":" ;
+cxx_target: "interface" ":" ;
+
+cxx_inline_stage: cxx_target "prologue" ;
+cxx_inline_stage: cxx_target "epiogue" ;
+
+inline_stage: "c++" ":" cxx_inline_stage ;
+inline_stage: "flat" ":" flat_inline_stage ;
+inline_stage: "python" ":" py_inline_stage ;
+
 // Inline code statements to be emitted to the generated code.
-code_decl: "#prologue" code_data "." ;
-code_decl: "#epilogue" code_data "." ;
+code_decl: "#inline" "(" inline_stage ")" code_data "." ;
 ```
 
 Inlined code can be target-language-specific, or generic. For example, the code

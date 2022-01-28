@@ -84,13 +84,12 @@ ParsedVariableImpl::ParsedVariableImpl(ParsedClauseImpl *clause_, Token name_,
 
 ParsedInlineImpl::ParsedInlineImpl(
       DisplayRange range_, std::string_view code_, Language language_,
-      bool is_prologue_)
+      std::string stage_name_)
     : Def<ParsedInlineImpl>(this),
       range(range_),
       code(code_.data(), code_.size()),
       language(language_),
-      location(is_prologue_ ? InlineLocation::kPrologue :
-                  InlineLocation::kEpilogue) {}
+      stage_name(std::move(stage_name_)) {}
 
 ParsedDatabaseNameImpl::ParsedDatabaseNameImpl(
     Token introducer_tok_, Token name_tok_, Token dot_,
@@ -1562,8 +1561,8 @@ std::string_view ParsedInline::CodeToInline(void) const noexcept {
   return impl->language;
 }
 
-InlineLocation ParsedInline::Location(void) const noexcept {
-  return impl->location;
+std::string_view ParsedInline::Stage(void) const noexcept {
+  return impl->stage_name;
 }
 
 }  // namespace hyde

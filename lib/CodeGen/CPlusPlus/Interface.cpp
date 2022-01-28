@@ -86,6 +86,26 @@ static void DeclareAppendMessageMethod(OutputStream &os, ParsedModule module,
 // or to collect messages published by the database and aggregate them into
 // a single object.
 void GenerateInterfaceCode(const Program &program, OutputStream &os) {
+
+  const auto module = program.ParsedModule();
+  const auto inlines = Inlines(module, Language::kCxx);
+
+  std::string ns_name;
+  std::string macro_name;
+  if (const auto db_name = module.DatabaseName()) {
+    ns_name = db_name->NamespaceName(Language::kCxx);
+
+    for (auto ch : ns_name) {
+      if (std::isalnum(ch)) {
+        macro_name += ch;
+      } else {
+        macro_name += '_';
+      }
+    }
+  } else {
+    macro_name = gClassName;
+  }
+
   os << "/* Auto-generated file */\n\n"
      << "#pragma once\n\n"
      << "#define DRLOJEKYLL_INTERFACE_CODE\n\n"
@@ -93,15 +113,17 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
      << "#include <string>\n"
      << "#include <tuple>\n"
      << "#include <utility>\n"
-     << "#include <drlojekyll/Runtime/Runtime.h>\n\n"
-     << "#ifndef __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n"
-     << "#  define __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n";
+     << "#include <drlojekyll/Runtime/Runtime.h>\n\n";
 
-  ParsedModule module = program.ParsedModule();
-  std::string ns_name;
-  if (const auto db_name = module.DatabaseName()) {
-    ns_name = db_name->NamespaceName(Language::kCxx);
+
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:interface:prologue") {
+      os << code.CodeToInline() << "\n\n";
+    }
   }
+
+  os << "#ifndef __DRLOJEKYLL_SERIALIZER_CODE_" << macro_name << "\n"
+     << "#  define __DRLOJEKYLL_SERIALIZER_CODE_" << macro_name << "\n";
 
   for (ParsedEnumType type : module.EnumTypes()) {
     os << "DRLOJEKYLL_MAKE_ENUM_SERIALIZER("
@@ -109,15 +131,7 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
        << TypeName(module, type.UnderlyingType()) << ")\n";
   }
 
-  // Output prologue code.
-  auto inlines = Inlines(module, Language::kCxx);
-  for (auto code : inlines) {
-    if (code.IsPrologue()) {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
-
-  os << "#endif  // __DRLOJEKYLL_PROLOGUE_CODE_" << gClassName << "\n\n";
+  os << "#endif  // __DRLOJEKYLL_SERIALIZER_CODE_" << macro_name << "\n\n";
 
   std::vector<std::tuple<DataVector, ParsedMessage, bool>> message_vecs;
 
@@ -165,6 +179,12 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
 
   if (!ns_name.empty()) {
     os << "namespace " << ns_name << " {\n";
+
+    for (auto code : inlines) {
+      if (code.Stage() == "c++:interface:prologue:namespace") {
+        os << code.CodeToInline() << "\n\n";
+      }
+    }
   }
 
   os << os.Indent()
@@ -952,7 +972,17 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
   os << "}\n\n";  // End of `VisitQueries`.
 
   if (!ns_name.empty()) {
+    for (auto code : inlines) {
+      if (code.Stage() == "c++:interface:epilogue:namespace") {
+        os << code.CodeToInline() << "\n\n";
+      }
+    }
     os << "}  // namespace " << ns_name << "\n\n";
+  }
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:interface:epilogue") {
+      os << code.CodeToInline() << "\n\n";
+    }
   }
 }
 

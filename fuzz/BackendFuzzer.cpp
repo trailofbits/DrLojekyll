@@ -372,12 +372,16 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module,
 
   // Note: not shuffling submodules, again like before
   for (auto sub_module : hyde::ParsedModuleIterator(module)) {
-    for (auto code : sub_module.Inlines()) {
-      if (code.IsPrologue()) {
-        os << code << "\n";
-      }
-    }
 
+
+    std::vector<hyde::ParsedInline> all_inlines;
+    for (auto code : sub_module.Inlines()) {
+      all_inlines.push_back(code);
+    }
+    Shuffle(all_inlines.begin(), all_inlines.end(), gen);
+    for (auto code : all_inlines) {
+      os << code << "\n";
+    }
     std::vector<hyde::ParsedClause> all_clauses;
     for (auto clause : sub_module.Clauses()) {
       all_clauses.push_back(clause);
@@ -385,14 +389,6 @@ static std::string ShuffleModule(DrContext &cxt, hyde::ParsedModule module,
     Shuffle(all_clauses.begin(), all_clauses.end(), gen);
     for (auto clause : all_clauses) {
       ShuffleClause(cxt, os, clause, gen);
-    }
-
-    // We also do _not_ shuffle inline code snippets, as there are likely
-    // ordering constraints among those.
-    for (auto code : sub_module.Inlines()) {
-      if (!code.IsPrologue()) {
-        os << code << "\n";
-      }
     }
   }
 

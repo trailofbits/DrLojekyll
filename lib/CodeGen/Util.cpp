@@ -54,7 +54,8 @@ std::vector<ParsedInline> Inlines(ParsedModule module, Language lang) {
   std::vector<ParsedInline> inlines;
   for (ParsedModule sub_module : ParsedModuleIterator(module)) {
     for (ParsedInline code : sub_module.Inlines()) {
-      if (auto inline_lang = code.Language(); inline_lang == lang) {
+      if (auto inline_lang = code.Language();
+          inline_lang == lang || inline_lang == Language::kUnknown) {
         inlines.push_back(code);
       }
     }

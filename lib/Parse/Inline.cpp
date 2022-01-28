@@ -2,28 +2,130 @@
 
 #include "Parser.h"
 
-namespace hyde {
+#include <unordered_set>
 
-// Try to parse `sub_range` as an inlining of of C/C++/Python code into the Datalog
-// module.
+namespace hyde {
+namespace {
+
+static const std::unordered_set<std::string> kValidStages{
+  "c++:client:database:epilogue",
+  "c++:client:database:epilogue:namespace",
+  "c++:client:database:prologue",
+  "c++:client:database:prologue:namespace",
+  "c++:client:interface:epilogue",
+  "c++:client:interface:epilogue:namespace",
+  "c++:client:interface:prologue",
+  "c++:client:interface:prologue:namespace",
+  "c++:database:epilogue",
+  "c++:database:epilogue:namespace",
+  "c++:database:functors:epilogue",
+  "c++:database:functors:prologue",
+  "c++:database:log:epilogue",
+  "c++:database:log:prologue",
+  "c++:database:prologue",
+  "c++:database:prologue:namespace",
+  "c++:interface:epilogue",
+  "c++:interface:epilogue:namespace",
+  "c++:interface:prologue",
+  "c++:interface:prologue:namespace",
+  "c++:server:epilogue",
+  "c++:server:epilogue:main",
+  "c++:server:epilogue:namespace",
+  "c++:server:prologue",
+  "c++:server:prologue:main",
+  "c++:server:prologue:namespace",
+  "flat:interface:enums:epilogue",
+  "flat:interface:enums:prologue",
+  "flat:interface:epilogue:namespace",
+  "flat:interface:messages:epilogue",
+  "flat:interface:messages:prologue",
+  "flat:interface:prologue",
+  "flat:interface:prologue:namespace",
+  "flat:interface:queries:epilogue",
+  "flat:interface:queries:prologue",
+  "flat:interface:service:epilogue",
+  "flat:interface:service:prologue",
+  "python:database:epilogue",
+  "python:database:prologue",
+};
+
+}  // namespace
+
+// Try to parse `sub_range` as an inlining of of C/C++/Python code into the
+// Datalog module.
 void ParserImpl::ParseInlineCode(ParsedModuleImpl *module) {
   Token tok;
   if (!ReadNextSubToken(tok)) {
     assert(false);
   }
 
-  assert(tok.Lexeme() == Lexeme::kHashInlinePrologueStmt ||
-         tok.Lexeme() == Lexeme::kHashInlineEpilogueStmt);
-
-  auto is_prologue = tok.Lexeme() == Lexeme::kHashInlinePrologueStmt;
-
+  assert(tok.Lexeme() == Lexeme::kHashInlineStmt);
   auto after_directive = tok.NextPosition();
-  if (!ReadNextSubToken(tok)) {
+
+  Token l_paren;
+  if (!ReadNextSubToken(l_paren)) {
     context->error_log.Append(scope_range, after_directive)
-        << "Expected code literal or string literal for inline statement";
+        << "Expected an opening parenthesis here to begin the stage name "
+        << "specification of inline statement";
+    return;
+  } else if (l_paren.Lexeme() != Lexeme::kPuncOpenParen) {
+    context->error_log.Append(scope_range, l_paren.SpellingRange())
+        << "Expected an opening parenthesis here to begin the stage name "
+        << "specification of inline statement";
     return;
   }
 
+  DisplayPosition from_position = l_paren.NextPosition();
+  DisplayPosition to_position = from_position;
+  Token r_paren;
+  while (ReadNextSubToken(tok)) {
+    if (tok.Lexeme() == Lexeme::kPuncCloseParen) {
+      r_paren = tok;
+      break;
+    } else {
+      to_position = tok.NextPosition();
+    }
+  }
+
+  if (!r_paren.IsValid()) {
+    context->error_log.Append(scope_range, to_position)
+        << "Expected a closing parenthesis here to end the stage name "
+        << "specification of inline statement";
+    return;
+  }
+
+  DisplayRange stage_range(from_position, to_position);
+  std::string_view stage_name_code;
+  if (!context->display_manager.TryReadData(stage_range, &stage_name_code)) {
+    context->error_log.Append(scope_range, DisplayRange(l_paren, r_paren))
+        << "Unable to read stage name specification of inline statement";
+    return;
+  }
+
+  std::stringstream stage_ss;
+  for (auto ch : stage_name_code) {
+    switch (ch) {
+      case ' ': case '\t': case '\n':
+        continue;
+      default:
+        stage_ss << ch;
+    }
+  }
+
+  auto stage_name = stage_ss.str();
+  if (!kValidStages.count(stage_name)) {
+    context->error_log.Append(scope_range, DisplayRange(l_paren, r_paren))
+        << "Invalid stage name '" << stage_name
+        << "' in stage specification of inline statement";
+    return;
+  }
+
+  auto after_stage = tok.NextPosition();
+  if (!ReadNextSubToken(tok)) {
+    context->error_log.Append(scope_range, after_stage)
+        << "Expected code literal or string literal for inline statement";
+    return;
+  }
 
   std::string_view code;
   auto language = Language::kUnknown;
@@ -101,7 +203,8 @@ void ParserImpl::ParseInlineCode(ParsedModuleImpl *module) {
     return;
   }
 
-  (void) module->inlines.Create(scope_range, code, language, is_prologue);
+  (void) module->inlines.Create(
+      scope_range, code, language, std::move(stage_name));
 }
 
 }  // namespace hyde

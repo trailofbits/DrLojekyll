@@ -1197,18 +1197,13 @@ void ParserImpl::ParseAllTokens(ParsedModuleImpl *module) {
         }
         continue;
 
-      // Specify that the generated code should contain a prologue or epilogue
-      // of specified code
+      // Specify that the generated code should be emitted into the target code
+      // by the code generator at a specific stage of code generation.
       //
-      //    #prologue ```
+      //    #inline(stage-name) ```
       //    ...
       //    ```.
-      //
-      //    #epilogue ```
-      //    ...
-      //    ```.
-      case Lexeme::kHashInlinePrologueStmt:
-      case Lexeme::kHashInlineEpilogueStmt:
+      case Lexeme::kHashInlineStmt:
         ReadStatement();
         ParseInlineCode(module);
         continue;

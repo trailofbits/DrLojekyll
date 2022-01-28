@@ -42,7 +42,7 @@ size_t NumFunctionInstructions(DB &db, uint64_t func_ea) {
 
 using DatabaseStorage = hyde::rt::StdStorage;
 using DatabaseFunctors = mini_disassembler::DatabaseFunctors<DatabaseStorage>;
-using DatabaseLog = mini_disassembler::DatabaseLog;
+using DatabaseLog = mini_disassembler::DatabaseLog<DatabaseStorage>;
 using Database = mini_disassembler::Database<DatabaseStorage, DatabaseLog, DatabaseFunctors>;
 
 template <typename... Args>

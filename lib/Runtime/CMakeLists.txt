@@ -2,6 +2,8 @@
 
 find_package(gRPC CONFIG REQUIRED)
 find_package(Flatbuffers CONFIG REQUIRED)
+find_package(gflags CONFIG REQUIRED)
+find_package(glog CONFIG REQUIRED)
 
 set(Runtime_PUBLIC_H
 
@@ -48,6 +50,8 @@ set(Runtime_PRIV_DEPS
 set(Runtime_DEPS
   flatbuffers::flatbuffers
   gRPC::gpr gRPC::upb gRPC::grpc gRPC::grpc++
+  glog::glog
+  gflags::gflags
 )
 
 dr_define_static_library(Runtime

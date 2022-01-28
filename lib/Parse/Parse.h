@@ -503,7 +503,7 @@ class ParsedInlineImpl : public Def<ParsedInlineImpl> {
  public:
   ParsedInlineImpl(
       DisplayRange range_, std::string_view code_, Language language_,
-      bool is_prologue_);
+      std::string stage_name_);
 
   // Next inline in this module.
   ParsedInlineImpl *next{nullptr};
@@ -511,7 +511,7 @@ class ParsedInlineImpl : public Def<ParsedInlineImpl> {
   const DisplayRange range;
   const std::string code;
   const Language language;
-  const InlineLocation location;
+  const std::string stage_name;
 };
 
 class ParsedDatabaseNameImpl : public Def<ParsedDatabaseNameImpl> {

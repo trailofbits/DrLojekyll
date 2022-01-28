@@ -702,6 +702,9 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
             } else if (impl->data == "#import") {
               tentative_lexeme = Lexeme::kHashImportModuleStmt;
+
+            } else if (impl->data == "#inline") {
+              tentative_lexeme = Lexeme::kHashInlineStmt;
             }
           } else if (impl->data == "summary") {
             tentative_lexeme = Lexeme::kKeywordSummary;
@@ -728,11 +731,6 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         case 9:
           if (impl->data == "aggregate") {
             tentative_lexeme = Lexeme::kKeywordAggregate;
-          } else if (impl->data == "#prologue") {
-            tentative_lexeme = Lexeme::kHashInlinePrologueStmt;
-
-          } else if (impl->data == "#epilogue") {
-            tentative_lexeme = Lexeme::kHashInlineEpilogueStmt;
 
           } else if (impl->data == "#constant") {
             tentative_lexeme = Lexeme::kHashForeignConstantDecl;

@@ -34,7 +34,6 @@ class ParsedComparison;
 class ParsedPredicate;
 
 enum class Language : unsigned { kUnknown, kCxx, kPython, kFlatBuffer };
-enum class InlineLocation : bool { kEpilogue = false, kPrologue = true };
 static constexpr auto kNumLanguages = 4u;
 
 // Represents a literal.
@@ -1018,17 +1017,9 @@ class ParsedInline : public Node<ParsedInline, ParsedInlineImpl> {
   std::string_view CodeToInline(void) const noexcept;
   ::hyde::Language Language(void) const noexcept;
 
-  // Tells us whether or not this code should be emitted at the beginning of
-  // codegen (returns `true`) or at the end of codegen (returns `false`).
-  InlineLocation Location(void) const noexcept;
-
-  inline bool IsPrologue(void) const noexcept {
-    return InlineLocation::kPrologue == Location();
-  }
-
-  inline bool IsEpilogue(void) const noexcept {
-    return InlineLocation::kEpilogue == Location();
-  }
+  // Tells us to what compiler code generation stage this inline should be
+  // emitted.
+  std::string_view Stage(void) const noexcept;
 
  protected:
   using Node<ParsedInline, ParsedInlineImpl>::Node;
