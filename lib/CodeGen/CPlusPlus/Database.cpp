@@ -48,7 +48,14 @@ namespace {
 // We use the IDs of columns/indices/tables in place of type names so that we
 // can have circular references.
 static void DeclareDescriptors(OutputStream &os, Program program,
-                               ParsedModule module) {
+                               ParsedModule module,
+                               const std::vector<ParsedInline> &inlines) {
+
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:database:descriptors:prologue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
 
   // Table and column descriptors
   os << "namespace hyde::rt {\n";
@@ -206,6 +213,12 @@ static void DeclareDescriptors(OutputStream &os, Program program,
     os << "\n";
   }
   os << "}  // namepace hyde::rt\n\n";
+
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:database:descriptors:epilogue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
 }
 
 static void DefineGlobal(OutputStream &os, ParsedModule module,
@@ -1296,6 +1309,12 @@ static void DeclareFunctors(OutputStream &os, Program program,
                             ParsedModule root_module,
                             const std::string &ns_name,
                             const std::vector<ParsedInline> &inlines) {
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:database:functors:prologue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
   os << os.Indent() << "template <typename StorageT>\n"
      << os.Indent() << "class " << gClassName << "Functors {\n";
   os.PushIndent();
@@ -1305,7 +1324,7 @@ static void DeclareFunctors(OutputStream &os, Program program,
   os.PushIndent();
 
   for (auto code : inlines) {
-    if (code.Stage() == "c++:database:functors:prologue") {
+    if (code.Stage() == "c++:database:functors:definition:prologue") {
       os << code.CodeToInline() << "\n\n";
     }
   }
@@ -1317,7 +1336,7 @@ static void DeclareFunctors(OutputStream &os, Program program,
   }
 
   for (auto code : inlines) {
-    if (code.Stage() == "c++:database:functors:epilogue") {
+    if (code.Stage() == "c++:database:functors:definition:epilogue") {
       os << code.CodeToInline() << "\n\n";
     }
   }
@@ -1326,6 +1345,12 @@ static void DeclareFunctors(OutputStream &os, Program program,
 
   os.PopIndent();
   os << os.Indent() << "};\n\n";
+
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:database:functors:epilogue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
 }
 
 static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
@@ -1352,6 +1377,12 @@ static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
 static void DeclareMessageLog(OutputStream &os, Program program,
                               ParsedModule root_module,
                               const std::vector<ParsedInline> &inlines) {
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:database:log:prologue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
   os << os.Indent() << "template <typename StorageT>\n"
      << os.Indent() << "class " << gClassName << "Log {\n";
   os.PushIndent();
@@ -1359,7 +1390,7 @@ static void DeclareMessageLog(OutputStream &os, Program program,
   os.PushIndent();
 
   for (auto code : inlines) {
-    if (code.Stage() == "c++:database:log:prologue") {
+    if (code.Stage() == "c++:database:log:definition:prologue") {
       os << code.CodeToInline() << "\n\n";
     }
   }
@@ -1371,7 +1402,7 @@ static void DeclareMessageLog(OutputStream &os, Program program,
   }
 
   for (auto code : inlines) {
-    if (code.Stage() == "c++:database:log:epilogue") {
+    if (code.Stage() == "c++:database:log:definition:epilogue") {
       os << code.CodeToInline() << "\n\n";
     }
   }
@@ -1379,6 +1410,12 @@ static void DeclareMessageLog(OutputStream &os, Program program,
   os.PopIndent();
   os.PopIndent();
   os << os.Indent() << "};\n\n";
+
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:database:log:epilogue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
 }
 
 static void DefineProcedure(OutputStream &os, ParsedModule module,
@@ -1715,6 +1752,12 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
     os << "}  // namespace " << ns_name << "\n\n";
   }
 
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:database:enums:prologue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
   os << "#ifndef __DRLOJEKYLL_SERIALIZER_CODE_" << macro_name << "\n"
      << "#  define __DRLOJEKYLL_SERIALIZER_CODE_" << macro_name << "\n";
 
@@ -1726,7 +1769,13 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
 
   os << "#endif  // __DRLOJEKYLL_SERIALIZER_CODE_" << macro_name << "\n\n";
 
-  DeclareDescriptors(os, program, module);
+  for (auto code : inlines) {
+    if (code.Stage() == "c++:database:enums:epilogue") {
+      os << code.CodeToInline() << "\n\n";
+    }
+  }
+
+  DeclareDescriptors(os, program, module, inlines);
 
   if (!ns_name.empty()) {
     os << "namespace " << ns_name << " {\n";
