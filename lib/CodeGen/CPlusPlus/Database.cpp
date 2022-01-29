@@ -1844,6 +1844,13 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os.PopIndent();  // constructor
   os << os.Indent() << "}\n\n";
 
+
+  for (auto proc : program.Procedures()) {
+    if (proc.Kind() == ProcedureKind::kQueryMessageInjector) {
+      DefineProcedure(os, module, proc);
+    }
+  }
+
   for (const auto &query_spec : program.Queries()) {
     DefineQueryEntryPoint(os, module, query_spec);
   }
@@ -1912,7 +1919,8 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
   os << os.Indent() << "}\n\n";
 
   for (auto proc : program.Procedures()) {
-    if (proc.Kind() != ProcedureKind::kMessageHandler) {
+    if (proc.Kind() != ProcedureKind::kMessageHandler &&
+        proc.Kind() != ProcedureKind::kQueryMessageInjector) {
       DefineProcedure(os, module, proc);
     }
   }

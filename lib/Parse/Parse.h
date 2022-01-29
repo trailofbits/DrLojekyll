@@ -64,6 +64,9 @@ class DeclarationContext : public User {
   // All negative uses of this declaration.
   WeakUseList<ParsedPredicateImpl> negated_uses;
 
+  // All forcing uses of this declaration.
+  WeakUseList<ParsedPredicateImpl> forcing_uses;
+
   bool takes_input{false};
   bool checked_takes_input{false};
 
@@ -196,6 +199,7 @@ class ParsedPredicateImpl : public Def<ParsedPredicateImpl>, public User {
 
   // Location information.
   Token negation;
+  Token force;
   Token name;
   Token rparen;
 
@@ -293,6 +297,10 @@ class ParsedClauseImpl : public Def<ParsedClauseImpl>, public User {
   // Variables used in this clause.
   DefList<ParsedVariableImpl> head_variables;
   DefList<ParsedVariableImpl> body_variables;
+
+  // Really, there should only be one, but predicates that are messages that we
+  // will send just prior to a query's execution.
+  DefList<ParsedPredicateImpl> forcing_predicates;
 
   struct Group {
     inline Group(ParsedClauseImpl *owner_)

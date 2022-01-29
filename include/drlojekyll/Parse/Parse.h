@@ -349,6 +349,11 @@ class ParsedClause : public Node<ParsedClause, ParsedClauseImpl> {
   // Is this a deletion clause?
   bool IsDeletion(void) const noexcept;
 
+  // Returns a possible "forcing message." This only applies to queries, where
+  // the message parameters must all be constants or unify against the query
+  // parameters.
+  std::optional<ParsedPredicate> ForcingMessage(void) const;
+
  protected:
   friend class ParsedClauseHead;
   friend class ParsedClauseBody;
@@ -522,6 +527,11 @@ class ParsedQuery : public Node<ParsedQuery, ParsedQueryImpl> {
   }
 
   bool ReturnsAtMostOneResult(void) const noexcept;
+
+  // Returns a possible "forcing message." This only applies to queries, where
+  // the message parameters must all be constants or unify against the query
+  // parameters.
+  std::optional<ParsedPredicate> ForcingMessage(void) const;
 
  protected:
   friend class ParsedDeclaration;
@@ -741,8 +751,11 @@ class ParsedMessage : public Node<ParsedMessage, ParsedMessageImpl> {
 
   unsigned NumNegatedUses(void) const noexcept;
 
+  // Number of uses as a `@first` forcing message inside of a query clause.
+  unsigned NumForcedUses(void) const noexcept;
+
   inline unsigned NumUses(void) const noexcept {
-    return NumPositiveUses() + NumNegatedUses();
+    return NumPositiveUses() + NumNegatedUses() + NumForcedUses();
   }
 
  protected:

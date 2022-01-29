@@ -200,6 +200,12 @@ OutputStream &operator<<(OutputStream &os, ParsedClauseHead clause) {
 OutputStream &operator<<(OutputStream &os, ParsedClauseBody clause) {
   auto comma = " : ";
 
+  // If there's a forcing message, then emit that.
+  if (auto pred = clause.clause.ForcingMessage()) {
+    os << comma << "@first " << pred.value();
+    comma = ", ";
+  }
+
   // If there is something like `!true` or `false` in the clause body, then
   // it gets marked as being disabled.
   if (clause.clause.IsDisabled()) {

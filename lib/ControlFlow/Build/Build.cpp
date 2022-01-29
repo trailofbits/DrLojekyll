@@ -910,6 +910,150 @@ static bool BuildTopDownCheckers(ProgramImpl *impl, Context &context) {
   }
   return changed;
 }
+// Try to build a forcing procedure. We'll re-figure out the relation between
+// clause head variables and the forced message variables here, rather than
+// trying to wire through all the information.
+static std::optional<ProgramProcedure> BuildQueryForceProcedureImpl(
+    ProgramImpl *impl, Context &context, ParsedQuery query,
+    ParsedClause clause, ParsedPredicate forcing_pred) {
+
+  ParsedDeclaration query_decl(query);
+  auto message_decl = ParsedDeclaration::Of(forcing_pred);
+  assert(message_decl.IsMessage());
+  ParsedMessage message = ParsedMessage::From(message_decl);
+  assert(message.IsReceived());
+
+  std::unordered_map<uint64_t, DisjointSet> var_to_set;
+
+  unsigned next_id = 0u;
+  auto do_var = [&] (ParsedVariable var) -> DisjointSet * {
+    return &(var_to_set.emplace(var.IdInClause(), next_id++).first->second);
+  };
+
+  for (ParsedVariable var : clause.Parameters()) {
+    do_var(var);
+  }
+
+  for (ParsedVariable var : clause.Variables()) {
+    do_var(var);
+  }
+
+  for (auto g = 0u, max_g = clause.NumGroups(); g < max_g; ++g) {
+    for (ParsedComparison cmp : clause.Comparisons(g)) {
+      DisjointSet *lhs = do_var(cmp.LHS());
+      DisjointSet *rhs = do_var(cmp.RHS());
+      if (cmp.Operator() == ComparisonOperator::kEqual) {
+        DisjointSet::Union(lhs, rhs);
+      }
+    }
+
+    // NOTE(pag): We ignore aggregates.
+  }
+
+  // Collect the bound parameters of the query.
+  std::vector<std::pair<ParsedVariable, ParsedParameter>> bound_query_params;
+  for (ParsedParameter query_param : query_decl.Parameters()) {
+    if (query_param.Binding() == ParameterBinding::kBound) {
+      bound_query_params.emplace_back(
+          clause.NthParameter(query_param.Index()), query_param);
+    }
+  }
+
+  std::unordered_map<ParsedParameter, ParsedParameter>
+      message_param_to_query_param;
+
+  // Match up the bound parameters of the query with the arguments to the
+  // forcing message.
+  auto mp = 0u;
+  for (ParsedVariable message_var : forcing_pred.Arguments()) {
+    auto message_vs = do_var(message_var);
+    ParsedParameter message_param = message.NthParameter(mp++);
+    for (auto [query_var, query_param] : bound_query_params) {
+      auto query_vs = do_var(query_var);
+      if (query_vs->Find() == message_vs->Find()) {
+        message_param_to_query_param.emplace(
+            message_param, query_param);
+        break;
+      }
+    }
+  }
+
+  assert(message_param_to_query_param.size() == message.Arity());
+
+  // Now make the procedure. It will have one argument per bound parameter,
+  // create a vector for the message, add in a single tuple to the vector,
+  // then it will call the message procedure with the vector.
+
+  auto proc = impl->procedure_regions.Create(
+      impl->next_id++, ProcedureKind::kQueryMessageInjector);
+  proc->has_raw_use = true;
+
+  // Add in the parameters.
+  for (auto [query_var, query_param] : bound_query_params) {
+    const auto var =
+        proc->input_vars.Create(impl->next_id++, VariableRole::kParameter);
+    var->parsed_param = query_param;
+  }
+
+  // Define a vector that we can pass to the message.
+  std::vector<TypeKind> col_types;
+  for (ParsedVariable message_var : forcing_pred.Arguments()) {
+    col_types.push_back(message_var.Type().Kind());
+  }
+
+  VECTOR *add_vec = proc->vectors.Create(
+      impl->next_id++, VectorKind::kParameter, col_types,
+      0  /* disambiguation */);
+  VECTOR *del_vec = nullptr;
+
+  if (message.IsDifferential()) {
+    del_vec = proc->vectors.Create(
+        impl->next_id++, VectorKind::kEmpty, col_types, 0);
+  }
+
+  SERIES *seq = impl->series_regions.Create(proc);
+  proc->body.Emplace(proc, seq);
+
+  VECTORAPPEND *append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
+      seq, ProgramOperation::kAppendQueryParamsToMessageInjectVector);
+  seq->regions.AddUse(append);
+  append->vector.Emplace(append, add_vec);
+  for (VAR *param_var : proc->input_vars) {
+    append->tuple_vars.AddUse(param_var);
+  }
+
+  CALL *call = impl->operation_regions.CreateDerived<CALL>(
+      impl->next_id++, seq, context.messsage_handler[message]);
+  seq->regions.AddUse(call);
+  call->arg_vecs.AddUse(add_vec);
+  if (del_vec) {
+    call->arg_vecs.AddUse(del_vec);  // Empty.
+  }
+
+  RETURN *ret = impl->operation_regions.CreateDerived<RETURN>(
+      seq, ProgramOperation::kReturnTrueFromProcedure);
+  seq->regions.AddUse(ret);
+
+  return proc;
+}
+
+// Try to build a forcing procedure. We'll re-figure out the relation between
+// clause head variables and the forced message variables here, rather than
+// trying to wire through all the information.
+static std::optional<ProgramProcedure> BuildQueryForceProcedure(
+    ProgramImpl *impl, Context &context, ParsedQuery query) {
+
+  ParsedDeclaration query_decl(query);
+  auto num_clauses = 0u;
+  std::optional<ProgramProcedure> ret;
+
+  if (auto pred = query.ForcingMessage()) {
+    return BuildQueryForceProcedureImpl(
+        impl, context, query, ParsedClause::Containing(*pred), *pred);
+  }
+
+  return std::nullopt;
+}
 
 // Add entry point records for each query of the program.
 static void BuildQueryEntryPointImpl(ProgramImpl *impl, Context &context,
@@ -934,7 +1078,8 @@ static void BuildQueryEntryPointImpl(ProgramImpl *impl, Context &context,
 
   const DataTable table(model->table);
   std::optional<ProgramProcedure> checker_proc;
-  std::optional<ProgramProcedure> forcer_proc;
+  std::optional<ProgramProcedure> forcer_proc =
+      BuildQueryForceProcedure(impl, context, query);
   std::optional<DataIndex> scanned_index;
 
   if (!col_indices.empty()) {

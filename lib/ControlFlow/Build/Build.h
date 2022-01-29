@@ -98,6 +98,9 @@ class Context {
   PROC *init_proc{nullptr};
   PROC *entry_proc{nullptr};
 
+  // Maps received messages to their handler procedures.
+  std::unordered_map<ParsedMessage, PROC *> messsage_handler;
+
   // Maps views to the functions that check if their conditions are satisfied
   // or not.
   std::unordered_map<QueryView, PROC *> cond_checker_procs;

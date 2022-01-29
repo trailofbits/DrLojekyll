@@ -135,6 +135,13 @@ struct DataModel : public DisjointSet {
 // A vector of tuples in the program.
 class DataVectorImpl final : public Def<DataVectorImpl> {
  public:
+  DataVectorImpl(unsigned id_, VectorKind kind_,
+                 const std::vector<TypeKind> &col_types_, int)
+      : Def<DataVectorImpl>(this),
+        id(id_),
+        kind(kind_),
+        col_types(col_types_) {}
+
   template <typename ColList>
   DataVectorImpl(unsigned id_, VectorKind kind_, ColList &&cols)
       : Def<DataVectorImpl>(this),
@@ -199,6 +206,7 @@ class DataVariableImpl final : public Def<DataVariableImpl> {
   std::optional<QueryConstant> query_const;
   std::optional<QueryColumn> query_column;
   std::optional<QueryCondition> query_cond;
+  std::optional<ParsedParameter> parsed_param;
 };
 
 using VAR = DataVariableImpl;
@@ -388,6 +396,11 @@ enum class ProgramOperation {
   kInvalid,
 
   kClearVectorBeforePrimaryFlowFunction,
+
+  // Used for queries that force the injection of an internal message to
+  // "unlock" computation that the query can produce results for the query
+  // to observe / report on.
+  kAppendQueryParamsToMessageInjectVector,
 
   // Insert into a table. Can be interpreted as conditional (a runtime may
   // choose to check if the insert is new or not). If the insert succeeds, then

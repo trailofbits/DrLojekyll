@@ -53,6 +53,7 @@ DeclarationContext::~DeclarationContext(void) {
   clauses.ClearWithoutErasure();
   positive_uses.ClearWithoutErasure();
   negated_uses.ClearWithoutErasure();
+  forcing_uses.ClearWithoutErasure();
 }
 
 DeclarationContext::DeclarationContext(const DeclarationKind kind_)
@@ -62,7 +63,8 @@ DeclarationContext::DeclarationContext(const DeclarationKind kind_)
       unique_redeclarations(this),
       clauses(this),
       positive_uses(this),
-      negated_uses(this) {}
+      negated_uses(this),
+      forcing_uses(this) {}
 
 }  // namespace parse
 
@@ -108,6 +110,7 @@ ParsedModuleImpl::~ParsedModuleImpl(void) {
       context_ptr->clauses.ClearWithoutErasure();
       context_ptr->positive_uses.ClearWithoutErasure();
       context_ptr->negated_uses.ClearWithoutErasure();
+      context_ptr->forcing_uses.ClearWithoutErasure();
 
       decl->context.reset();
     }
@@ -145,7 +148,8 @@ ParsedClauseImpl::ParsedClauseImpl(ParsedModuleImpl *module_)
       User(this),
       module(module_),
       head_variables(this),
-      body_variables(this) {
+      body_variables(this),
+      forcing_predicates(this) {
   groups.emplace_back(new Group(this));
 }
 
@@ -562,11 +566,17 @@ ParsedLiteral ParsedAssignment::RHS(void) const noexcept {
 }
 
 DisplayRange ParsedPredicate::SpellingRange(void) const noexcept {
-  return DisplayRange(
-      impl->negation.IsValid() ? impl->negation.Position() :
-                                 impl->name.Position(),
-      impl->rparen.IsValid() ? impl->rparen.NextPosition()
-                             : impl->name.NextPosition());
+  Token last_tok = impl->rparen;
+  if (!last_tok.IsValid()) {
+    last_tok = impl->name;
+  }
+  if (impl->negation.IsValid()) {
+    return DisplayRange(impl->negation, last_tok);
+  } else if (impl->force.IsValid()) {
+    return DisplayRange(impl->force, last_tok);
+  } else {
+    return DisplayRange(impl->name, last_tok);
+  }
 }
 
 // Returns `true` if this is a positive predicate.
@@ -964,6 +974,18 @@ bool ParsedClause::IsDeletion(void) const noexcept {
   return impl->negation.IsValid();
 }
 
+// Returns a possible "forcing message." This only applies to queries, where
+// the message parameters must all be constants or unify against the query
+// parameters.
+std::optional<ParsedPredicate> ParsedClause::ForcingMessage(void) const {
+  if (impl->forcing_predicates.Empty()) {
+    return std::nullopt;
+  } else {
+    assert(impl->forcing_predicates.Size() == 1u);
+    return ParsedPredicate(impl->forcing_predicates[0u]);
+  }
+}
+
 DisplayRange ParsedClause::SpellingRange(void) const noexcept {
   auto last_tok = impl->last_tok.IsValid() ? impl->last_tok : impl->dot;
   return DisplayRange((impl->negation.IsValid() ? impl->negation.Position()
@@ -1063,6 +1085,24 @@ unsigned ParsedQuery::NumNegatedUses(void) const noexcept {
 
 bool ParsedQuery::ReturnsAtMostOneResult(void) const noexcept {
   return impl->first_attribute.IsValid();
+}
+
+// Returns a possible "forcing message." This only applies to queries, where
+// the message parameters must all be constants or unify against the query
+// parameters.
+std::optional<ParsedPredicate> ParsedQuery::ForcingMessage(void) const {
+  ParsedPredicateImpl *pred = nullptr;
+  for (auto clause : impl->context->clauses) {
+    for (auto p : clause->forcing_predicates) {
+      assert(!pred);
+      pred = p;
+    }
+  }
+  if (pred) {
+    return ParsedPredicate(pred);
+  } else {
+    return std::nullopt;
+  }
 }
 
 const ParsedExport &ParsedExport::From(const ParsedDeclaration &decl) {
@@ -1235,6 +1275,11 @@ unsigned ParsedMessage::NumPositiveUses(void) const noexcept {
 
 unsigned ParsedMessage::NumNegatedUses(void) const noexcept {
   return impl->context->negated_uses.Size();
+}
+
+// Number of uses as a `@first` forcing message inside of a query clause.
+unsigned ParsedMessage::NumForcedUses(void) const noexcept {
+  return impl->context->forcing_uses.Size();
 }
 
 DisplayRange ParsedModule::SpellingRange(void) const noexcept {

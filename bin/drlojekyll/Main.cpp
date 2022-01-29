@@ -91,6 +91,7 @@ static int GenerateFlatBufferOutput(const Parser &dr_parser,
   opts.lang_to_generate = flatbuffers::IDLOptions::kCpp |
                           flatbuffers::IDLOptions::kPython;
   opts.generate_name_strings = true;
+  opts.mini_reflect = flatbuffers::IDLOptions::kTypesAndNames;
 
   // If we have an include inside of a FlatBuffer `#prologue`, then don't
   // generate code for that.

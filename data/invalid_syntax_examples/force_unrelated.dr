@@ -1,0 +1,11 @@
+; This example uses forcing messages, but where the forcing message variable is
+; not directly related to a parameter of the query.
+
+#functor generate_next_id(bound u32 PrevId, free u32 NextId) @range(.).
+
+#message trigger_generate_next_id(u32 PrevId).
+#message x(u32 X, u32 PrevId).
+#query get_next_id(bound u32 PrevId, free u32 NextId) @first
+    : @first trigger_generate_next_id(X)
+    , x(X, PrevId)
+    , generate_next_id(PrevId, NextId).

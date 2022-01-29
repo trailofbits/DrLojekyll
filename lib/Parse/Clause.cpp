@@ -64,6 +64,10 @@ static void FindUnrelatedConditions(ParsedClauseImpl *clause,
     pred_to_set.emplace(pred, set);
   };
 
+  for (ParsedPredicateImpl *pred : clause->forcing_predicates) {
+    do_pred(pred, nullptr);
+  }
+
   for (const auto &group : clause->groups) {
 
     for (ParsedPredicateImpl *pred : group->positive_predicates) {
@@ -216,6 +220,8 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
   Token compare_op;
 
   Token pred_name;
+  Token first_force_tok;
+  Token force_tok;
 
   ParsedDeclarationImpl *pred_decl = nullptr;
   std::vector<ParsedVariableImpl *> pred_vars;
@@ -243,7 +249,12 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
 
     if (!pred) {
       assert(!agg);
-      if (negation_tok.IsValid()) {
+      if (force_tok.IsValid()) {
+        pred = clause->forcing_predicates.Create(module, clause);
+        pred->force = force_tok;
+        pred_decl->context->forcing_uses.AddUse(pred);
+
+      } else if (negation_tok.IsValid()) {
         pred = group->negated_predicates.Create(module, clause);
         pred->negation = negation_tok;
         pred_decl->context->negated_uses.AddUse(pred);
@@ -265,6 +276,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
 
     pred_name = Token();
     negation_tok = Token();
+    force_tok = Token();
     pred_decl = nullptr;
     pred = nullptr;
     pred_vars.clear();
@@ -556,6 +568,49 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
           state = 11;
           continue;
 
+        // The `@first` in `@first message(...)`. The idea here is that in
+        // executing this query, we will first send a message in.
+        } else if (Lexeme::kPragmaCodeGenFirst == lexeme) {
+          if (decl->context->kind != DeclarationKind::kQuery) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "Forcing message pragmas can only be used on queries";
+
+            err.Note(ParsedDeclaration(decl).SpellingRange(),
+                     decl->directive_pos)
+                << "'" << decl->name << '/' << decl->parameters.Size()
+                << "' declarated as a " << decl->KindName() << " here";
+            return;
+
+          } else if (first_force_tok.IsValid()) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "Cannot have more than one '@first' "
+                << "forcing message per clause body";
+
+            err.Note(scope_range, first_force_tok.SpellingRange())
+                << "Previous forcing message is here";
+            return;
+
+          // Make sure that we have `@first atom`.
+          } else if (ReadNextSubToken(pred_name)) {
+            if (pred_name.Lexeme() == Lexeme::kIdentifierAtom) {
+              first_force_tok = tok;
+              force_tok = tok;
+              state = 12;
+              continue;
+
+            } else {
+              UnreadSubToken();
+              context->error_log.Append(scope_range, pred_name.SpellingRange())
+                  << "Expected the name of a message here but got '"
+                  << pred_name << "' instead";
+              return;
+            }
+          } else {
+            context->error_log.Append(scope_range, tok.NextPosition())
+                << "Expected the name of a message here but got nothing";
+            return;
+          }
+
         // The `pred` in `pred(...)`.
         } else if (Lexeme::kIdentifierAtom == lexeme) {
           pred_name = tok;
@@ -834,8 +889,20 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
           state = 13;
           continue;
 
+        } else if (force_tok.IsValid()) {
+          auto err = context->error_log.Append(scope_range, tok_range);
+
+          err << "Expected an opening parenthesis here to begin the "
+              << "parameters of the forcing message, but got '" << tok
+              << "' instead";
+
+          err.Note(scope_range, force_tok.SpellingRange())
+              << "Forcing pragma is here";
+          return;
+
         // Ending a clause with a zero-argument predicate.
         } else if (Lexeme::kPuncPeriod == lexeme) {
+
           clause->dot = tok;
           pred_decl = TryMatchPredicateWithDecl(
               module, pred_name, pred_vars, pred_name);
@@ -919,6 +986,37 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
 
           if (!pred_decl) {
             return;
+          }
+
+          // Make sure we're forcing a message, and that we're not negating
+          // the forcing message.
+          if (force_tok.IsValid()) {
+
+            // Make sure we're forcing a message.
+            if (pred_decl->context->kind != DeclarationKind::kMessage) {
+              auto err = context->error_log.Append(scope_range, pred_range);
+              err << "Forcing predicates must be messages, but '"
+                  << pred_name << '/' << pred_vars.size() << "' is a "
+                  << pred_decl->KindName();
+
+              err.Note(scope_range, force_tok.SpellingRange())
+                  << "Forcing pragma is here";
+
+              return;
+            }
+
+            // Not allowed to negate a forced thing.
+            if (negation_tok.IsValid()) {
+              auto err = context->error_log.Append(scope_range, pred_range);
+              err << "Cannot negate a forced message";
+
+              err.Note(scope_range, force_tok.SpellingRange())
+                  << "Forcing pragma is here";
+
+              err.Note(scope_range, negation_tok.SpellingRange())
+                  << "Negation is here";
+              return;
+            }
           }
 
           // Check to see if we're doing an aggregation.
@@ -1006,7 +1104,6 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
           }
 
           link_pred();
-
           state = 8;
           continue;
 

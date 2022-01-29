@@ -42,6 +42,8 @@ OutputStream &Procedure(OutputStream &os, ProgramProcedure proc) {
     case ProcedureKind::kTupleFinder: return os << "find_" << proc.Id() << '_';
     case ProcedureKind::kConditionTester:
       return os << "test_" << proc.Id() << '_';
+    case ProcedureKind::kQueryMessageInjector:
+      return os << "inject_" << proc.Id() << '_';
     default: return os << "proc_" << proc.Id() << '_';
   }
 }

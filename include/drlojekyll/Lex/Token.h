@@ -366,6 +366,16 @@ enum class Lexeme : uint8_t {
   //
   //    #query foo(..., free type Val, ...) @first ...
   //
+  // Another way to use the `@first` pragma is as an "unlocking" or "unblocking"
+  // feature. We say that upon receiving a query, we will first unlock some
+  // state by sending in a message. This looks like:
+  //
+  //    foo_query(A, ...)
+  //        : @first bar_message(A)
+  //        , ...
+  //
+  // This tells us that, prior to trying to read from the materialized view,
+  // we need to send the message `bar_message(A)`.
   kPragmaCodeGenFirst,
 
   // Used to mark that the data flow scheduler should try to schedule everything

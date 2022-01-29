@@ -121,8 +121,17 @@ static void DefineQuery(ParsedModule module, ParsedQuery query,
   os << os.Indent() << "auto status = grpc::StatusCode::NOT_FOUND;\n"
      << os.Indent() << "if (auto params = request->GetRoot()) {\n";
   os.PushIndent();
-  os << os.Indent() << "std::shared_lock<std::shared_mutex> locker(gDatabaseLock);\n"
-     << os.Indent() << "const auto num_generated = gDatabase->" << query.Name()
+
+  auto forcing_message = query.ForcingMessage();
+  if (forcing_message) {
+    os << os.Indent()
+       << "std::unique_lock<std::shared_mutex> locker(gDatabaseLock);\n";
+  } else {
+    os << os.Indent()
+       << "std::shared_lock<std::shared_mutex> locker(gDatabaseLock);\n";
+  }
+
+  os << os.Indent() << "const auto num_generated = gDatabase->" << query.Name()
      << "_" << decl.BindingPattern();
 
   auto sep = "(";
@@ -201,6 +210,12 @@ static void DefineQuery(ParsedModule module, ParsedQuery query,
         << "status = grpc::StatusCode::OK;\n";
     os.PopIndent();
     os << os.Indent() << "}\n";
+  }
+
+  // The query internally sent a message into the system, so there might
+  // be an update that we need to broadcast to clients.
+  if (forcing_message) {
+    os << os.Indent() << "PublishMessages();\n";
   }
 
   os.PopIndent();
@@ -671,7 +686,7 @@ static void DefineDatabaseThread(const std::vector<ParsedMessage> &messages,
                                  OutputStream &os) {
 
   // Make a function to publish messages.
-  os << "static void PublishMessages(void) {\n";
+  os << "void PublishMessages(void) {\n";
   os.PushIndent();
   os << os.Indent() << "auto output = std::make_shared<flatbuffers::grpc::Message<DatalogClientMessage>>(gDatabaseLog->Build());\n"
      << os.Indent() << "std::unique_lock<std::mutex> locker(gOutboxesLock);\n"
@@ -819,9 +834,8 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
      << "static PublishedMessageBuilder *gDatabaseLog = nullptr;\n"
      << "static DatabaseStorageType *gStorage = nullptr;\n"
      << "static std::shared_mutex gDatabaseLock;\n"
-     << "static Database<DatabaseStorageType, PublishedMessageBuilder> *gDatabase = nullptr;\n";
-//    (\n"
-//     << "    gStorage, gDatabaseLog, gFunctors);\n";
+     << "static Database<DatabaseStorageType, PublishedMessageBuilder> *gDatabase = nullptr;\n\n"
+     << "static void PublishMessages(void);\n";
 
   // Define the query methods out-of-line.
   DefineQueryMethods(module, queries, ns_name_prefix, os);

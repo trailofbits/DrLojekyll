@@ -1,0 +1,9 @@
+; This example shows that you can't run a forcing message on a free parameter
+; of a query.
+
+#functor generate_next_id(bound u32 PrevId, free u32 NextId) @range(.).
+
+#message trigger_generate_next_id(u32 d).
+#query get_next_id(bound u32 PrevId, free u32 NextId) @first
+    : @first trigger_generate_next_id(NextId)
+    , generate_next_id(PrevId, NextId).

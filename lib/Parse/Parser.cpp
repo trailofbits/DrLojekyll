@@ -1803,6 +1803,14 @@ bool ParserImpl::AssignTypes(ParsedModuleImpl *root_module) {
       }
     }
 
+    // Go through all positive predicates, and do declaration-based
+    // bottom-up type propagation.
+    for (ParsedPredicateImpl *pred : clause->forcing_predicates) {
+      if (!pred_valid(pred)) {
+        return false;
+      }
+    }
+
     // Go through all assignments and propagate the variable's type to the
     // literals.
     for (const auto &group : clause->groups) {
@@ -1873,8 +1881,6 @@ bool ParserImpl::AssignTypes(ParsedModuleImpl *root_module) {
         }
       }
 
-      // Go through all positive predicates, and do declaration-based
-      // bottom-up type propagation.
       for (ParsedPredicateImpl *pred : group->positive_predicates) {
         if (!pred_valid(pred)) {
           return false;

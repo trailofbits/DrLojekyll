@@ -1,0 +1,14 @@
+; This example shows that you can't run a forcing message on query that has
+; any uses.
+
+#functor generate_next_id(bound u32 PrevId, free u32 NextId) @range(.).
+
+#message trigger_generate_next_id(u32 PrevId).
+
+
+#query get_next_id(bound u32 PrevId, free u32 NextId) @first
+    : @first trigger_generate_next_id(PrevId)
+    , generate_next_id(PrevId, NextId).
+
+#query bar(bound u32 PrevId, free u32 NextId)
+    : get_next_id(PrevId, NextId).

@@ -991,6 +991,10 @@ enum class ProcedureKind : unsigned {
   // Tests condition variables, returning `true` or `false` if the conditions
   // are all satisfied or if at least one fails, respectively.
   kConditionTester,
+
+  // A query message forcing function, i.e. a function that internally sends
+  // a message given the bound parameters of a query.
+  kQueryMessageInjector,
 };
 
 // A procedure in the program. All procedures return either `true` or `false`.

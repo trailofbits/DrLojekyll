@@ -1407,6 +1407,29 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 
   const auto clause_range = clause.SpellingRange();
 
+  VIEW *forced_view = nullptr;
+  bool has_views = false;
+
+  // We have a forcing message, bring it in first.
+  if (auto maybe_forcing_pred = clause.ForcingMessage()) {
+    ParsedPredicate pred = maybe_forcing_pred.value();
+    if (!num_groups) {
+      context.view_groups.resize(1u);
+    }
+
+    const auto decl = ParsedDeclaration::Of(pred);
+    assert(decl.IsMessage());
+    assert(decl.Arity());
+    forced_view = BuildPredicate(query, context, pred, log);
+    if (forced_view) {
+      context.view_groups[0u].push_back(forced_view);
+      has_views = true;
+
+    } else {
+      return false;
+    }
+  }
+
   for (auto g = 0u; g < num_groups; ++g) {
 
     // Go through the comparisons and merge disjoint sets when we have equality
@@ -1549,7 +1572,6 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     }
   }
 
-  bool has_views = false;
   std::vector<ParsedAggregate> aggregates;
   std::vector<ParsedAggregate> unapplied_aggregates;
   for (auto g = 0u; g < num_groups; ++g) {
@@ -1617,11 +1639,106 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   // NOTE(pag): This isn't a 100% check, because for range restriction, you
   //            really need all parameters to themselves be arguments to
   //            predicates.
-  for (auto var : clause.Parameters()) {
+  for (ParsedVariable var : clause.Parameters()) {
     if (!context.var_to_col.count(var)) {
       log.Append(clause.SpellingRange(), var.SpellingRange())
           << "Parameter variable '" << var << "' is not range restricted";
       return false;
+    }
+  }
+
+  // Make sure all of the parameters of the forced view are either constant
+  // or relate to the clause head variables.
+  if (forced_view) {
+    ParsedPredicate pred = clause.ForcingMessage().value();
+    ParsedDeclaration message_decl = ParsedDeclaration::Of(pred);
+    ParsedDeclaration query_decl = ParsedDeclaration::Of(clause);
+
+    assert(message_decl.Kind() == DeclarationKind::kMessage);
+    assert(query_decl.Kind() == DeclarationKind::kQuery);
+
+    if (auto query_redecls = query_decl.UniqueRedeclarations();
+        query_redecls.size() != 1u) {
+      auto err = log.Append(clause.SpellingRange(), pred.SpellingRange());
+      err << "Queries using forcing messages must only have a single unique "
+          << "declaration";
+
+      for (auto query_redecl : query_redecls) {
+        err.Note(query_redecl.SpellingRange())
+            << "Query '" << query_decl.Name() << '/' << query_decl.Arity()
+            << "' declared here with binding pattern '"
+            << query_redecl.BindingPattern() << "'";
+      }
+      return false;
+    }
+
+    if (query_decl.NumUses()) {
+      auto err = log.Append(clause.SpellingRange(), pred.SpellingRange());
+      err << "Queries using forcing messages cannot be internally used, "
+          << "otherwise the forcing message will be ineffective";
+
+      for (auto query_use : query_decl.PositiveUses()) {
+        err.Note(query_use.SpellingRange())
+            << "Query '" << query_decl.Name() << '/' << query_decl.Arity()
+            << "' used here";
+      }
+      for (auto query_use : query_decl.NegativeUses()) {
+        err.Note(query_use.SpellingRange())
+            << "Query '" << query_decl.Name() << '/' << query_decl.Arity()
+            << "' used here";
+      }
+      return false;
+    }
+
+    if (1u < query_decl.NumClauses()) {
+      auto err = log.Append(clause.SpellingRange(), pred.SpellingRange());
+      err << "A query using a forcing message must only define one clause";
+
+      for (ParsedClause other_clause : query_decl.Clauses()) {
+        if (other_clause != clause) {
+          err.Note(other_clause.SpellingRange())
+              << "Other clause is here";
+        }
+      }
+
+      return false;
+    }
+
+    for (ParsedVariable var : pred.Arguments()) {
+      auto &arg_vc = context.var_to_col[var];
+      if (!arg_vc) {
+        log.Append(clause.SpellingRange(), var.SpellingRange())
+            << "Forcing message '" << message_decl.Name() << '/'
+            << message_decl.Arity() << "' variable '" << var
+            << "' is not range restricted";
+        return false;
+      }
+
+      auto found = false;
+      auto i = 0u;
+      for (ParsedVariable clause_var : clause.Parameters()) {
+        if (query_decl.NthParameter(i++).Binding() !=
+            ParameterBinding::kBound) {
+          continue;
+        }
+
+        auto param_vc = context.var_to_col[clause_var];
+        assert(param_vc != nullptr);
+
+        if (arg_vc->Find() == param_vc->Find()) {
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        log.Append(clause.SpellingRange(), var.SpellingRange())
+            << "Forcing message '" << message_decl.Name() << '/'
+            << message_decl.Arity() << "' variable '" << var
+            << "' must unify against a bound parameter variable of "
+            << "the containing clause";
+        return false;
+      }
     }
   }
 
@@ -1644,8 +1761,8 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   // if we have `foo(A, A)` then we replace it with a COMPARE than does a
   // comparison between the output columns of the original view and then only
   // presents a single `A`.
-  for (auto &pred_views : context.view_groups) {
-    for (auto &view : pred_views) {
+  for (std::vector<VIEW *> &pred_views : context.view_groups) {
+    for (VIEW *&view : pred_views) {
       view = GuardViewWithFilter(query, clause, context, view);
       view = PromoteOnlyUniqueColumns(query, view);
     }

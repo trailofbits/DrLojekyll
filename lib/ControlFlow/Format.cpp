@@ -912,6 +912,7 @@ OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
       break;
     case ProcedureKind::kTupleFinder: os << "^find:"; break;
     case ProcedureKind::kConditionTester: os << "^test:"; break;
+    case ProcedureKind::kQueryMessageInjector: os << "^inject:"; break;
   }
   os << proc.Id();
 

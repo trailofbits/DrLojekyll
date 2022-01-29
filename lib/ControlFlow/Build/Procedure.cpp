@@ -157,6 +157,7 @@ static void ClassifyVector(VECTOR *vec, REGION *region,
 
   } else if (auto op = region->AsOperation(); op) {
     switch (op->op) {
+      case ProgramOperation::kAppendQueryParamsToMessageInjectVector:
       case ProgramOperation::kAppendToInductionVector:
       case ProgramOperation::kClearInductionVector:
       case ProgramOperation::kAppendUnionInputToVector:
@@ -415,6 +416,10 @@ void BuildIOProcedure(ProgramImpl *impl, Query query, QueryIO io,
   const auto io_proc = impl->procedure_regions.Create(
       impl->next_id++, ProcedureKind::kMessageHandler);
   io_proc->io = io;
+
+  // Record for later if we have to internally inject a message from a
+  // query's forcing procedure.
+  context.messsage_handler.emplace(message, io_proc);
 
   const auto io_vec =
       io_proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());

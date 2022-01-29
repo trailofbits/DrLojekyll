@@ -71,6 +71,10 @@ TypeLoc DataVariableImpl::Type(void) const noexcept {
       if (query_const) {
         return query_const->Type();
       }
+      if (parsed_param) {
+        return parsed_param->Type();
+      }
+      break;
   }
   assert(false);
   return TypeKind::kInvalid;

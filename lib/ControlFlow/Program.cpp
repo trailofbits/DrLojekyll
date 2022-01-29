@@ -431,6 +431,7 @@ namespace {
 static VectorUsage VectorUsageOfOp(ProgramOperation op) {
   switch (op) {
     case ProgramOperation::kLoopOverInputVector:
+    case ProgramOperation::kAppendQueryParamsToMessageInjectVector:
       return VectorUsage::kProcedureInputVector;
     case ProgramOperation::kAppendToInductionVector:
     case ProgramOperation::kClearInductionVector:
@@ -661,6 +662,10 @@ Token DataVariable::Name(void) const noexcept {
       ret = lit->Literal();
     }
   }
+  if (ret.IsInvalid() && impl->parsed_param) {
+    return impl->parsed_param->Name();
+  }
+
   if (ret.IsInvalid() && impl->query_column) {
     if (auto var = impl->query_column->Variable(); var.has_value()) {
       ret = var->Name();

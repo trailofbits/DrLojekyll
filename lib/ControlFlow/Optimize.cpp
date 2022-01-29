@@ -1115,7 +1115,9 @@ void ProgramImpl::Optimize(void) {
       case ProcedureKind::kInitializer:
       case ProcedureKind::kEntryDataFlowFunc:
       case ProcedureKind::kPrimaryDataFlowFunc:
-      case ProcedureKind::kMessageHandler: continue;
+      case ProcedureKind::kMessageHandler:
+      case ProcedureKind::kQueryMessageInjector:
+        continue;
       default:
         if (proc->IsUsed() || proc->has_raw_use) {
           const auto hash = proc->Hash(UINT32_MAX);
