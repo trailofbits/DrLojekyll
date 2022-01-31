@@ -618,11 +618,31 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
           continue;
 
         } else if (Lexeme::kPragmaPerfBarrier == lexeme) {
-          group = new ParsedClauseImpl::Group(clause);
-          clause->groups.emplace_back(group);
-          group->barrier = tok;
-          state = 8;
-          continue;
+
+          // Make sure that `@barrier` is followed by a comma.
+          if (Token peek_tok; ReadNextSubToken(peek_tok)) {
+            UnreadSubToken();
+
+            if (peek_tok.Lexeme() == Lexeme::kPuncComma) {
+              group = new ParsedClauseImpl::Group(clause);
+              clause->groups.emplace_back(group);
+              group->barrier = tok;
+              state = 8;
+              continue;
+
+            } else {
+              context->error_log.Append(scope_range, tok_range)
+                  << "The '@barrier' pragma for splitting up a clause body "
+                  << "must be followed by a comma, got '"
+                  << peek_tok << "' instead";
+              return;
+            }
+          } else {
+            context->error_log.Append(scope_range, tok_range)
+                << "The '@barrier' pragma for splitting up a clause body "
+                << "must be followed by a comma";
+            return;
+          }
 
         } else {
           context->error_log.Append(scope_range, tok_range)
