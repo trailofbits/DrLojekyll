@@ -51,7 +51,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   auto do_table = [&](int row_span, QueryView view) {
     std::optional<unsigned> induction_id = view.InductionGroupId();
     std::optional<unsigned> induction_depth = view.InductionDepth();
-
     os << "<TD rowspan=\"" << row_span << "\">";
     auto sep = "";
     if (auto table_id = view.TableId()) {
@@ -67,12 +66,12 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << sep << "EQ SET " << view.EquivalenceSetId() << "</TD>";
   };
 
-  auto do_conds = [&](int row_span, auto view_) {
+  auto do_conds = [&](int row_span, auto view_) -> int {
     auto view = QueryView::From(view_);
     const auto pos_conds = view.PositiveConditions();
     const auto neg_conds = view.NegativeConditions();
     if (pos_conds.empty() && neg_conds.empty()) {
-      return;
+      return 0;
     }
 
     auto do_cond = [&](const char *prefix, const char *port,
@@ -89,13 +88,18 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "</TD>";
     };
 
+    auto i = 1;
     os << "<TD rowspan=\"" << row_span << "\">COND</TD>";
     for (auto cond : pos_conds) {
       do_cond("", "p", cond);
+      ++i;
     }
     for (auto cond : neg_conds) {
       do_cond("!", "n", cond);
+      ++i;
     }
+
+    return i;
   };
 
   auto do_const = [&](QueryConstant const_col) {
@@ -729,13 +733,39 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << "v" << merge.UniqueId() << " [" << do_color(merge) << "label=<"
        << kBeginTable;
     do_table(2, merge);
-    do_conds(2, merge);
+    auto num_cols = 1;
+    num_cols += do_conds(2, merge);
     os << "<TD rowspan=\"2\">" << QueryView(merge).KindName() << "</TD>";
     for (auto col : merge.Columns()) {
+      ++num_cols;
       os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
     }
     DEBUG(os << "</TR><TR><TD colspan=\"10\">" << merge.DebugString(os)
              << "</TD>";)
+
+    std::optional<ParsedDeclaration> decl;
+    auto conflict = false;
+    for (auto col : merge.Columns()) {
+      if (auto var = col.Variable()) {
+        auto clause = ParsedClause::Containing(*var);
+        if (var->Order() >= clause.Arity()) {
+          continue;
+        }
+        auto clause_decl = ParsedDeclaration::Of(clause);
+        if (!decl) {
+          decl = clause_decl;
+        } else if (*decl != clause_decl) {
+          conflict = true;
+          break;
+        }
+      }
+    }
+
+    if (decl && !conflict) {
+      os << "</TR><TR><TD colspan=\"" << num_cols << "\">"
+         << decl->Name() << "</TD>";
+    }
+
     os << kEndTable << ">];\n";
 
     for (auto view : merge.MergedViews()) {

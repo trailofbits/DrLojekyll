@@ -1,9 +1,35 @@
 ; This example demonstrates how to use forcing messages.
 
-#functor generate_next_id(bound u32 PrevId, free u32 NextId) @range(.).
 
-#message trigger_generate_next_id(u32 PrevId).
+; Given a `Time`, returns a value. If we can ensure that
+; calls always use monotonically increasing / unique times,
+; then we can ignore the fact that this functor isn't
+; actually pure, and will always return new `NextId` values.
+#functor generate_next_id(
+    bound i64 Time, free u32 NextId) @range(.).
 
-#query get_next_id(bound u32 PrevId, free u32 NextId) @first
-    : @first trigger_generate_next_id(PrevId)
-    , generate_next_id(PrevId, NextId).
+
+; This is a messages that will "unlock" the computation
+; that leads to a call of `generate_next_id`. Datalog
+; is bottom-up, and queries (used below) are really only
+; returning previously computed results from a materialized
+; view, so there's normally no way for a query to trigger
+; new computation at the time that the query is made.
+#message trigger_generate_next_id(i64 Time).
+
+
+; This is a query that returns `NextId` values given a `Time`
+; value. The `@first` at the end of the declaration says
+; "give me back only the first tuple." The `@first` in the
+; clause body before the `trigger_generate_next_id` tells us
+; "before executing this query, inject the message 
+; trigger_generate_next_id(Time)." The key idea is that this
+; injection unlocks or unblocks bottom-up computation, thus
+; triggering query-time computation. In this case, the
+; unlocked computation is a functor call to generate a new
+; id, which gets stored into a materialized view that is
+; linked on the `Time` value, and then we return the just-
+; generated Id associated with the requested time.
+#query get_next_id(bound i64 Time, free u32 NextId) @first
+    : @first trigger_generate_next_id(Time)
+    , generate_next_id(Time, NextId).
