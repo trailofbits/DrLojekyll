@@ -2083,8 +2083,14 @@ Parser::ParseBuffer(std::string_view data,
 std::optional<ParsedModule>
 Parser::ParsePath(std::string_view path_,
                   const DisplayConfiguration &config) const {
+  std::error_code ec;
+  auto path = std::filesystem::canonical(std::filesystem::path(path_), ec);
+  if (ec) {
+    impl->context->error_log.Append()
+        << "Could not find file '" << path_ << "': " << ec.message();
+    return std::nullopt;
+  }
 
-  auto path = std::filesystem::canonical(std::filesystem::path(path_));
   auto display = impl->context->display_manager.OpenPath(
       path.generic_string(), config);
 
