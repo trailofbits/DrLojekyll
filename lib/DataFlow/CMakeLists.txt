@@ -33,6 +33,7 @@ set(DataFlow_SRCS
     "Negate.cpp"
     "Optimize.cpp"
     "Query.cpp"
+    "Relation.cpp"
     "Select.cpp"
     "Stream.cpp"
     "Taint.cpp"

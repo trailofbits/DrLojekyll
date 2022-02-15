@@ -9,6 +9,10 @@ namespace hyde {
 
 QueryNegateImpl::~QueryNegateImpl(void) {}
 
+QueryNegateImpl::QueryNegateImpl(void) {
+  can_receive_deletions = true;
+}
+
 QueryNegateImpl *QueryNegateImpl::AsNegate(void) noexcept {
   return this;
 }

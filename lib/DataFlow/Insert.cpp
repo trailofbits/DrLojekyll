@@ -8,6 +8,14 @@ namespace hyde {
 
 QueryInsertImpl::~QueryInsertImpl(void) {}
 
+QueryInsertImpl::QueryInsertImpl(QueryRelationImpl *relation_, ParsedDeclaration decl_)
+    : relation(this, relation_),
+      declaration(decl_) {}
+
+QueryInsertImpl::QueryInsertImpl(QueryStreamImpl *stream_, ParsedDeclaration decl_)
+    : stream(this, stream_),
+      declaration(decl_) {}
+
 QueryInsertImpl *QueryInsertImpl::AsInsert(void) noexcept {
   return this;
 }

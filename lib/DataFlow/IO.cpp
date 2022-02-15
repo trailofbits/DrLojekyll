@@ -6,6 +6,12 @@ namespace hyde {
 
 QueryIOImpl::~QueryIOImpl(void) {}
 
+QueryIOImpl::QueryIOImpl(ParsedDeclaration declaration_)
+    : User(this),
+      declaration(declaration_),
+      transmits(this),
+      receives(this) {}
+
 QueryIOImpl *QueryIOImpl::AsIO(void) noexcept {
   return this;
 }

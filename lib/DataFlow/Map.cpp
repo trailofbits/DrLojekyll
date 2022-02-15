@@ -9,6 +9,20 @@ namespace hyde {
 
 QueryMapImpl::~QueryMapImpl(void) {}
 
+QueryMapImpl::QueryMapImpl(ParsedFunctor functor_, DisplayRange range_,
+                           bool is_positive_)
+    : range(range_),
+      functor(functor_),
+      is_positive(is_positive_) {
+  this->can_produce_deletions = !functor.IsPure();
+  ParsedDeclaration decl(functor);
+  for (ParsedParameter param : decl.Parameters()) {
+    if (ParameterBinding::kFree == param.Binding()) {
+      ++num_free_params;
+    }
+  }
+}
+
 QueryMapImpl *QueryMapImpl::AsMap(void) noexcept {
   return this;
 }

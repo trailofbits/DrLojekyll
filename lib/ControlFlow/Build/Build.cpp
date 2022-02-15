@@ -1042,11 +1042,6 @@ static std::optional<ProgramProcedure> BuildQueryForceProcedureImpl(
 // trying to wire through all the information.
 static std::optional<ProgramProcedure> BuildQueryForceProcedure(
     ProgramImpl *impl, Context &context, ParsedQuery query) {
-
-  ParsedDeclaration query_decl(query);
-  auto num_clauses = 0u;
-  std::optional<ProgramProcedure> ret;
-
   if (auto pred = query.ForcingMessage()) {
     return BuildQueryForceProcedureImpl(
         impl, context, query, ParsedClause::Containing(*pred), *pred);

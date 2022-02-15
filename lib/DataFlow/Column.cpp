@@ -6,6 +6,43 @@ namespace hyde {
 
 QueryColumnImpl::~QueryColumnImpl(void) {}
 
+QueryColumnImpl::QueryColumnImpl(
+    std::optional<ParsedVariable> var_, TypeLoc type_,
+    QueryViewImpl *view_, unsigned id_, unsigned index_)
+    : Def<QueryColumnImpl>(this),
+      var(var_),
+      type(type_),
+      view(view_),
+      id(id_),
+      index(index_) {
+  assert(view != nullptr);
+  assert(type.UnderlyingKind() != TypeKind::kInvalid);
+}
+
+QueryColumnImpl::QueryColumnImpl(
+    ParsedVariable var_, QueryViewImpl *view_, unsigned id_, unsigned index_)
+    : Def<QueryColumnImpl>(this),
+      var(var_),
+      type(var_.Type()),
+      view(view_),
+      id(id_),
+      index(index_) {
+  assert(view != nullptr);
+  assert(type.UnderlyingKind() != TypeKind::kInvalid);
+}
+
+QueryColumnImpl::QueryColumnImpl(
+    TypeLoc type_, QueryViewImpl *view_, unsigned id_, unsigned index_)
+    : Def<QueryColumnImpl>(this),
+      var(std::nullopt),
+      type(type_),
+      view(view_),
+      id(id_),
+      index(index_) {
+  assert(view != nullptr);
+  assert(type.UnderlyingKind() != TypeKind::kInvalid);
+}
+
 // Returns the real constant associated with this column if this column is
 // a constant or constant reference. Otherwise it returns `nullptr`.
 QueryColumnImpl *QueryColumnImpl::AsConstant(void) noexcept {

@@ -19,6 +19,7 @@ class EqualitySet;
 class EquivalenceSet;
 class ErrorLog;
 class OptimizationContext;
+class QueryViewImpl;
 
 // Represents all values that could inhabit some relation's tuple.
 class QueryColumnImpl : public Def<QueryColumnImpl> {
@@ -27,44 +28,17 @@ class QueryColumnImpl : public Def<QueryColumnImpl> {
 
   static constexpr unsigned kInvalidIndex = ~0u;
 
-  inline explicit QueryColumnImpl(
+  explicit QueryColumnImpl(
       std::optional<ParsedVariable> var_, TypeLoc type_,
-      QueryViewImpl *view_, unsigned id_, unsigned index_ = kInvalidIndex)
-      : Def<QueryColumnImpl>(this),
-        var(var_),
-        type(type_),
-        view(view_),
-        id(id_),
-        index(index_) {
-    assert(view != nullptr);
-    assert(type.UnderlyingKind() != TypeKind::kInvalid);
-  }
+      QueryViewImpl *view_, unsigned id_, unsigned index_ = kInvalidIndex);
 
-  inline explicit QueryColumnImpl(
+  explicit QueryColumnImpl(
       ParsedVariable var_, QueryViewImpl *view_,
-      unsigned id_, unsigned index_ = kInvalidIndex)
-      : Def<QueryColumnImpl>(this),
-        var(var_),
-        type(var_.Type()),
-        view(view_),
-        id(id_),
-        index(index_) {
-    assert(view != nullptr);
-    assert(type.UnderlyingKind() != TypeKind::kInvalid);
-  }
+      unsigned id_, unsigned index_ = kInvalidIndex);
 
-  inline explicit QueryColumnImpl(
+  explicit QueryColumnImpl(
       TypeLoc type_, QueryViewImpl *view_, unsigned id_,
-      unsigned index_ = kInvalidIndex)
-      : Def<QueryColumnImpl>(this),
-        var(std::nullopt),
-        type(type_),
-        view(view_),
-        id(id_),
-        index(index_) {
-    assert(view != nullptr);
-    assert(type.UnderlyingKind() != TypeKind::kInvalid);
-  }
+      unsigned index_ = kInvalidIndex);
 
   void CopyConstantFrom(QueryColumnImpl *maybe_const_col);
 
@@ -208,12 +182,8 @@ using COND = QueryConditionImpl;
 // A "table" of data.
 class QueryRelationImpl : public Def<QueryRelationImpl>, public User {
  public:
-  inline explicit QueryRelationImpl(ParsedDeclaration decl_)
-      : Def<QueryRelationImpl>(this),
-        User(this),
-        declaration(decl_),
-        inserts(this),
-        selects(this) {}
+  virtual ~QueryRelationImpl(void);
+  explicit QueryRelationImpl(ParsedDeclaration decl_);
 
   const ParsedDeclaration declaration;
 
@@ -226,12 +196,16 @@ class QueryRelationImpl : public Def<QueryRelationImpl>, public User {
 
 using REL = QueryRelationImpl;
 
+class QueryConstantImpl;
+class QueryTagImpl;
+class QueryIOImpl;
+
 // A stream of values.
 class QueryStreamImpl : public Def<QueryStreamImpl> {
  public:
   virtual ~QueryStreamImpl(void);
 
-  QueryStreamImpl(void) : Def<QueryStreamImpl>(this) {}
+  QueryStreamImpl(void);
 
   virtual QueryConstantImpl *AsConstant(void) noexcept;
   virtual QueryTagImpl *AsTag(void) noexcept;
@@ -246,7 +220,7 @@ class QueryConstantImpl : public QueryStreamImpl {
  public:
   virtual ~QueryConstantImpl(void);
 
-  inline QueryConstantImpl(ParsedLiteral literal_) : literal(literal_) {}
+  QueryConstantImpl(ParsedLiteral literal_);
 
   QueryConstantImpl *AsConstant(void) noexcept override;
   const char *KindName(void) const noexcept override;
@@ -264,7 +238,7 @@ class QueryTagImpl final : public QueryConstantImpl {
  public:
   virtual ~QueryTagImpl(void);
 
-  inline QueryTagImpl(uint16_t val_) : val(val_) {}
+  QueryTagImpl(uint16_t val_);
 
   QueryTagImpl *AsTag(void) noexcept override;
   const char *KindName(void) const noexcept override;
@@ -275,15 +249,11 @@ class QueryTagImpl final : public QueryConstantImpl {
 using TAG = QueryTagImpl;
 
 // Input, i.e. a messsage.
-class QueryIOImpl final : public STREAM, public User {
+class QueryIOImpl final : public QueryStreamImpl, public User {
  public:
   virtual ~QueryIOImpl(void);
 
-  inline QueryIOImpl(ParsedDeclaration declaration_)
-      : User(this),
-        declaration(declaration_),
-        transmits(this),
-        receives(this) {}
+  QueryIOImpl(ParsedDeclaration declaration_);
 
   QueryIOImpl *AsIO(void) noexcept override;
   const char *KindName(void) const noexcept override;
@@ -338,6 +308,17 @@ struct InductionInfo {
   unsigned merge_depth{0};
 };
 
+class QueryImpl;
+class QueryTupleImpl;
+class QuerySelectImpl;
+class QueryKVIndexImpl;
+class QueryJoinImpl;
+class QueryMapImpl;
+class QueryAggregateImpl;
+class QueryMergeImpl;
+class QueryNegateImpl;
+class QueryCompareImpl;
+class QueryInsertImpl;
 
 // A view "owns" its the columns pointed to by `columns`.
 class QueryViewImpl : public Def<QueryViewImpl>, public User {
@@ -412,8 +393,9 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
 
   // Proxy this node with a comparison of `lhs_col` and `rhs_col`, where
   // `lhs_col` and `rhs_col` either belong to `this->columns` or are constants.
-  QueryTupleImpl *ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
-                                        COL *lhs_col, COL *rhs_col);
+  QueryTupleImpl *ProxyWithComparison(
+      QueryImpl *query, ComparisonOperator op,
+      QueryColumnImpl *lhs_col, QueryColumnImpl *rhs_col);
 
   // Returns `true` if this view is being used.
   bool IsUsed(void) const noexcept;
@@ -433,7 +415,7 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // element if non-local changes are made, and `true` in the second element
   // if the column pair can be removed.
   std::pair<bool, bool>
-  CanonicalizeColumnPair(COL *in_col, COL *out_col,
+  CanonicalizeColumnPair(QueryColumnImpl *in_col, QueryColumnImpl *out_col,
                          const OptimizationContext &opt) noexcept;
 
   // Put this view into a canonical form. Returns `true` if changes were made
@@ -453,9 +435,9 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // Record the mapping between `in_col` and `out_col` into `this->in_to_out`,
   // do constant propagation, and possibly to replacements. Sets
   // `is_canonical = false;` if anything is changed or should be changed.
-  Discoveries CanonicalizeColumn(const OptimizationContext &opt, COL *in_col,
-                                 COL *out_col, bool is_attached,
-                                 Discoveries has);
+  Discoveries CanonicalizeColumn(
+      const OptimizationContext &opt, QueryColumnImpl *in_col,
+      QueryColumnImpl *out_col, bool is_attached, Discoveries has);
 
   virtual QuerySelectImpl *AsSelect(void) noexcept;
   virtual QueryTupleImpl *AsTuple(void) noexcept;
@@ -506,7 +488,7 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   uint64_t UpHash(unsigned depth) const noexcept;
 
   // The selected columns.
-  DefList<COL> columns;
+  DefList<QueryColumnImpl> columns;
 
   // Input dependencies.
   //
@@ -520,19 +502,19 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // map appear one or more times in `input_columns` after optimizations. Thus,
   // `input_columns.size() >= columns.size()`. These is a `output_columns`
   // vector to maintain a relationship between input-to-output columns.
-  UseList<COL> input_columns;
+  UseList<QueryColumnImpl> input_columns;
 
   // Attached columns to bring along "lexical context" from their inputs.
   // These are used by MAPs and FILTERs, which need to pull along state from
   // their sources.
-  UseList<COL> attached_columns;
+  UseList<QueryColumnImpl> attached_columns;
 
   // Zero argument predicates that constrain this node.
-  UseList<COND> positive_conditions;
-  UseList<COND> negative_conditions;
+  UseList<QueryConditionImpl> positive_conditions;
+  UseList<QueryConditionImpl> negative_conditions;
 
   // If this VIEW sets a CONDition, then keep track of that here.
-  WeakUseRef<COND> sets_condition;
+  WeakUseRef<QueryConditionImpl> sets_condition;
 
   // Predecessors and successors of this VIEW.
   //
@@ -543,7 +525,7 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
 
   // Used during canonicalization. Mostly just convenient to have around for
   // re-use of memory.
-  std::unordered_map<COL *, COL *> in_to_out;
+  std::unordered_map<QueryColumnImpl *, QueryColumnImpl *> in_to_out;
 
   // Selects on within the same group generally cannot be merged. For example,
   // if you had this code:
@@ -673,20 +655,24 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   //
   // NOTE(pag): This updates `is_canonical = false` if it changes anything.
   QueryViewImpl *
-  PullDataFromBeyondTrivialTuples(QueryViewImpl *incoming_view,
-                                  UseList<COL> &cols1, UseList<COL> &cols2);
+  PullDataFromBeyondTrivialTuples(
+      QueryViewImpl *incoming_view,
+      UseList<QueryColumnImpl> &cols1,
+      UseList<QueryColumnImpl> &cols2);
 
  private:
   // Similar to, and called by, `PullDataFromBeyondTrivialTuples`.
   QueryViewImpl *
-  PullDataFromBeyondTrivialUnions(QueryViewImpl *incoming_view,
-                                  UseList<COL> &cols1, UseList<COL> &cols2);
+  PullDataFromBeyondTrivialUnions(
+      QueryViewImpl *incoming_view,
+      UseList<QueryColumnImpl> &cols1,
+      UseList<QueryColumnImpl> &cols2);
 
  public:
   // Figure out what the incoming view to `cols1` is.
-  static QueryViewImpl *GetIncomingView(const UseList<COL> &cols1);
-  static QueryViewImpl *GetIncomingView(const UseList<COL> &cols1,
-                                          const UseList<COL> &cols2);
+  static QueryViewImpl *GetIncomingView(const UseList<QueryColumnImpl> &cols1);
+  static QueryViewImpl *GetIncomingView(const UseList<QueryColumnImpl> &cols1,
+                                        const UseList<QueryColumnImpl> &cols2);
 
   // Try to figure out if `view` is conditional. That could mean that it
   // depends directly on a condition, or that it depends on something that
@@ -704,14 +690,18 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
 
  protected:
   // Utilities for depth calculation.
-  static unsigned EstimateDepth(const UseList<COL> &cols, unsigned depth);
-  static unsigned EstimateDepth(const UseList<COND> &conds, unsigned depth);
-  static unsigned GetDepth(const UseList<COL> &cols, unsigned depth);
-  static unsigned GetDepth(const UseList<COND> &conds, unsigned depth);
+  static unsigned EstimateDepth(const UseList<QueryColumnImpl> &cols,
+                                unsigned depth);
+  static unsigned EstimateDepth(const UseList<QueryConditionImpl> &conds,
+                                unsigned depth);
+  static unsigned GetDepth(const UseList<QueryColumnImpl> &cols,
+                           unsigned depth);
+  static unsigned GetDepth(const UseList<QueryConditionImpl> &conds,
+                           unsigned depth);
 
   // Utility for comparing use lists.
-  static bool ColumnsEq(EqualitySet &eq, const UseList<COL> &c1s,
-                        const UseList<COL> &c2s);
+  static bool ColumnsEq(EqualitySet &eq, const UseList<QueryColumnImpl> &c1s,
+                        const UseList<QueryColumnImpl> &c2s);
 
   // Check if the `group_ids` of two views have any overlaps.
   static bool InsertSetsOverlap(QueryViewImpl *a, QueryViewImpl *b);
@@ -722,37 +712,11 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
 
 using VIEW = QueryViewImpl;
 
-class QuerySelectImpl final : public VIEW {
+class QuerySelectImpl final : public QueryViewImpl {
  public:
-  inline QuerySelectImpl(QueryRelationImpl *relation_, ParsedPredicate pred_)
-      : pred(pred_),
-        position(pred_.SpellingRange().From()),
-        relation(this, relation_),
-        inserts(this) {}
-
-  inline QuerySelectImpl(QueryStreamImpl *stream_, ParsedPredicate pred_)
-      : pred(pred_),
-        position(pred_.SpellingRange().From()),
-        stream(this, stream_),
-        inserts(this) {
-    if (auto input_stream = stream->AsIO(); input_stream) {
-      this->can_receive_deletions =
-          ParsedMessage::From(input_stream->declaration).IsDifferential();
-      this->can_produce_deletions = this->can_receive_deletions;
-    }
-  }
-
-  inline QuerySelectImpl(QueryStreamImpl *stream_, DisplayRange spelling_range)
-      : pred(std::nullopt),
-        position(spelling_range.From()),
-        stream(this, stream_),
-        inserts(this) {
-    if (auto input_stream = stream->AsIO(); input_stream) {
-      this->can_receive_deletions =
-          ParsedMessage::From(input_stream->declaration).IsDifferential();
-      this->can_produce_deletions = this->can_receive_deletions;
-    }
-  }
+  QuerySelectImpl(QueryRelationImpl *relation_, ParsedPredicate pred_);
+  QuerySelectImpl(QueryStreamImpl *stream_, ParsedPredicate pred_);
+  QuerySelectImpl(QueryStreamImpl *stream_, DisplayRange spelling_range);
 
   virtual ~QuerySelectImpl(void);
 
@@ -776,8 +740,8 @@ class QuerySelectImpl final : public VIEW {
   DisplayPosition position;
 
   // The table from which this select takes its columns.
-  WeakUseRef<REL> relation;
-  WeakUseRef<STREAM> stream;
+  WeakUseRef<QueryRelationImpl> relation;
+  WeakUseRef<QueryStreamImpl> stream;
 
   // List of views that might feed this SELECT.
   WeakUseList<QueryViewImpl> inserts;
@@ -785,7 +749,7 @@ class QuerySelectImpl final : public VIEW {
 
 using SELECT = QuerySelectImpl;
 
-class QueryTupleImpl final : public VIEW {
+class QueryTupleImpl final : public QueryViewImpl {
  public:
   virtual ~QueryTupleImpl(void);
 
@@ -798,7 +762,7 @@ class QueryTupleImpl final : public VIEW {
   // Does this tuple forward all of its inputs to the same columns as the
   // outputs, and if so, does it forward all columns of its input?
   bool ForwardsAllInputsAsIs(void) const noexcept;
-  bool ForwardsAllInputsAsIs(VIEW *incoming_view) const noexcept;
+  bool ForwardsAllInputsAsIs(QueryViewImpl *incoming_view) const noexcept;
 
   // Put this tuple into a canonical form, which will make comparisons and
   // replacements easier. Because comparisons are mostly pointer-based, the
@@ -812,7 +776,7 @@ using TUPLE = QueryTupleImpl;
 
 // The KV index will have the `input_columns` as the keys, and the
 // `attached_columns` as the values.
-class QueryKVIndexImpl final : public VIEW {
+class QueryKVIndexImpl final : public QueryViewImpl {
  public:
   QueryKVIndexImpl(void) : QueryViewImpl() {
     can_produce_deletions = true;
@@ -838,7 +802,7 @@ class QueryKVIndexImpl final : public VIEW {
 
 using KVINDEX = QueryKVIndexImpl;
 
-class QueryJoinImpl final : public VIEW {
+class QueryJoinImpl final : public QueryViewImpl {
  public:
   virtual ~QueryJoinImpl(void);
 
@@ -868,14 +832,14 @@ class QueryJoinImpl final : public VIEW {
   bool ProxyUnusedInputColumns(QueryImpl *impl);
 
   // Maps output columns to input columns.
-  std::unordered_map<COL *, UseList<COL>> out_to_in;
+  std::unordered_map<QueryColumnImpl *, UseList<QueryColumnImpl>> out_to_in;
 
   // List of views merged by this JOIN. Columns in pivot sets in `out_to_in` are
   // in the same order as they appear in `pivot_views`.
   //
   // TODO(pag): I don't think the ordering invariant is maintained through
   //            canonicalization.
-  WeakUseList<VIEW> joined_views;
+  WeakUseList<QueryViewImpl> joined_views;
 
   // Number of pivot columns. If this value is zero then this is actually a
   // cross-product.
@@ -884,9 +848,12 @@ class QueryJoinImpl final : public VIEW {
 
 using JOIN = QueryJoinImpl;
 
-class QueryMapImpl final : public VIEW {
+class QueryMapImpl final : public QueryViewImpl {
  public:
   virtual ~QueryMapImpl(void);
+
+  explicit QueryMapImpl(ParsedFunctor functor_, DisplayRange range_,
+                        bool is_positive_);
 
   const char *KindName(void) const noexcept override;
   QueryMapImpl *AsMap(void) noexcept override;
@@ -899,20 +866,6 @@ class QueryMapImpl final : public VIEW {
   // replacements easier.
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
                     const ErrorLog &) override;
-
-  inline explicit QueryMapImpl(ParsedFunctor functor_, DisplayRange range_,
-                               bool is_positive_)
-      : range(range_),
-        functor(functor_),
-        is_positive(is_positive_) {
-    this->can_produce_deletions = !functor.IsPure();
-    ParsedDeclaration decl(functor);
-    for (ParsedParameter param : decl.Parameters()) {
-      if (ParameterBinding::kFree == param.Binding()) {
-        ++num_free_params;
-      }
-    }
-  }
 
   const DisplayRange range;
   const ParsedFunctor functor;
@@ -927,15 +880,9 @@ class QueryMapImpl final : public VIEW {
 
 using MAP = QueryMapImpl;
 
-class QueryAggregateImpl : public VIEW {
+class QueryAggregateImpl : public QueryViewImpl {
  public:
-  inline explicit QueryAggregateImpl(ParsedFunctor functor_)
-      : functor(functor_),
-        group_by_columns(this),
-        config_columns(this),
-        aggregated_columns(this) {
-    can_produce_deletions = true;
-  }
+  explicit QueryAggregateImpl(ParsedFunctor functor_);
 
   virtual ~QueryAggregateImpl(void);
 
@@ -957,23 +904,23 @@ class QueryAggregateImpl : public VIEW {
   // Columns that are `bound` before the aggregate, used by the relation being
   // summarized, but not being passed to the aggregating functor. These are
   // unordered. These are not visible to the aggregating functor.
-  UseList<COL> group_by_columns;
+  UseList<QueryColumnImpl> group_by_columns;
 
   // Columns that are `bound` for the aggregating functor. These are ordered.
   // We think of this as being a form of grouping, where really they act like
   // "specializations" for the aggregating functor. They kind of "configure" it.
-  UseList<COL> config_columns;
+  UseList<QueryColumnImpl> config_columns;
 
   // Columns that are aggregated by this aggregating functor, and will be
   // summarized. These are "in scope" of the aggregation. These are ordered.
-  UseList<COL> aggregated_columns;
+  UseList<QueryColumnImpl> aggregated_columns;
 };
 
 using AGG = QueryAggregateImpl;
 
-class QueryMergeImpl : public VIEW {
+class QueryMergeImpl : public QueryViewImpl {
  public:
-  QueryMergeImpl(void) : merged_views(this) {}
+  QueryMergeImpl(void);
 
   virtual ~QueryMergeImpl(void);
 
@@ -994,16 +941,17 @@ class QueryMergeImpl : public VIEW {
   //
   // Returns `true` if successful, and updates `tuples` in place with the
   // new merged entries.
-  bool SinkThroughTuples(QueryImpl *impl, std::vector<VIEW *> &tuples);
+  bool SinkThroughTuples(QueryImpl *impl, std::vector<QueryViewImpl *> &tuples);
 
   // Similar to above, but for maps.
-  bool SinkThroughMaps(QueryImpl *impl, std::vector<VIEW *> &maps);
+  bool SinkThroughMaps(QueryImpl *impl, std::vector<QueryViewImpl *> &maps);
 
   // Similar to above, but for negations.
-  bool SinkThroughNegations(QueryImpl *impl, std::vector<VIEW *> &negations);
+  bool SinkThroughNegations(
+      QueryImpl *impl, std::vector<QueryViewImpl *> &negations);
 
   // Similar to above, but for joins.
-  bool SinkThroughJoins(QueryImpl *impl, std::vector<VIEW *> &joins,
+  bool SinkThroughJoins(QueryImpl *impl, std::vector<QueryViewImpl *> &joins,
                         bool recursive=false);
 
   // Put this merge into a canonical form, which will make comparisons and
@@ -1013,14 +961,14 @@ class QueryMergeImpl : public VIEW {
                     const ErrorLog &) override;
 
   // The views that are being merged together.
-  UseList<VIEW> merged_views;
+  UseList<QueryViewImpl> merged_views;
 };
 
 using MERGE = QueryMergeImpl;
 
-class QueryCompareImpl : public VIEW {
+class QueryCompareImpl : public QueryViewImpl {
  public:
-  QueryCompareImpl(ComparisonOperator op_) : op(op_) {}
+  QueryCompareImpl(ComparisonOperator op_);
 
   virtual ~QueryCompareImpl(void);
 
@@ -1040,7 +988,7 @@ class QueryCompareImpl : public VIEW {
   bool TrySink(QueryImpl *query);
 
   // Try to sink this comparison through a MERGE node.
-  bool TrySinkThroughMerge(QueryImpl *query, MERGE *merge);
+  bool TrySinkThroughMerge(QueryImpl *query, QueryMergeImpl *merge);
 
   // Try to sink this comparison through a NEGATION node.
   bool TrySinkThroughNegate(QueryImpl *query, QueryNegateImpl *negate);
@@ -1062,13 +1010,11 @@ class QueryCompareImpl : public VIEW {
 using CMP = QueryCompareImpl;
 
 // Represents the check of the absence of a tuple from a relation.
-class QueryNegateImpl : public VIEW {
+class QueryNegateImpl : public QueryViewImpl {
  public:
   virtual ~QueryNegateImpl(void);
 
-  inline QueryNegateImpl(void) : QueryViewImpl() {
-    can_receive_deletions = true;
-  }
+  QueryNegateImpl(void);
 
   const char *KindName(void) const noexcept override;
   QueryNegateImpl *AsNegate(void) noexcept override;
@@ -1079,7 +1025,7 @@ class QueryNegateImpl : public VIEW {
                     const ErrorLog &) override;
   unsigned Depth(void) noexcept override;
 
-  UseRef<VIEW> negated_view;
+  UseRef<QueryViewImpl> negated_view;
 
   // Is this a normal negation, or one with `@never`?
   bool is_never{false};
@@ -1090,17 +1036,12 @@ using NEGATION = QueryNegateImpl;
 
 // Inserts are technically views as that makes some things easier, but they
 // are not exposed as such.
-class QueryInsertImpl : public VIEW {
+class QueryInsertImpl : public QueryViewImpl {
  public:
   virtual ~QueryInsertImpl(void);
 
-  inline QueryInsertImpl(QueryRelationImpl *relation_, ParsedDeclaration decl_)
-      : relation(this, relation_),
-        declaration(decl_) {}
-
-  inline QueryInsertImpl(QueryStreamImpl *stream_, ParsedDeclaration decl_)
-      : stream(this, stream_),
-        declaration(decl_) {}
+  QueryInsertImpl(QueryRelationImpl *relation_, ParsedDeclaration decl_);
+  QueryInsertImpl(QueryStreamImpl *stream_, ParsedDeclaration decl_);
 
   const char *KindName(void) const noexcept override;
   QueryInsertImpl *AsInsert(void) noexcept override;
@@ -1110,8 +1051,8 @@ class QueryInsertImpl : public VIEW {
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
                     const ErrorLog &) override;
 
-  WeakUseRef<REL> relation;
-  WeakUseRef<STREAM> stream;
+  WeakUseRef<QueryRelationImpl> relation;
+  WeakUseRef<QueryStreamImpl> stream;
   const ParsedDeclaration declaration;
 };
 
@@ -1119,9 +1060,13 @@ using INSERT = QueryInsertImpl;
 
 template <typename T>
 void QueryColumnImpl::ForEachUser(T user_cb) const {
-  view->ForEachUse<VIEW>([&user_cb](VIEW *user, VIEW *) { user_cb(user); });
+  view->ForEachUse<VIEW>([&user_cb](QueryViewImpl *user, QueryViewImpl *) {
+    user_cb(user);
+  });
 
-  ForEachUse<VIEW>([&user_cb](VIEW *view, COL *) { user_cb(view); });
+  ForEachUse<VIEW>([&user_cb](QueryViewImpl *view, QueryColumnImpl *) {
+    user_cb(view);
+  });
 }
 
 class QueryImpl {
@@ -1133,7 +1078,7 @@ class QueryImpl {
 
   template <typename CB>
   void ForEachView(CB do_view) {
-    std::vector<VIEW *> views;
+    std::vector<QueryViewImpl *> views;
     for (auto view : selects) {
       views.push_back(view);
     }
@@ -1228,7 +1173,7 @@ class QueryImpl {
 
   template <typename CB>
   void ForEachViewInDepthOrder(CB do_view) const {
-    std::vector<VIEW *> views;
+    std::vector<QueryViewImpl *> views;
     for (auto view : selects) {
       view->depth = 0;
       if (!view->is_dead) {
@@ -1291,7 +1236,9 @@ class QueryImpl {
     }
 
     std::sort(views.begin(), views.end(),
-              [](VIEW *a, VIEW *b) { return a->Depth() < b->Depth(); });
+              [](QueryViewImpl *a, QueryViewImpl *b) {
+                return a->Depth() < b->Depth();
+              });
 
     for (auto view : views) {
       do_view(view);
@@ -1300,7 +1247,7 @@ class QueryImpl {
 
   template <typename CB>
   void ForEachViewInReverseDepthOrder(CB do_view) const {
-    std::vector<VIEW *> views;
+    std::vector<QueryViewImpl *> views;
     for (auto view : selects) {
       view->depth = 0;
       if (!view->is_dead) {
@@ -1363,7 +1310,9 @@ class QueryImpl {
     }
 
     std::sort(views.begin(), views.end(),
-              [](VIEW *a, VIEW *b) { return a->Depth() > b->Depth(); });
+              [](QueryViewImpl *a, QueryViewImpl *b) {
+                return a->Depth() > b->Depth();
+              });
 
     for (auto view : views) {
       do_view(view);
@@ -1452,10 +1401,10 @@ class QueryImpl {
   const ParsedModule module;
 
   // The streams associated with input relations to queries.
-  std::unordered_map<ParsedDeclaration, IO *> decl_to_input;
+  std::unordered_map<ParsedDeclaration, QueryIOImpl *> decl_to_input;
 
   // The tables available within any query sharing this context.
-  std::unordered_map<ParsedDeclaration, REL *> decl_to_relation;
+  std::unordered_map<ParsedDeclaration, QueryRelationImpl *> decl_to_relation;
 
   // String version of the constant's spelling and type, mapped to the constant
   // stream.
@@ -1464,7 +1413,7 @@ class QueryImpl {
   // Mapping between export conditions and actual condition nodes.
   std::unordered_map<ParsedExport, QueryConditionImpl *> decl_to_condition;
 
-  std::vector<COL *> tag_columns;
+  std::vector<QueryColumnImpl *> tag_columns;
 
   // The streams associated with messages and other concrete inputs.
   DefList<QueryIOImpl> ios;
@@ -1476,23 +1425,23 @@ class QueryImpl {
   UsedNodeRange<QueryColumn> GetForwardsTaintsFromColId(unsigned col_id);
   UsedNodeRange<QueryColumn> GetBackwardsTaintsFromColId(unsigned col_id);
 
-  std::vector<std::shared_ptr<UseList<COL>>> forwards_col_taints;
-  std::vector<std::shared_ptr<UseList<COL>>> backwards_col_taints;
+  std::vector<std::shared_ptr<UseList<QueryColumnImpl>>> forwards_col_taints;
+  std::vector<std::shared_ptr<UseList<QueryColumnImpl>>> backwards_col_taints;
 
-  DefList<REL> relations;
-  DefList<CONST> constants;
-  DefList<TAG> tags;
-  DefList<COND> conditions;
-  DefList<SELECT> selects;
-  DefList<TUPLE> tuples;
-  DefList<KVINDEX> kv_indices;
-  DefList<JOIN> joins;
-  DefList<MAP> maps;
-  DefList<AGG> aggregates;
-  DefList<MERGE> merges;
-  DefList<NEGATION> negations;
-  DefList<CMP> compares;
-  DefList<INSERT> inserts;
+  DefList<QueryRelationImpl> relations;
+  DefList<QueryConstantImpl> constants;
+  DefList<QueryTagImpl> tags;
+  DefList<QueryConditionImpl> conditions;
+  DefList<QuerySelectImpl> selects;
+  DefList<QueryTupleImpl> tuples;
+  DefList<QueryKVIndexImpl> kv_indices;
+  DefList<QueryJoinImpl> joins;
+  DefList<QueryMapImpl> maps;
+  DefList<QueryAggregateImpl> aggregates;
+  DefList<QueryMergeImpl> merges;
+  DefList<QueryNegateImpl> negations;
+  DefList<QueryCompareImpl> compares;
+  DefList<QueryInsertImpl> inserts;
 };
 
 }  // namespace hyde

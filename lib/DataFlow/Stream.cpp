@@ -6,6 +6,8 @@ namespace hyde {
 
 QueryStreamImpl::~QueryStreamImpl(void) {}
 
+QueryStreamImpl::QueryStreamImpl(void) : Def<QueryStreamImpl>(this) {}
+
 QueryConstantImpl *QueryStreamImpl::AsConstant(void) noexcept {
   return nullptr;
 }

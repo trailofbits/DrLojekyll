@@ -6,6 +6,9 @@ namespace hyde {
 
 QueryConstantImpl::~QueryConstantImpl(void) {}
 
+QueryConstantImpl::QueryConstantImpl(ParsedLiteral literal_)
+    : literal(literal_) {}
+
 QueryConstantImpl *QueryConstantImpl::AsConstant(void) noexcept {
   return this;
 }
@@ -15,6 +18,8 @@ const char *QueryConstantImpl::KindName(void) const noexcept {
 }
 
 QueryTagImpl::~QueryTagImpl(void) {}
+
+QueryTagImpl::QueryTagImpl(uint16_t val_) : val(val_) {}
 
 QueryTagImpl *QueryTagImpl::AsTag(void) noexcept {
   return this;

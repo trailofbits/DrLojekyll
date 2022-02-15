@@ -9,6 +9,14 @@ namespace hyde {
 
 QueryAggregateImpl::~QueryAggregateImpl(void) {}
 
+QueryAggregateImpl::QueryAggregateImpl(ParsedFunctor functor_)
+    : functor(functor_),
+      group_by_columns(this),
+      config_columns(this),
+      aggregated_columns(this) {
+  can_produce_deletions = true;
+}
+
 QueryAggregateImpl *QueryAggregateImpl::AsAggregate(void) noexcept {
   return this;
 }

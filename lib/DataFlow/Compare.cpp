@@ -8,6 +8,8 @@
 
 namespace hyde {
 
+QueryCompareImpl::QueryCompareImpl(ComparisonOperator op_) : op(op_) {}
+
 QueryCompareImpl::~QueryCompareImpl(void) {}
 
 QueryCompareImpl *QueryCompareImpl::AsCompare(void) noexcept {

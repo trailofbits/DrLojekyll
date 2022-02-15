@@ -11,6 +11,8 @@ namespace hyde {
 
 QueryMergeImpl::~QueryMergeImpl(void) {}
 
+QueryMergeImpl::QueryMergeImpl(void) : merged_views(this) {}
+
 QueryMergeImpl *QueryMergeImpl::AsMerge(void) noexcept {
   return this;
 }

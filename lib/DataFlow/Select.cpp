@@ -9,6 +9,39 @@ namespace hyde {
 
 QuerySelectImpl::~QuerySelectImpl(void) {}
 
+QuerySelectImpl::QuerySelectImpl(QueryRelationImpl *relation_,
+                                 ParsedPredicate pred_)
+    : pred(pred_),
+      position(pred_.SpellingRange().From()),
+      relation(this, relation_),
+      inserts(this) {}
+
+QuerySelectImpl::QuerySelectImpl(QueryStreamImpl *stream_,
+                                 ParsedPredicate pred_)
+    : pred(pred_),
+      position(pred_.SpellingRange().From()),
+      stream(this, stream_),
+      inserts(this) {
+  if (auto input_stream = stream->AsIO(); input_stream) {
+    this->can_receive_deletions =
+        ParsedMessage::From(input_stream->declaration).IsDifferential();
+    this->can_produce_deletions = this->can_receive_deletions;
+  }
+}
+
+QuerySelectImpl::QuerySelectImpl(QueryStreamImpl *stream_,
+                                 DisplayRange spelling_range)
+    : pred(std::nullopt),
+      position(spelling_range.From()),
+      stream(this, stream_),
+      inserts(this) {
+  if (auto input_stream = stream->AsIO(); input_stream) {
+    this->can_receive_deletions =
+        ParsedMessage::From(input_stream->declaration).IsDifferential();
+    this->can_produce_deletions = this->can_receive_deletions;
+  }
+}
+
 QuerySelectImpl *QuerySelectImpl::AsSelect(void) noexcept {
   return this;
 }
