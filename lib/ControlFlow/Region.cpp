@@ -241,7 +241,8 @@ void ProgramRegionImpl::ExecuteAlongside(ProgramImpl *program,
 }
 
 // Return a lexically available use of a variable.
-VAR *ProgramRegionImpl::VariableFor(ProgramImpl *impl, QueryColumn col) {
+DataVariableImpl *ProgramRegionImpl::VariableFor(
+    ProgramImpl *impl, QueryColumn col) {
   auto &var = col_id_to_var[col.Id()];
   if (!var) {
 

@@ -16,6 +16,10 @@ QueryCompareImpl *QueryCompareImpl::AsCompare(void) noexcept {
   return this;
 }
 
+const char *QueryCompareImpl::KindName(void) const noexcept {
+  return "COMPARE";
+}
+
 uint64_t QueryCompareImpl::Hash(void) noexcept {
   if (hash) {
     return hash;

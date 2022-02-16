@@ -316,8 +316,8 @@ class ProgramRegionImpl : public Def<ProgramRegionImpl>, public User {
                                 std::vector<ProgramRegionImpl *> &merges);
 
   // Gets or creates a local variable in the procedure.
-  VAR *VariableFor(ProgramImpl *impl, QueryColumn col);
-  VAR *VariableForRec(QueryColumn col);
+  DataVariableImpl *VariableFor(ProgramImpl *impl, QueryColumn col);
+  DataVariableImpl *VariableForRec(QueryColumn col);
 
   // Returns the lexical level of this node.
   unsigned Depth(void) const noexcept;

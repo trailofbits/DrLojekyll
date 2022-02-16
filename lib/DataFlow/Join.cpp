@@ -16,6 +16,14 @@ QueryJoinImpl *QueryJoinImpl::AsJoin(void) noexcept {
   return this;
 }
 
+const char *QueryJoinImpl::KindName(void) const noexcept {
+  if (num_pivots) {
+    return "JOIN";
+  } else {
+    return "PRODUCT";
+  }
+}
+
 uint64_t QueryJoinImpl::Hash(void) noexcept {
   if (hash) {
     return hash;

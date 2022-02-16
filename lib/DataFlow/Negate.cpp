@@ -17,6 +17,14 @@ QueryNegateImpl *QueryNegateImpl::AsNegate(void) noexcept {
   return this;
 }
 
+const char *QueryNegateImpl::KindName(void) const noexcept {
+  if (is_never) {
+    return "AND-NEVER";
+  } else {
+    return "AND-NOT";
+  }
+}
+
 uint64_t QueryNegateImpl::Hash(void) noexcept {
   if (hash) {
     return hash;

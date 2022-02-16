@@ -32,6 +32,10 @@ QueryKVIndexImpl *QueryKVIndexImpl::AsKVIndex(void) noexcept {
   return this;
 }
 
+const char *QueryKVIndexImpl::KindName(void) const noexcept {
+  return "KVINDEX";
+}
+
 uint64_t QueryKVIndexImpl::Hash(void) noexcept {
   if (hash) {
     return hash;

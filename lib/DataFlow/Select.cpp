@@ -42,6 +42,23 @@ QuerySelectImpl::QuerySelectImpl(QueryStreamImpl *stream_,
   }
 }
 
+const char *QuerySelectImpl::KindName(void) const noexcept {
+  if (relation) {
+    return "PUSH";
+  } else if (auto s = stream.get(); s) {
+    if (s->AsConstant()) {
+      return "CONST";
+    } else if (s->AsIO()) {
+      return "RECEIVE";
+    } else {
+      assert(false);
+      return "STREAM";
+    }
+  } else {
+    return "SELECT";
+  }
+}
+
 QuerySelectImpl *QuerySelectImpl::AsSelect(void) noexcept {
   return this;
 }

@@ -21,6 +21,10 @@ QueryAggregateImpl *QueryAggregateImpl::AsAggregate(void) noexcept {
   return this;
 }
 
+const char *QueryAggregateImpl::KindName(void) const noexcept {
+  return "AGGREGATE";
+}
+
 uint64_t QueryAggregateImpl::Hash(void) noexcept {
   if (hash) {
     return hash;

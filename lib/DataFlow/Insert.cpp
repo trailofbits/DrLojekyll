@@ -20,6 +20,22 @@ QueryInsertImpl *QueryInsertImpl::AsInsert(void) noexcept {
   return this;
 }
 
+const char *QueryInsertImpl::KindName(void) const noexcept {
+  if (declaration.Kind() == DeclarationKind::kQuery) {
+    return "MATERIALIZE";
+
+  } else if (declaration.Kind() == DeclarationKind::kMessage) {
+    return "TRANSMIT";
+
+  } else {
+    if (declaration.Arity()) {
+      return "INSERT";
+    } else {
+      return "INCREMENT";
+    }
+  }
+}
+
 uint64_t QueryInsertImpl::Hash(void) noexcept {
   if (hash) {
     return hash;

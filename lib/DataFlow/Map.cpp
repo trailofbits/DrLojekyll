@@ -27,6 +27,22 @@ QueryMapImpl *QueryMapImpl::AsMap(void) noexcept {
   return this;
 }
 
+const char *QueryMapImpl::KindName(void) const noexcept {
+  if (num_free_params) {
+    if (functor.IsPure()) {
+      return "MAP";
+    } else {
+      return "FUNCTION";
+    }
+  } else {
+    if (functor.IsPure()) {
+      return "PREDICATE";
+    } else {
+      return "FILTER";
+    }
+  }
+}
+
 uint64_t QueryMapImpl::Sort(void) noexcept {
   return range.From().Index();
 }

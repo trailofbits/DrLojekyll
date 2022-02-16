@@ -1418,16 +1418,6 @@ class QueryImpl {
   // The streams associated with messages and other concrete inputs.
   DefList<QueryIOImpl> ios;
 
-  // Forwards and Backwards Column Tainting
-  void RunForwardsTaintAnalysis(void);
-  void RunBackwardsTaintAnalysis(void);
-
-  UsedNodeRange<QueryColumn> GetForwardsTaintsFromColId(unsigned col_id);
-  UsedNodeRange<QueryColumn> GetBackwardsTaintsFromColId(unsigned col_id);
-
-  std::vector<std::shared_ptr<UseList<QueryColumnImpl>>> forwards_col_taints;
-  std::vector<std::shared_ptr<UseList<QueryColumnImpl>>> backwards_col_taints;
-
   DefList<QueryRelationImpl> relations;
   DefList<QueryConstantImpl> constants;
   DefList<QueryTagImpl> tags;
@@ -1442,6 +1432,16 @@ class QueryImpl {
   DefList<QueryNegateImpl> negations;
   DefList<QueryCompareImpl> compares;
   DefList<QueryInsertImpl> inserts;
+
+  // Forwards and Backwards Column Tainting
+  void RunForwardsTaintAnalysis(void);
+  void RunBackwardsTaintAnalysis(void);
+
+  UsedNodeRange<QueryColumn> GetForwardsTaintsFromColId(unsigned col_id);
+  UsedNodeRange<QueryColumn> GetBackwardsTaintsFromColId(unsigned col_id);
+
+  std::vector<std::shared_ptr<UseList<QueryColumnImpl>>> forwards_col_taints;
+  std::vector<std::shared_ptr<UseList<QueryColumnImpl>>> backwards_col_taints;
 };
 
 }  // namespace hyde

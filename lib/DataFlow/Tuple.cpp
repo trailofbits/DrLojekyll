@@ -9,6 +9,10 @@ namespace hyde {
 
 QueryTupleImpl::~QueryTupleImpl(void) {}
 
+const char *QueryTupleImpl::KindName(void) const noexcept {
+  return "TUPLE";
+}
+
 QueryTupleImpl *QueryTupleImpl::AsTuple(void) noexcept {
   return this;
 }

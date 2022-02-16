@@ -17,6 +17,10 @@ QueryMergeImpl *QueryMergeImpl::AsMerge(void) noexcept {
   return this;
 }
 
+const char *QueryMergeImpl::KindName(void) const noexcept {
+  return "UNION";
+}
+
 uint64_t QueryMergeImpl::Hash(void) noexcept {
   if (hash) {
     return hash;

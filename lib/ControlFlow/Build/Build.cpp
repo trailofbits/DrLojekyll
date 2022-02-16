@@ -514,7 +514,7 @@ static void BuildTopDownChecker(ProgramImpl *impl, Context &context,
       // Pass in the arguments.
       auto i = 0u;
       for (auto [col, avail_col] : available_cols) {
-        const auto var = parent->VariableFor(impl, avail_col);
+        DataVariableImpl *const var = parent->VariableFor(impl, avail_col);
         assert(var != nullptr);
         check->arg_vars.AddUse(var);
 
@@ -1535,8 +1535,8 @@ CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
     //            comparing variables against themselves, thereby resulting in
     //            the comparison eventually being optimized away.
     for (auto [lhs_col, rhs_col] : must_be_equal) {
-      const auto lhs_var = parent->VariableFor(impl, lhs_col);
-      const auto rhs_var = parent->VariableFor(impl, rhs_col);
+      DataVariableImpl *const lhs_var = parent->VariableFor(impl, lhs_col);
+      DataVariableImpl *const rhs_var = parent->VariableFor(impl, rhs_col);
       cmp->lhs_vars.AddUse(lhs_var);
       cmp->rhs_vars.AddUse(rhs_var);
     }
@@ -1552,7 +1552,7 @@ CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
 
   auto i = 0u;
   for (auto [wanted_col, avail_col] : available_cols) {
-    VAR *const var = call_parent->VariableFor(impl, wanted_col);
+    DataVariableImpl *const var = call_parent->VariableFor(impl, wanted_col);
     assert(var != nullptr);
     check->arg_vars.AddUse(var);
     const auto param = proc->input_vars[i++];
@@ -1567,7 +1567,7 @@ CallTopDownChecker(ProgramImpl *impl, Context &context, REGION *parent,
 // Call the predecessor view's checker function, and if it succeeds, return
 // `true`. If we have a persistent table then update the tuple's state in that
 // table.
-OP *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
+ProgramOperationRegionImpl *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
     ProgramImpl *impl, Context &context, REGION *parent, QueryView view,
     const std::vector<QueryColumn> &view_cols, TABLE *table,
     QueryView pred_view, TABLE *already_checked) {
@@ -1575,7 +1575,8 @@ OP *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
   const auto [check, check_call] = CallTopDownChecker(
       impl, context, parent, view, view_cols, pred_view, already_checked);
 
-  const auto ret_true = BuildStateCheckCaseReturnTrue(impl, check_call);
+  ProgramOperationRegionImpl *const ret_true = BuildStateCheckCaseReturnTrue(
+      impl, check_call);
   check_call->body.Emplace(check_call, ret_true);
 
   return check;
@@ -1588,7 +1589,7 @@ OP *ReturnTrueWithUpdateIfPredecessorCallSucceeds(
 // NOTE(pag): If the table associated with `view` is also associated with an
 //            induction, then we defer insertion until we get into that
 //            induction.
-std::tuple<OP *, TABLE *, TABLE *>
+std::tuple<ProgramOperationRegionImpl *, TABLE *, TABLE *>
 InTryInsert(ProgramImpl *impl, Context &context, QueryView view, OP *parent,
             TABLE *already_added) {
 

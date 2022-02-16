@@ -191,7 +191,7 @@ static QueryViewImpl *PromoteOnlyUniqueColumns(
 
     auto col_index = 0u;
 
-    CMP *cmp = query->compares.Create(ComparisonOperator::kEqual);
+    QueryCompareImpl *cmp = query->compares.Create(ComparisonOperator::kEqual);
     cmp->color = result->color;
     cmp->input_columns.AddUse(lhs_col);
     cmp->input_columns.AddUse(rhs_col);
@@ -200,7 +200,7 @@ static QueryViewImpl *PromoteOnlyUniqueColumns(
 
     for (auto i = 0u; i < num_cols; ++i) {
       if (i != lhs_col->index && i != rhs_col->index) {
-        const auto attached_col = result->columns[i];
+        QueryColumnImpl *const attached_col = result->columns[i];
         cmp->attached_columns.AddUse(attached_col);
         cmp->columns.Create(attached_col->var, attached_col->type, cmp,
                             attached_col->id, col_index++);
@@ -214,13 +214,15 @@ static QueryViewImpl *PromoteOnlyUniqueColumns(
 }
 
 // Create an initial, unconnected view for this predicate.
-static QueryViewImpl *BuildPredicate(QueryImpl *query, ClauseContext &context,
-                            ParsedPredicate pred, const ErrorLog &log) {
+static QueryViewImpl *BuildPredicate(
+    QueryImpl *query, ClauseContext &context,
+    ParsedPredicate pred, const ErrorLog &log) {
+
   QueryViewImpl *view = nullptr;
   const auto decl = ParsedDeclaration::Of(pred);
 
   if (decl.IsMessage()) {
-    auto &input = query->decl_to_input[decl];
+    QueryIOImpl *&input = query->decl_to_input[decl];
     if (!input) {
       input = query->ios.Create(decl);
     }
@@ -234,8 +236,7 @@ static QueryViewImpl *BuildPredicate(QueryImpl *query, ClauseContext &context,
 
   } else if (decl.IsExport() || decl.IsLocal() || decl.IsQuery()) {
     QueryRelationImpl *input = nullptr;
-
-    auto &rel = query->decl_to_relation[decl];
+    QueryRelationImpl *&rel = query->decl_to_relation[decl];
     if (!rel) {
       rel = query->relations.Create(decl);
     }
@@ -265,8 +266,10 @@ static QueryViewImpl *BuildPredicate(QueryImpl *query, ClauseContext &context,
 // many as possible to the `view_ref`, replacing it each time. We apply this
 // to the filtered initial views, as well as the final views before pushing
 // a head clause.
-static QueryViewImpl *GuardWithInequality(QueryImpl *query, ParsedClause clause,
-                                 ClauseContext &context, QueryViewImpl *view) {
+static QueryViewImpl *GuardWithInequality(
+    QueryImpl *query, ParsedClause clause,
+    ClauseContext &context, QueryViewImpl *view) {
+
   if (context.unapplied_compares.empty()) {
     return view;
   }
@@ -317,7 +320,7 @@ static QueryViewImpl *GuardWithInequality(QueryImpl *query, ParsedClause clause,
 
       context.unapplied_compares.erase(cmp);
 
-      CMP *filter = query->compares.Create(cmp.Operator());
+      QueryCompareImpl *filter = query->compares.Create(cmp.Operator());
       filter->color = context.color;
       filter->spelling_range = cmp.SpellingRange();
       filter->input_columns.AddUse(lhs_col);
@@ -327,7 +330,7 @@ static QueryViewImpl *GuardWithInequality(QueryImpl *query, ParsedClause clause,
       filter->columns.Create(lhs_var, filter, lhs_id, col_index++);
       filter->columns.Create(rhs_var, filter, rhs_id, col_index++);
 
-      for (auto other_col : view->columns) {
+      for (QueryColumnImpl *other_col : view->columns) {
         if (other_col != lhs_col && other_col != rhs_col) {
           filter->attached_columns.AddUse(other_col);
           filter->columns.Create(other_col->var, other_col->type, filter,
@@ -348,14 +351,14 @@ static QueryColumnImpl *FindColVarInView(ClauseContext &context, QueryViewImpl *
   const auto id = VarId(context, var);
 
   // Try to find the column in `view`.
-  for (auto in_col : view->columns) {
+  for (QueryColumnImpl *in_col : view->columns) {
     if (in_col->id == id) {
       return in_col;
     }
   }
 
 #ifndef NDEBUG
-  for (auto in_col : view->columns) {
+  for (QueryColumnImpl *in_col : view->columns) {
     if (in_col->var == var) {
       DEBUG((*gOut) << "Found " << in_col->var << " (" << in_col->var.UniqueId()
                     << " vs. " << var.UniqueId() << ") equal but with ids "
@@ -371,8 +374,10 @@ static QueryColumnImpl *FindColVarInView(ClauseContext &context, QueryViewImpl *
 }
 
 // Find `var` in the output columns of `view`, or as a constant.
-static QueryColumnImpl *FindColVarInView(ClauseContext &context, QueryViewImpl *view,
-                             std::optional<ParsedVariable> var) {
+static QueryColumnImpl *FindColVarInView(
+    ClauseContext &context, QueryViewImpl *view,
+    std::optional<ParsedVariable> var) {
+
   assert(var.has_value());
   return FindColVarInView(context, view, *var);
 }
@@ -402,10 +407,10 @@ static QueryViewImpl *GuardViewWithFilter(
 
   // Now, compare the remaining columns against constants.
   for (auto g = 0u, num_groups = clause.NumGroups(); g < num_groups; ++g) {
-    for (auto assign : clause.Assignments(g)) {
+    for (ParsedAssignment assign : clause.Assignments(g)) {
       const auto lhs_var = assign.LHS();
 
-      if (auto col = FindColVarInView(context, view, lhs_var); col) {
+      if (QueryColumnImpl *col = FindColVarInView(context, view, lhs_var)) {
         auto const_id = VarId(context, lhs_var);
         auto const_col = context.col_id_to_constant[const_id];
 
@@ -423,7 +428,8 @@ static QueryViewImpl *GuardViewWithFilter(
         assert(const_id == col->id);
         assert(const_col->id == col->id);
 
-        CMP *cmp = query->compares.Create(ComparisonOperator::kEqual);
+        QueryCompareImpl *cmp = query->compares.Create(
+            ComparisonOperator::kEqual);
         cmp->color = context.color;
         cmp->input_columns.AddUse(const_col);
         cmp->input_columns.AddUse(col);
@@ -431,7 +437,7 @@ static QueryViewImpl *GuardViewWithFilter(
         auto col_index = 0u;
         cmp->columns.Create(col->var, col->type, cmp, col->id, col_index++);
 
-        for (auto other_col : view->columns) {
+        for (QueryColumnImpl *other_col : view->columns) {
           if (other_col != col) {
             assert(other_col->id != col->id);
             cmp->attached_columns.AddUse(other_col);
@@ -448,15 +454,16 @@ static QueryViewImpl *GuardViewWithFilter(
   return GuardWithInequality(query, clause, context, view);
 }
 
-// Try to create a new QueryViewImpl that will publish just constants, e.g. `foo(1).`.
-static QueryViewImpl *AllConstantsView(QueryImpl *query, ParsedClause clause,
-                              ClauseContext &context) {
+// Try to create a new QueryViewImpl that will publish just constants,
+// e.g. `foo(1).`.
+static QueryViewImpl *AllConstantsView(
+    QueryImpl *query, ParsedClause clause, ClauseContext &context) {
 
   if (context.spelling_to_col.empty()) {
     return nullptr;
   }
 
-  TUPLE *tuple = query->tuples.Create();
+  QueryTupleImpl *tuple = query->tuples.Create();
   tuple->color = context.color;
   auto col_index = 0u;
   for (const auto &[col, vc] : context.const_to_vc) {
@@ -475,9 +482,10 @@ static QueryViewImpl *AllConstantsView(QueryImpl *query, ParsedClause clause,
 }
 
 // Propose `view` as being a source of data for the clause head.
-static QueryViewImpl *ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
-                                 ClauseContext &context, const ErrorLog &log,
-                                 QueryViewImpl *view, bool report = false) {
+static QueryViewImpl *ConvertToClauseHead(
+    QueryImpl *query, ParsedClause clause,
+    ClauseContext &context, const ErrorLog &log,
+    QueryViewImpl *view, bool report = false) {
 
   // Proved a zero-argument predicate.
   //
@@ -486,7 +494,7 @@ static QueryViewImpl *ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
     return view;
   }
 
-  TUPLE *tuple = query->tuples.Create();
+  QueryTupleImpl *tuple = query->tuples.Create();
   tuple->color = context.color;
 
 #ifndef NDEBUG
@@ -545,9 +553,10 @@ static QueryViewImpl *ConvertToClauseHead(QueryImpl *query, ParsedClause clause,
 }
 
 // Create a PRODUCT from multiple VIEWs.
-static bool CreateProduct(QueryImpl *query, ParsedClause clause,
-                          ClauseContext &context, std::vector<QueryViewImpl *> &views,
-                          const ErrorLog &log) {
+static bool CreateProduct(
+    QueryImpl *query, ParsedClause clause,
+    ClauseContext &context, std::vector<QueryViewImpl *> &views,
+    const ErrorLog &log) {
 
   if (!clause.CrossProductsArePermitted()) {
     auto err = log.Append(clause.SpellingRange(), clause.SpellingRange());
@@ -557,8 +566,8 @@ static bool CreateProduct(QueryImpl *query, ParsedClause clause,
 
     auto num_views = views.size();
     auto i = 0u;
-    for (auto view : views) {
-      for (auto col : view->columns) {
+    for (QueryViewImpl *view : views) {
+      for (QueryColumnImpl *col : view->columns) {
         if (!col->var->IsUnnamed()) {
           err.Note(clause.SpellingRange(), col->var->SpellingRange())
               << "This variable contributes to view " << (num_views - i)
@@ -571,7 +580,7 @@ static bool CreateProduct(QueryImpl *query, ParsedClause clause,
     return false;
   }
 
-  auto join = query->joins.Create();
+  QueryJoinImpl *join = query->joins.Create();
   join->color = context.color;
   auto col_index = 0u;
   for (QueryViewImpl *view : views) {
@@ -613,14 +622,15 @@ static bool CreateProduct(QueryImpl *query, ParsedClause clause,
 // and is further complicated when `view` contains a value that is attributed as
 // `free` in `pred`, and thus needs to be checked against the output of applying
 // `pred`.
-static QueryViewImpl *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
-                             ParsedPredicate pred, QueryViewImpl *view) {
+static QueryViewImpl *TryApplyFunctor(
+    QueryImpl *query, ClauseContext &context,
+    ParsedPredicate pred, QueryViewImpl *view) {
 
-  const auto decl = ParsedDeclaration::Of(pred);
+  const ParsedDeclaration decl = ParsedDeclaration::Of(pred);
   std::unordered_set<std::string> seen_variants;
   QueryViewImpl *out_view = nullptr;
 
-  for (auto redecl : decl.Redeclarations()) {
+  for (ParsedDeclaration redecl : decl.Redeclarations()) {
 
     // We may have duplicate redeclarations, so don't repeat any.
     std::string binding(redecl.BindingPattern());
@@ -641,8 +651,10 @@ static QueryViewImpl *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
 
     // We've satisfied the binding constraints; apply `pred` to the columns in
     // `inouts`.
-    MAP *map = query->maps.Create(ParsedFunctor::From(redecl),
-                                  pred.SpellingRange(), pred.IsPositive());
+    QueryMapImpl *map = query->maps.Create(
+        ParsedFunctor::From(redecl),
+        pred.SpellingRange(), pred.IsPositive());
+
     map->color = context.color;
 
     QueryViewImpl *result = map;
@@ -717,7 +729,7 @@ static QueryViewImpl *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
 
     // This is the N >= 3 redeclaration of the functor that is applicable; add
     // it into our equivalence class.
-    } else if (auto out_eq = out_view->AsMerge(); out_eq) {
+    } else if (QueryMergeImpl *out_eq = out_view->AsMerge()) {
       assert(out_eq->merged_views[0]->columns.Size() == result->columns.Size());
       out_eq->merged_views.AddUse(result);
 
@@ -727,7 +739,7 @@ static QueryViewImpl *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
     } else {
       assert(out_view->columns.Size() == result->columns.Size());
 
-      MERGE *const merge = query->merges.Create();
+      QueryMergeImpl *const merge = query->merges.Create();
       merge->color = context.color;
 
       // Create output columns for the merge.
@@ -748,9 +760,11 @@ static QueryViewImpl *TryApplyFunctor(QueryImpl *query, ClauseContext &context,
 
 // Try to apply a negation. This requires that all named, non-constant variables
 // are present.
-static QueryViewImpl *TryApplyNegation(QueryImpl *query, ParsedClause clause,
-                              ClauseContext &context, ParsedPredicate pred,
-                              QueryViewImpl *view, const ErrorLog &log) {
+static QueryViewImpl *TryApplyNegation(
+    QueryImpl *query, ParsedClause clause,
+    ClauseContext &context, ParsedPredicate pred,
+    QueryViewImpl *view, const ErrorLog &log) {
+
   std::vector<ParsedVariable> needed_vars;
   std::vector<QueryColumnImpl *> needed_cols;
   std::vector<bool> needed_params;
