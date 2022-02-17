@@ -68,6 +68,7 @@ set(replacement_file_list
   # Replaced, because we have a matching file under "${CMAKE_CURRENT_SOURCE_DIR}/patches"
   idl_gen_python.cpp
   idl_gen_grpc.cpp
+  idl_gen_cpp.cpp
   idl_parser.cpp
   cpp_generator.cc
   cpp_generator.h
