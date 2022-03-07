@@ -11,6 +11,7 @@
 #include <drlojekyll/Util/EqualitySet.h>
 #include <drlojekyll/Util/DefUse.h>
 
+#include <cstdint>
 #include <memory>
 #include <set>
 #include <sstream>
@@ -2369,9 +2370,16 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
     impl->LinkViews();
     impl->RemoveUnusedViews();
     impl->IdentifyInductions(log);
+    if (num_errors != log.Size()) {
+      return std::nullopt;
+    }
+
     impl->FinalizeDepths();
     impl->FinalizeColumnIDs();
     impl->TrackDifferentialUpdates(log, true);
+    if (num_errors != log.Size()) {
+      return std::nullopt;
+    }
     impl->TrackConstAfterInit();
     impl->RunBackwardsTaintAnalysis();
     impl->RunForwardsTaintAnalysis();

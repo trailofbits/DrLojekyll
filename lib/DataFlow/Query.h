@@ -125,8 +125,6 @@ class QueryColumnImpl : public Def<QueryColumnImpl> {
   uint64_t hash{0};
 };
 
-using COL = QueryColumnImpl;
-
 // A condition to be tested in order to admit tuples into a relation or
 // produce tuples.
 class QueryConditionImpl : public Def<QueryConditionImpl>, public User {
@@ -177,8 +175,6 @@ class QueryConditionImpl : public Def<QueryConditionImpl>, public User {
   bool is_dead{false};
 };
 
-using COND = QueryConditionImpl;
-
 // A "table" of data.
 class QueryRelationImpl : public Def<QueryRelationImpl>, public User {
  public:
@@ -193,8 +189,6 @@ class QueryRelationImpl : public Def<QueryRelationImpl>, public User {
   // List of nodes that select data from this relation.
   UseList<QueryViewImpl> selects;
 };
-
-using REL = QueryRelationImpl;
 
 class QueryConstantImpl;
 class QueryTagImpl;
@@ -213,8 +207,6 @@ class QueryStreamImpl : public Def<QueryStreamImpl> {
   virtual const char *KindName(void) const noexcept = 0;
 };
 
-using STREAM = QueryStreamImpl;
-
 // Use of a constant.
 class QueryConstantImpl : public QueryStreamImpl {
  public:
@@ -231,8 +223,6 @@ class QueryConstantImpl : public QueryStreamImpl {
   inline QueryConstantImpl(void) {}
 };
 
-using CONST = QueryConstantImpl;
-
 // Use of a constant.
 class QueryTagImpl final : public QueryConstantImpl {
  public:
@@ -245,8 +235,6 @@ class QueryTagImpl final : public QueryConstantImpl {
 
   const uint16_t val;
 };
-
-using TAG = QueryTagImpl;
 
 // Input, i.e. a messsage.
 class QueryIOImpl final : public QueryStreamImpl, public User {
@@ -266,8 +254,6 @@ class QueryIOImpl final : public QueryStreamImpl, public User {
   // List of nodes that receive data from this I/O operation.
   UseList<QueryViewImpl> receives;
 };
-
-using IO = QueryIOImpl;
 
 // Information about this node as it relates to being inside of an induction.
 // This affects MERGE, JOIN, and NEGATE nodes, as these are the only nodes which
@@ -642,9 +628,9 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // NOTE(pag): This isn't a pairwise matching; instead it checks that all
   //            columns in both of the lists independently reference the same
   //            view.
-  bool CheckIncomingViewsMatch(const UseList<COL> &cols1) const;
-  bool CheckIncomingViewsMatch(const UseList<COL> &cols1,
-                               const UseList<COL> &cols2) const;
+  bool CheckIncomingViewsMatch(const UseList<QueryColumnImpl> &cols1) const;
+  bool CheckIncomingViewsMatch(const UseList<QueryColumnImpl> &cols1,
+                               const UseList<QueryColumnImpl> &cols2) const;
 
   // If `cols1:cols2` pull their data from a tuple, and if that tuple is
   // unconditional, or if its conditions are trivial, then update `cols1:cols2`
@@ -710,8 +696,6 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   void MarkAsUnsatisfiable(void);
 };
 
-using VIEW = QueryViewImpl;
-
 class QuerySelectImpl final : public QueryViewImpl {
  public:
   QuerySelectImpl(QueryRelationImpl *relation_, ParsedPredicate pred_);
@@ -747,8 +731,6 @@ class QuerySelectImpl final : public QueryViewImpl {
   WeakUseList<QueryViewImpl> inserts;
 };
 
-using SELECT = QuerySelectImpl;
-
 class QueryTupleImpl final : public QueryViewImpl {
  public:
   virtual ~QueryTupleImpl(void);
@@ -771,8 +753,6 @@ class QueryTupleImpl final : public QueryViewImpl {
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
                     const ErrorLog &) override;
 };
-
-using TUPLE = QueryTupleImpl;
 
 // The KV index will have the `input_columns` as the keys, and the
 // `attached_columns` as the values.
@@ -799,8 +779,6 @@ class QueryKVIndexImpl final : public QueryViewImpl {
   // Functors that get called to merge old and new values.
   std::vector<ParsedFunctor> merge_functors;
 };
-
-using KVINDEX = QueryKVIndexImpl;
 
 class QueryJoinImpl final : public QueryViewImpl {
  public:
@@ -846,8 +824,6 @@ class QueryJoinImpl final : public QueryViewImpl {
   unsigned num_pivots{0};
 };
 
-using JOIN = QueryJoinImpl;
-
 class QueryMapImpl final : public QueryViewImpl {
  public:
   virtual ~QueryMapImpl(void);
@@ -877,8 +853,6 @@ class QueryMapImpl final : public QueryViewImpl {
   // Is this a positive functor application?
   const bool is_positive;
 };
-
-using MAP = QueryMapImpl;
 
 class QueryAggregateImpl : public QueryViewImpl {
  public:
@@ -915,8 +889,6 @@ class QueryAggregateImpl : public QueryViewImpl {
   // summarized. These are "in scope" of the aggregation. These are ordered.
   UseList<QueryColumnImpl> aggregated_columns;
 };
-
-using AGG = QueryAggregateImpl;
 
 class QueryMergeImpl : public QueryViewImpl {
  public:
@@ -964,8 +936,6 @@ class QueryMergeImpl : public QueryViewImpl {
   UseList<QueryViewImpl> merged_views;
 };
 
-using MERGE = QueryMergeImpl;
-
 class QueryCompareImpl : public QueryViewImpl {
  public:
   QueryCompareImpl(ComparisonOperator op_);
@@ -1007,8 +977,6 @@ class QueryCompareImpl : public QueryViewImpl {
   bool can_sink{true};
 };
 
-using CMP = QueryCompareImpl;
-
 // Represents the check of the absence of a tuple from a relation.
 class QueryNegateImpl : public QueryViewImpl {
  public:
@@ -1032,8 +1000,6 @@ class QueryNegateImpl : public QueryViewImpl {
   std::vector<ParsedPredicate> negations;
 };
 
-using NEGATION = QueryNegateImpl;
-
 // Inserts are technically views as that makes some things easier, but they
 // are not exposed as such.
 class QueryInsertImpl : public QueryViewImpl {
@@ -1056,268 +1022,23 @@ class QueryInsertImpl : public QueryViewImpl {
   const ParsedDeclaration declaration;
 };
 
-using INSERT = QueryInsertImpl;
-
-template <typename T>
-void QueryColumnImpl::ForEachUser(T user_cb) const {
-  view->ForEachUse<VIEW>([&user_cb](QueryViewImpl *user, QueryViewImpl *) {
-    user_cb(user);
-  });
-
-  ForEachUse<VIEW>([&user_cb](QueryViewImpl *view, QueryColumnImpl *) {
-    user_cb(view);
-  });
-}
-
 class QueryImpl {
  public:
-  inline explicit QueryImpl(const ParsedModule &module_)
-      : module(module_.RootModule()) {}
+  explicit QueryImpl(const ParsedModule &module_);
 
   ~QueryImpl(void);
 
   template <typename CB>
-  void ForEachView(CB do_view) {
-    std::vector<QueryViewImpl *> views;
-    for (auto view : selects) {
-      views.push_back(view);
-    }
-    for (auto view : tuples) {
-      views.push_back(view);
-    }
-    for (auto view : kv_indices) {
-      views.push_back(view);
-    }
-    for (auto view : joins) {
-      views.push_back(view);
-    }
-    for (auto view : maps) {
-      views.push_back(view);
-    }
-    for (auto view : aggregates) {
-      views.push_back(view);
-    }
-    for (auto view : merges) {
-      views.push_back(view);
-    }
-    for (auto view : negations) {
-      views.push_back(view);
-    }
-    for (auto view : compares) {
-      views.push_back(view);
-    }
-    for (auto view : inserts) {
-      views.push_back(view);
-    }
-
-    for (auto view : views) {
-      if (!view->is_dead) {
-        do_view(view);
-      }
-    }
-  }
+  void ForEachView(CB do_view);
 
   template <typename CB>
-  void ForEachView(CB do_view) const {
-    for (auto view : selects) {
-      if (!view->is_dead) {
-        do_view(view);
-      }
-    }
-    for (auto view : tuples) {
-      if (!view->is_dead) {
-        do_view(view);
-      }
-    }
-    for (auto view : kv_indices) {
-      if (!view->is_dead) {
-        do_view(view);
-      }
-    }
-    for (auto view : joins) {
-      if (!view->is_dead) {
-        do_view(view);
-      }
-    }
-    for (auto view : maps) {
-      if (!view->is_dead) {
-        do_view(view);
-      }
-    }
-    for (auto view : aggregates) {
-      if (!view->is_dead) {
-        do_view(view);
-      }
-    }
-    for (auto view : merges) {
-      if (!view->is_dead) {
-        do_view(view);
-      }
-    }
-    for (auto view : negations) {
-      if (!view->is_dead) {
-        do_view(view);
-      }
-    }
-    for (auto view : compares) {
-      if (!view->is_dead) {
-        do_view(view);
-      }
-    }
-    for (auto view : inserts) {
-      if (!view->is_dead) {
-        do_view(view);
-      }
-    }
-  }
+  void ForEachView(CB do_view) const;
 
   template <typename CB>
-  void ForEachViewInDepthOrder(CB do_view) const {
-    std::vector<QueryViewImpl *> views;
-    for (auto view : selects) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : tuples) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : kv_indices) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : joins) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : maps) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : aggregates) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : merges) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : negations) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : compares) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : inserts) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-
-    std::sort(views.begin(), views.end(),
-              [](QueryViewImpl *a, QueryViewImpl *b) {
-                return a->Depth() < b->Depth();
-              });
-
-    for (auto view : views) {
-      do_view(view);
-    }
-  }
+  void ForEachViewInDepthOrder(CB do_view) const;
 
   template <typename CB>
-  void ForEachViewInReverseDepthOrder(CB do_view) const {
-    std::vector<QueryViewImpl *> views;
-    for (auto view : selects) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : tuples) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : kv_indices) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : joins) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : maps) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : aggregates) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : merges) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : negations) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : compares) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-    for (auto view : inserts) {
-      view->depth = 0;
-      if (!view->is_dead) {
-        views.push_back(view);
-      }
-    }
-
-    std::sort(views.begin(), views.end(),
-              [](QueryViewImpl *a, QueryViewImpl *b) {
-                return a->Depth() > b->Depth();
-              });
-
-    for (auto view : views) {
-      do_view(view);
-    }
-  }
+  void ForEachViewInReverseDepthOrder(CB do_view) const;
 
   // Clear all group IDs. Sometimes we want to do optimizations that excplicitly
   // don't need to deal with the issues of accidentally over-merging nodes.
@@ -1443,5 +1164,278 @@ class QueryImpl {
   std::vector<std::shared_ptr<UseList<QueryColumnImpl>>> forwards_col_taints;
   std::vector<std::shared_ptr<UseList<QueryColumnImpl>>> backwards_col_taints;
 };
+
+using COL = QueryColumnImpl;
+using COND = QueryConditionImpl;
+using REL = QueryRelationImpl;
+using STREAM = QueryStreamImpl;
+using CONST = QueryConstantImpl;
+using TAG = QueryTagImpl;
+using IO = QueryIOImpl;
+using VIEW = QueryViewImpl;
+using SELECT = QuerySelectImpl;
+using TUPLE = QueryTupleImpl;
+using KVINDEX = QueryKVIndexImpl;
+using JOIN = QueryJoinImpl;
+using MAP = QueryMapImpl;
+using AGG = QueryAggregateImpl;
+using MERGE = QueryMergeImpl;
+using CMP = QueryCompareImpl;
+using NEGATION = QueryNegateImpl;
+using INSERT = QueryInsertImpl;
+
+template <typename T>
+void QueryColumnImpl::ForEachUser(T user_cb) const {
+  view->ForEachUse<QueryViewImpl>([&user_cb](QueryViewImpl *user, QueryViewImpl *) {
+    user_cb(user);
+  });
+
+  ForEachUse<QueryViewImpl>([&user_cb](QueryViewImpl *view, QueryColumnImpl *) {
+    user_cb(view);
+  });
+}
+
+template <typename CB>
+void QueryImpl::ForEachView(CB do_view) {
+  std::vector<QueryViewImpl *> views;
+  for (auto view : selects) {
+    views.push_back(view);
+  }
+  for (auto view : tuples) {
+    views.push_back(view);
+  }
+  for (auto view : kv_indices) {
+    views.push_back(view);
+  }
+  for (auto view : joins) {
+    views.push_back(view);
+  }
+  for (auto view : maps) {
+    views.push_back(view);
+  }
+  for (auto view : aggregates) {
+    views.push_back(view);
+  }
+  for (auto view : merges) {
+    views.push_back(view);
+  }
+  for (auto view : negations) {
+    views.push_back(view);
+  }
+  for (auto view : compares) {
+    views.push_back(view);
+  }
+  for (auto view : inserts) {
+    views.push_back(view);
+  }
+
+  for (auto view : views) {
+    if (!view->is_dead) {
+      do_view(view);
+    }
+  }
+}
+
+template <typename CB>
+void QueryImpl::ForEachView(CB do_view) const {
+  for (auto view : selects) {
+    if (!view->is_dead) {
+      do_view(view);
+    }
+  }
+  for (auto view : tuples) {
+    if (!view->is_dead) {
+      do_view(view);
+    }
+  }
+  for (auto view : kv_indices) {
+    if (!view->is_dead) {
+      do_view(view);
+    }
+  }
+  for (auto view : joins) {
+    if (!view->is_dead) {
+      do_view(view);
+    }
+  }
+  for (auto view : maps) {
+    if (!view->is_dead) {
+      do_view(view);
+    }
+  }
+  for (auto view : aggregates) {
+    if (!view->is_dead) {
+      do_view(view);
+    }
+  }
+  for (auto view : merges) {
+    if (!view->is_dead) {
+      do_view(view);
+    }
+  }
+  for (auto view : negations) {
+    if (!view->is_dead) {
+      do_view(view);
+    }
+  }
+  for (auto view : compares) {
+    if (!view->is_dead) {
+      do_view(view);
+    }
+  }
+  for (auto view : inserts) {
+    if (!view->is_dead) {
+      do_view(view);
+    }
+  }
+}
+
+template <typename CB>
+void QueryImpl::ForEachViewInDepthOrder(CB do_view) const {
+  std::vector<QueryViewImpl *> views;
+  for (auto view : selects) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+  for (auto view : tuples) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+  for (auto view : kv_indices) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+  for (auto view : joins) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+  for (auto view : maps) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+  for (auto view : aggregates) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+  for (auto view : merges) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+  for (auto view : negations) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+  for (auto view : compares) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+  for (auto view : inserts) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+
+  std::sort(views.begin(), views.end(),
+            [](QueryViewImpl *a, QueryViewImpl *b) {
+              return a->Depth() < b->Depth();
+            });
+
+  for (auto view : views) {
+    do_view(view);
+  }
+}
+
+template <typename CB>
+void QueryImpl::ForEachViewInReverseDepthOrder(CB do_view) const {
+  std::vector<QueryViewImpl *> views;
+  for (auto view : selects) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+  for (auto view : tuples) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+  for (auto view : kv_indices) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+  for (auto view : joins) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+  for (auto view : maps) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+  for (auto view : aggregates) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+  for (auto view : merges) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+  for (auto view : negations) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+  for (auto view : compares) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+  for (auto view : inserts) {
+    view->depth = 0;
+    if (!view->is_dead) {
+      views.push_back(view);
+    }
+  }
+
+  std::sort(views.begin(), views.end(),
+            [](QueryViewImpl *a, QueryViewImpl *b) {
+              return a->Depth() > b->Depth();
+            });
+
+  for (auto view : views) {
+    do_view(view);
+  }
+}
 
 }  // namespace hyde
