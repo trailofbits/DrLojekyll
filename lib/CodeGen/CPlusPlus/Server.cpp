@@ -703,7 +703,7 @@ static void DefineDatabaseThread(const std::vector<ParsedMessage> &messages,
   os << "}\n\n";
 
   // Make the main database thread.
-  os << "static void DatabaseWriterThread(void) {\n";
+  os << "static void *DatabaseWriterThread(void *) {\n";
   os.PushIndent();
   os << os.Indent() << "std::vector<std::unique_ptr<DatabaseInputMessageType>> inputs;\n"
      << os.Indent() << "inputs.reserve(128);\n"
@@ -734,7 +734,8 @@ static void DefineDatabaseThread(const std::vector<ParsedMessage> &messages,
      << os.Indent() << "PublishMessages();\n";
 
   os.PopIndent();
-  os << os.Indent() << "}\n";  // while true
+  os << os.Indent() << "}\n"  // while true
+     << os.Indent() << "return nullptr;\n";
   os.PopIndent();
   os << "}\n\n";
 }
@@ -751,6 +752,7 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
      << "#include <iostream>\n"
      << "#include <memory>\n"
      << "#include <mutex>\n"
+     << "#include <pthread.h>\n"
      << "#include <shared_mutex>\n"
      << "#include <sstream>\n"
      << "#include <string>\n"
@@ -882,7 +884,13 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
   // Make some vectors reasonably big to avoid allocations at runtime, and start
   // the database thread.
      << os.Indent() << ns_name_prefix << "gInputMessages.reserve(128);\n"
-     << os.Indent() << "std::thread db_thread(" << ns_name_prefix << "DatabaseWriterThread);\n\n"
+     << os.Indent() << "pthread_t db_thread;\n"
+     << os.Indent() << "pthread_attr_t attr;\n"
+     << os.Indent() << "pthread_attr_init(&attr);\n"
+     << os.Indent() << "pthread_attr_setstacksize(&attr, (1ull << 20) * 128ull);\n"
+     << os.Indent() << "pthread_create(&db_thread, &attr, &" << ns_name_prefix
+                    << "DatabaseWriterThread, nullptr);\n"
+     << os.Indent() << "pthread_attr_destroy(&attr);\n"
      << os.Indent() << "std::stringstream address_ss;\n"
      << os.Indent() << "address_ss << FLAGS_host << ':' << FLAGS_port;\n\n"
      << os.Indent() << ns_name_prefix << "DatalogService service;\n"
@@ -918,7 +926,8 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
 
   // Wait for the server to stop.
      << os.Indent() << "server->Wait();\n"
-     << os.Indent() << "db_thread.join();\n";
+     << os.Indent() << "void *res = nullptr;\n"
+     << os.Indent() << "pthread_join(db_thread, &res);\n";
 
 
   for (auto code : inlines) {
