@@ -11,6 +11,7 @@
 #include <drlojekyll/Util/EqualitySet.h>
 #include <drlojekyll/Util/DefUse.h>
 
+#include <cassert>
 #include <cstdint>
 #include <memory>
 #include <set>
@@ -1509,7 +1510,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
       // unique constants in a clause body. There are some obvious missed things,
       // e.g. `1` and `0x1` are treated differently, but that's OK.
       std::stringstream ss;
-      ss << literal.Type().Spelling() << ':';
+      ss << literal.Type().Spelling(query->module) << ':';
       if (literal.IsConstant()) {
         ss << static_cast<unsigned>(literal.Type().Kind()) << ':'
            << literal.Literal().IdentifierId();
@@ -2084,6 +2085,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     }
   });
 
+  // Check that the columns line up.
   auto all_cols_match = [](auto cols, auto pred_cols) {
     const auto num_cols = cols.size();
     if (num_cols != pred_cols.size()) {
@@ -2091,18 +2093,15 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     }
 
     for (auto i = 0u; i < num_cols; ++i) {
-      if (cols[i].Index() != pred_cols[i].Index()) {
+      QueryColumn succ_col = cols[i];
+      QueryColumn pred_col = pred_cols[i];
+      if (succ_col.Id() != pred_col.Id()) {
         return false;
       }
     }
 
     return true;
   };
-
-  // If this view might admit fewer tuples through than its predecessor, then
-  // we can't have it share a data model with its predecessor.
-  auto may_admit_fewer_tuples_than_pred =
-      +[](QueryView view) { return view.IsCompare() || view.IsMap(); };
 
   // If the output of `view` is conditional, i.e. dependent on the refcount
   // condition variables, or if a condition variable is dependent on the
@@ -2215,10 +2214,6 @@ static void BuildEquivalenceSets(QueryImpl *query) {
 
 
   query->ForEachView([&](QueryView view) {
-    if (may_admit_fewer_tuples_than_pred(view)) {
-      return;
-    }
-
     const auto model = view_to_model[view];
     const auto preds = view.Predecessors();
 
@@ -2231,40 +2226,45 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     // especially important for comparisons or maps leading into merges.
     //
     // If `pred` is another UNION, then `pred` may be a subset of `view`, thus
-    // we cannot merge `pred` and `view`.
+    // we cannot merge `pred` and `view`. However, if it is a merge with only
+    // one successor and it doesn't influence a negation then it doesn't
+    // really matter.
     if (view.IsMerge()) {
-      auto possible_sharing_preds = view.InductivePredecessors();
-      for (auto pred : possible_sharing_preds) {
-        if (!output_is_conditional(pred) && !pred.IsMerge() &&
-            //!has_multiple_succs(pred) &&
-            pred.CanProduceDeletions() == view.CanReceiveDeletions()) {
-          const auto pred_model = view_to_model[pred];
-          EquivalenceSet::TryUnion(model, pred_model);
-        }
-      }
+      assert(!preds.empty());
+//      auto possible_sharing_preds = view.InductivePredecessors();
+//      for (QueryView pred : possible_sharing_preds) {
+//        if (!output_is_conditional(pred) && !pred.IsUsedByNegation() &&
+//            !has_multiple_succs(pred) &&
+//            pred.CanProduceDeletions() == view.CanReceiveDeletions()) {
+//          EquivalenceSet *const pred_model = view_to_model[pred];
+//          EquivalenceSet::TryUnion(model, pred_model);
+//        }
+//      }
 
     // If a TUPLE "perfectly" passes through its data, then it shares the
     // same data model as its predecessor.
     } else if (view.IsTuple()) {
+      const auto tuple = QueryTuple::From(view);
       if (preds.size() == 1u) {
         const auto pred = preds[0];
-        const auto tuple = QueryTuple::From(view);
         if (!output_is_conditional(pred) &&
             all_cols_match(tuple.InputColumns(), pred.Columns())) {
-          const auto pred_model = view_to_model[pred];
+          EquivalenceSet *const pred_model = view_to_model[pred];
           EquivalenceSet::TryUnion(model, pred_model);
         }
+      } else {
+        assert(tuple.IsConstant());
       }
 
     // NEGATE's can share data with TUPLE's that are non-inductive successors
-    // and who's data matches perfectly.
+    // and whose data matches perfectly.
     } else if (view.IsNegate()) {
       for (auto succ : view.NonInductiveSuccessors()) {
         if (succ.IsTuple()) {
           const auto tuple = QueryTuple::From(succ);
           if (all_cols_match(view.Columns(), tuple.InputColumns()) &&
               !output_is_conditional(succ)) {
-            const auto succ_model = view_to_model[succ];
+            EquivalenceSet *const succ_model = view_to_model[succ];
             EquivalenceSet::TryUnion(model, succ_model);
           }
         }
@@ -2272,17 +2272,20 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     }
   });
 
-  for (MERGE *merge : query->merges) {
-    if (merge->merged_views.Size() == 1u) {
-      QueryView view(merge);
-      QueryView pred_view(merge->merged_views[0]);
-      if (!has_multiple_succs(pred_view) && !output_is_conditional(pred_view)) {
-        const auto model = view_to_model[view];
-        const auto pred_model = view_to_model[pred_view];
-        EquivalenceSet::ForceUnion(model, pred_model);
-      }
-    }
-  }
+//  // Try to combine UNIONs that only have a single predecessor with their
+//  // predecessor views.
+//  for (MERGE *merge : query->merges) {
+//    if (merge->merged_views.Size() == 1u) {
+//      QueryView view(merge);
+//      QueryView pred_view(merge->merged_views[0]);
+//      if (!has_multiple_succs(pred_view) && !pred_view.IsUsedByNegation() &&
+//          !output_is_conditional(pred_view)) {
+//        const auto model = view_to_model[view];
+//        const auto pred_model = view_to_model[pred_view];
+//        EquivalenceSet::ForceUnion(model, pred_model);
+//      }
+//    }
+//  }
 }
 
 
@@ -2367,7 +2370,7 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
     impl->ExtractConditionsToTuples();
     impl->RemoveUnusedViews();
     impl->ProxyInsertsWithTuples();
-    impl->LinkViews();
+    impl->LinkViews();  // NOTE(pag): Might add new views.
     impl->RemoveUnusedViews();
     impl->IdentifyInductions(log);
     if (num_errors != log.Size()) {

@@ -813,7 +813,7 @@ std::optional<ParsedMessage> DataVector::RemovedMessage(void) const noexcept {
   return impl->removed_message;
 }
 
-const std::vector<TypeKind> DataVector::ColumnTypes(void) const noexcept {
+const std::vector<TypeLoc> DataVector::ColumnTypes(void) const noexcept {
   return impl->col_types;
 }
 

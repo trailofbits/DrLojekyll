@@ -741,6 +741,9 @@ class QueryTupleImpl final : public QueryViewImpl {
   uint64_t Hash(void) noexcept override;
   bool Equals(EqualitySet &eq, QueryViewImpl *that) noexcept override;
 
+  // Returns `true` if all input columns to the tuple are constant.
+  bool AllInputsAreConstant(void);
+
   // Does this tuple forward all of its inputs to the same columns as the
   // outputs, and if so, does it forward all columns of its input?
   bool ForwardsAllInputsAsIs(void) const noexcept;

@@ -996,9 +996,9 @@ static std::optional<ProgramProcedure> BuildQueryForceProcedureImpl(
   }
 
   // Define a vector that we can pass to the message.
-  std::vector<TypeKind> col_types;
+  std::vector<TypeLoc> col_types;
   for (ParsedVariable message_var : forcing_pred.Arguments()) {
-    col_types.push_back(message_var.Type().Kind());
+    col_types.push_back(message_var.Type());
   }
 
   VECTOR *add_vec = proc->vectors.Create(

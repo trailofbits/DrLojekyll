@@ -890,6 +890,9 @@ class QueryTuple : public Node<QueryTuple, QueryTupleImpl> {
                                      std::optional<QueryColumn> /* out_col */)>
                       with_col) const;
 
+  // Returns `true` if all inputs to this tuple are constant.
+  bool IsConstant(void) const noexcept;
+
  private:
   using Node<QueryTuple, QueryTupleImpl>::Node;
 

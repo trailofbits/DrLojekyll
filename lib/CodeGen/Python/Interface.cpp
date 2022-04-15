@@ -313,12 +313,10 @@ void GenerateInterfaceCode(const Program &program, OutputStream &os) {
     const auto bp = decl.BindingPattern();
     os << os.Indent() << "def " << name << '_' << bp << "(self";
 
-    auto has_bound = false;
     auto has_free = false;
     for (ParsedParameter param : decl.Parameters()) {
       if (param.Binding() == ParameterBinding::kBound) {
         os << ", " << param.Name() << ": " << TypeName(module, param.Type());
-        has_bound = true;
       } else {
         has_free = true;
       }

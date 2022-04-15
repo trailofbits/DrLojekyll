@@ -1670,6 +1670,11 @@ OutputStream &QueryTuple::DebugString(OutputStream &os) const noexcept {
   return impl->DebugString(os);
 }
 
+// Returns `true` if all inputs to this tuple are constant.
+bool QueryTuple::IsConstant(void) const noexcept {
+  return impl->AllInputsAreConstant();
+}
+
 // Apply a callback `with_col` to each input column of this view.
 void QueryTuple::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
                                                std::optional<QueryColumn>)>

@@ -258,7 +258,7 @@ uint64_t ProgramVectorLoopRegionImpl::Hash(uint32_t depth) const {
     hash ^= RotateRight64(hash, 13) * (table->id + 13u);
   }
   for (auto type : vector->col_types) {
-    hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
+    hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type.Kind()) + 11u);
   }
   if (depth == 0) {
     return hash;
@@ -591,7 +591,7 @@ uint64_t ProgramVectorAppendRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(vector->kind) + 17u);
   for (auto type : vector->col_types) {
-    hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
+    hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type.Kind()) + 11u);
   }
   for (auto var : tuple_vars) {
     hash ^= RotateRight64(hash, 13) *
@@ -1067,7 +1067,7 @@ uint64_t ProgramVectorClearRegionImpl::Hash(uint32_t) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= (static_cast<unsigned>(vector->kind) + 1u) * 17;
   for (auto type : vector->col_types) {
-    hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
+    hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type.Kind()) + 11u);
   }
   return hash;
 }
@@ -1114,7 +1114,7 @@ uint64_t ProgramVectorSwapRegionImpl::Hash(uint32_t depth) const {
   hash ^= (static_cast<unsigned>(lhs->kind) + 1u) * 17;
   hash ^= (static_cast<unsigned>(rhs->kind) + 1u) * 17;
   for (auto type : lhs->col_types) {
-    hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
+    hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type.Kind()) + 11u);
   }
   (void) depth;
   return hash;
@@ -1162,7 +1162,7 @@ uint64_t ProgramVectorUniqueRegionImpl::Hash(uint32_t) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= (static_cast<unsigned>(vector->kind) + 1u) * 17;
   for (auto type : vector->col_types) {
-    hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type) + 11u);
+    hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type.Kind()) + 11u);
   }
   return hash;
 }
@@ -1878,7 +1878,7 @@ uint64_t ProgramCallRegionImpl::Hash(uint32_t depth) const {
   for (auto vec : this->arg_vecs) {
     hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(vec->kind) + 7u);
     for (auto type : vec->col_types) {
-      hash ^= RotateRight64(hash, 7) * (static_cast<unsigned>(type) + 3u);
+      hash ^= RotateRight64(hash, 7) * (static_cast<unsigned>(type.Kind()) + 3u);
     }
   }
 

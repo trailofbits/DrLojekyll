@@ -293,7 +293,6 @@ void QueryImpl::Simplify(const ErrorLog &log) {
 // to encourage better CSE results.
 void QueryImpl::Canonicalize(const OptimizationContext &opt,
                              const ErrorLog &log) {
-
   uint64_t num_views = 0u;
   const_cast<const QueryImpl *>(this)->ForEachView([&num_views](VIEW *view) {
     view->is_canonical = false;

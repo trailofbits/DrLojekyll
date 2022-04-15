@@ -5,6 +5,7 @@
 #include <drlojekyll/Display/DisplayPosition.h>
 
 #include <optional>
+#include <string_view>
 
 namespace hyde {
 
@@ -110,6 +111,8 @@ class TypeLoc {
   inline const char *Spelling(void) const noexcept {
     return ::hyde::Spelling(kind);
   }
+
+  std::string_view Spelling(const ParsedModule &module) const;
 
  private:
   template <typename, typename>

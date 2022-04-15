@@ -129,7 +129,7 @@ DataTableImpl::DataTableImpl(unsigned id_)
       indices(this),
       records(this) {}
 
-DataColumnImpl::DataColumnImpl(unsigned id_, TypeKind type_,
+DataColumnImpl::DataColumnImpl(unsigned id_, const TypeLoc &type_,
                                DataTableImpl *table_)
     : Def<DataColumnImpl>(this),
       User(this),
@@ -203,7 +203,7 @@ DataTableImpl *DataTableImpl::GetOrCreate(ProgramImpl *impl, Context &,
     unsigned col_index = 0;
     for (auto col : cols) {
       offsets.push_back(col_index++);
-      (void) model->table->columns.Create(impl->next_id++, col.Type().Kind(),
+      (void) model->table->columns.Create(impl->next_id++, col.Type(),
                                           model->table);
     }
 

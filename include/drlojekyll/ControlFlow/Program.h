@@ -357,7 +357,7 @@ class DataVector : public Node<DataVector, DataVectorImpl> {
   bool IsSharded(void) const noexcept;
 
   // Types of the variables/columns stored in this vector.
-  const std::vector<TypeKind> ColumnTypes(void) const noexcept;
+  const std::vector<TypeLoc> ColumnTypes(void) const noexcept;
 
   // Visit the users of this vector.
   void VisitUsers(ProgramVisitor &visitor);

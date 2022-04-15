@@ -259,6 +259,15 @@ void QueryImpl::LinkViews(bool recursive) {
     }
   }
 
+  const_cast<const QueryImpl *>(this)->ForEachView([&](VIEW *view) {
+    view->successors.Clear();
+    view->predecessors.Clear();
+    view->is_used_by_merge = false;
+    view->is_used_by_negation = false;
+    view->is_used_by_join = false;
+    view->depth = 0;
+  });
+
   // Now we start the linking!
 
   for (auto view : negations) {

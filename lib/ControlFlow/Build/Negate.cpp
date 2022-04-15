@@ -89,7 +89,7 @@ void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
   // may be necessary.
 
   // If this is an inductive negation, then we might defer processing its
-  // outputs until we get into a sucessor.
+  // outputs until we get into a successor.
   if (view.InductionGroupId().has_value()) {
     INDUCTION *const induction =
         GetOrInitInduction(impl, view, context, succ_parent);

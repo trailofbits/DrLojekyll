@@ -192,6 +192,11 @@ bool QueryTupleImpl::Equals(EqualitySet &eq,
   return true;
 }
 
+// Returns `true` if all input columns to the tuple are constant.
+bool QueryTupleImpl::AllInputsAreConstant(void) {
+  return !GetIncomingView(input_columns);
+}
+
 // Does this tuple forward all of its inputs to the same columns as the
 // outputs, and if so, does it forward all columns of its input?
 bool QueryTupleImpl::ForwardsAllInputsAsIs(void) const noexcept {

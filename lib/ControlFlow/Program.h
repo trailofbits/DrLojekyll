@@ -54,13 +54,13 @@ class DataColumnImpl final : public Def<DataColumnImpl>, public User {
  public:
   virtual ~DataColumnImpl(void);
 
-  DataColumnImpl(unsigned id_, TypeKind type_, DataTableImpl *table_);
+  DataColumnImpl(unsigned id_, const TypeLoc &type_, DataTableImpl *table_);
 
   void Accept(ProgramVisitor &visitor);
 
   const unsigned id;
   const unsigned index;
-  const TypeKind type;
+  const TypeLoc type;
 
   std::vector<Token> names;
 
@@ -136,7 +136,7 @@ struct DataModel : public DisjointSet {
 class DataVectorImpl final : public Def<DataVectorImpl> {
  public:
   DataVectorImpl(unsigned id_, VectorKind kind_,
-                 const std::vector<TypeKind> &col_types_, int)
+                 const std::vector<TypeLoc> &col_types_, int)
       : Def<DataVectorImpl>(this),
         id(id_),
         kind(kind_),
@@ -149,7 +149,7 @@ class DataVectorImpl final : public Def<DataVectorImpl> {
         kind(kind_) {
 
     for (QueryColumn col : cols) {
-      col_types.push_back(col.Type().Kind());
+      col_types.push_back(col.Type());
     }
   }
 
@@ -165,7 +165,7 @@ class DataVectorImpl final : public Def<DataVectorImpl> {
 
   const unsigned id;
   const VectorKind kind;
-  std::vector<TypeKind> col_types;
+  std::vector<TypeLoc> col_types;
 
   std::optional<ParsedMessage> added_message;
   std::optional<ParsedMessage> removed_message;

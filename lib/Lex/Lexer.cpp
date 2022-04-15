@@ -323,7 +323,6 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
     // String literal.
     case '"': {
       auto spelling_width = 1u;
-      auto error_offset = 1u;
       auto prev_was_escape = false;
       auto is_invalid = false;
       auto is_finished = false;
@@ -333,7 +332,6 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       // into `impl->data`.
       while (impl->reader.TryReadChar(&ch)) {
         spelling_width += 1u;
-        error_offset += 1u;
 
         if ('\n' == ch || '\r' == ch) {
           if (!is_invalid) {

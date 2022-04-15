@@ -99,4 +99,12 @@ bool TypeLoc::IsReferentiallyTransparent(const ParsedModule &module,
   return false;
 }
 
+std::string_view TypeLoc::Spelling(const ParsedModule &module) const {
+  if (auto ty = module.ForeignType(kind)) {
+    return ty->NameAsString();
+  } else {
+    return ::hyde::Spelling(kind);
+  }
+}
+
 }  // namespace hyde
