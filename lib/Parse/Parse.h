@@ -116,6 +116,7 @@ class ParsedVariableImpl : public Def<ParsedVariableImpl> {
 
   // Name of this variable.
   const Token name;
+  std::string name_view;
 
   // Whether or not this variable is an parameter to its clause.
   const bool is_parameter;
@@ -201,6 +202,7 @@ class ParsedPredicateImpl : public Def<ParsedPredicateImpl>, public User {
   Token negation;
   Token force;
   Token name;
+  std::string_view name_view;
   Token rparen;
 
   // The argument variables used in this predicate.
@@ -245,6 +247,7 @@ class ParsedParameterImpl : public Def<ParsedParameterImpl> {
 
   // The parameter name.
   Token name;
+  std::string_view name_view;
 
   // Optional type.
   TypeLoc opt_type;
@@ -272,6 +275,7 @@ class ParsedClauseImpl : public Def<ParsedClauseImpl>, public User {
 
   Token negation;
   Token name;
+  std::string_view name_view;
   Token rparen;
   Token first_body_token;
   Token dot;
@@ -371,6 +375,7 @@ class ParsedDeclarationImpl : public Def<ParsedDeclarationImpl>, public User {
   std::vector<Token> parsed_tokens;
 
   Token name;
+  std::string_view name_view;
   Token rparen;
   Token range_begin_opt;
   Token range_end_opt;

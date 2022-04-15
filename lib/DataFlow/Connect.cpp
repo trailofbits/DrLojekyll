@@ -48,6 +48,9 @@ VIEW *CreateProxyOfInserts(QueryImpl *impl, UseList<QueryViewImpl> &inserts) {
 
     if (!merge) {
       merge = impl->merges.Create();
+#ifndef NDEBUG
+      merge->producer = "MERGE-INSERT";
+#endif
       col_index = 0u;
       for (auto col : proxy->columns) {
         (void) merge->columns.Create(col->var, col->type, merge, col->id,

@@ -120,6 +120,11 @@ void ParserImpl::ParseEnum(ParsedModuleImpl *module) {
       found_type->name = name;
       found_type->builtin_type = underlying_type;
 
+      if (found_type->name_view.empty()) {
+        context->display_manager.TryReadData(name.SpellingRange(),
+                                             &(found_type->name_view));
+      }
+
     } else {
       found_type->decls.emplace_back(scope_range);
     }
@@ -139,6 +144,10 @@ void ParserImpl::ParseEnum(ParsedModuleImpl *module) {
 
     module->root_module->id_to_foreign_type.emplace(
         name.IdentifierId(), found_type);
+
+    if (enum_type->name_view.empty()) {
+      context->display_manager.TryReadData(name.SpellingRange(), &(enum_type->name_view));
+    }
   }
 }
 

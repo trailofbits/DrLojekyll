@@ -155,6 +155,8 @@ void ParserImpl::ParseQuery(ParsedModuleImpl *module) {
             param->opt_type = p_type;
             param->parsed_opt_type = param->opt_type.IsValid();
             param->name = p_name;
+            context->display_manager.TryReadData(p_name.SpellingRange(),
+                                                 &(param->name_view));
             param->index = query->parameters.Size() - 1u;
           }
 
@@ -162,6 +164,8 @@ void ParserImpl::ParseQuery(ParsedModuleImpl *module) {
 
           query->rparen = tok;
           query->name = name;
+          context->display_manager.TryReadData(name.SpellingRange(),
+                                               &(query->name_view));
           query->directive_pos = sub_tokens.front().Position();
           state = 6;
           continue;

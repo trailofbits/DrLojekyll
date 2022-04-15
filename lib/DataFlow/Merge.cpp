@@ -77,8 +77,8 @@ unsigned QueryMergeImpl::Depth(void) noexcept {
 //
 // NOTE(pag): If a merge directly merges with itself then we filter it out.
 bool QueryMergeImpl::Canonicalize(QueryImpl *query,
-                                    const OptimizationContext &opt,
-                                    const ErrorLog &) {
+                                  const OptimizationContext &opt,
+                                  const ErrorLog &) {
 
   if (is_dead || is_unsat) {
     is_canonical = true;
@@ -110,6 +110,24 @@ bool QueryMergeImpl::Canonicalize(QueryImpl *query,
 
   for (auto i = merged_views.Size(); i;) {
     work_list.push_back(merged_views[--i]);
+  }
+
+  // Try to eliminate this UNION.
+  if (work_list.size() == 1u  && !sets_condition &&
+      positive_conditions.Empty() && negative_conditions.Empty()) {
+    VIEW *replacement_view = work_list[0];
+    merged_views.Clear();
+
+    if (TUPLE *tuple = work_list[0]->AsTuple()) {
+      VIEW *tuple_source = VIEW::GetIncomingView(tuple->input_columns);
+      // NOTE(pag): `ForwardsAllInputsAsIs` checks conditions.
+      if (tuple->ForwardsAllInputsAsIs(tuple_source)) {
+        tuple->is_canonical = false;
+        replacement_view = tuple_source;
+      }
+    }
+    ReplaceAllUsesWith(replacement_view);
+    return true;  // Definitely made non-local changes.
   }
 
   const auto num_cols = columns.Size();
@@ -470,6 +488,9 @@ bool QueryMergeImpl::SinkThroughTuples(QueryImpl *impl,
 
       // Create the sunken merge. It might have more columns than `num_cols`.
       sunk_merge = impl->merges.Create();
+#ifndef NDEBUG
+      sunk_merge->producer = "SINK-MERGE-THROUGH-TUPLE";
+#endif
       sunk_merge->color = color;
       for (auto j = 0u; j < num_pred_cols; ++j) {
         const auto first_tuple_pred_col = first_tuple_pred->columns[j];
@@ -643,6 +664,9 @@ bool QueryMergeImpl::SinkThroughMaps(QueryImpl *impl,
 
       // Create the sunken merge.
       sunk_merge = impl->merges.Create();
+#ifndef NDEBUG
+      sunk_merge->producer = "SINK-MERGE-THROUGH-MAP";
+#endif
       sunk_merge->color = color;
       for (auto j = 0u; j < (num_input_cols + num_attached_cols); ++j) {
         const auto first_tuple_pred_col = first_map_input_tuple->columns[j];
@@ -713,6 +737,9 @@ namespace {
 
 static MERGE *MakeSameShapedMerge(QueryImpl *impl, NEGATION *negation) {
   MERGE *merge = impl->merges.Create();
+#ifndef NDEBUG
+  merge->producer = "SINK-MERGE-THROUGH-NEGATION(" + negation->producer + ")";
+#endif
   auto col_index = 0u;
   for (auto col : negation->columns) {
     merge->columns.Create(col->var, col->type, merge, col->id, col_index++);
@@ -1321,6 +1348,10 @@ bool QueryMergeImpl::SinkThroughJoins(
   JOIN * const lifted_join = impl->joins.Create();
   lifted_join->num_pivots = first_join->num_pivots + 1u;
 
+#ifndef NDEBUG
+  lifted_join->producer = "LIFT-JOIN-THROUGH-MERGE";
+#endif
+
   // Create tuples for each of the views flowing into each of the joins, so that
   // the tuples include tags that we can use to maintain the proper working of
   // the eventual merged join.
@@ -1329,6 +1360,10 @@ bool QueryMergeImpl::SinkThroughJoins(
 
     MERGE * const sunk_merge = impl->merges.Create();
     lifted_join->joined_views.AddUse(sunk_merge);
+
+#ifndef NDEBUG
+    sunk_merge->producer = "SINK-MERGE-THROUGH-JOIN";
+#endif
 
     VIEW *last_ith = nullptr;
 

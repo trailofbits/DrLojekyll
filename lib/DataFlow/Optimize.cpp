@@ -549,22 +549,22 @@ void QueryImpl::Optimize(const ErrorLog &log) {
   };
 
   auto do_sink = [&](void) {
-    OptimizationContext opt;
-    for (auto i = 0u; i < merges.Size(); ++i) {
-      MERGE *const merge = merges[i];
-      if (!merge->is_dead) {
-        merge->is_canonical = false;
-        opt.can_sink_unions = false;
-        opt.can_remove_unused_columns = false;
-        merge->Canonicalize(this, opt, log);
-        if (!merge->is_dead) {
-          merge->is_canonical = false;
-          opt.can_sink_unions = true;
-          opt.can_remove_unused_columns = false;
-          merge->Canonicalize(this, opt, log);
-        }
-      }
-    }
+//    OptimizationContext opt;
+//    for (auto i = 0u; i < merges.Size(); ++i) {
+//      MERGE *const merge = merges[i];
+//      if (!merge->is_dead) {
+//        merge->is_canonical = false;
+//        opt.can_sink_unions = false;
+//        opt.can_remove_unused_columns = false;
+//        merge->Canonicalize(this, opt, log);
+//        if (!merge->is_dead) {
+//          merge->is_canonical = false;
+//          opt.can_sink_unions = true;
+//          opt.can_remove_unused_columns = false;
+//          merge->Canonicalize(this, opt, log);
+//        }
+//      }
+//    }
   };
 
   do_sink();

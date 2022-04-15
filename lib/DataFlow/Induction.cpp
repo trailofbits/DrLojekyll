@@ -353,15 +353,35 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   seen.clear();
   frontier.clear();
 
-  // There is am inductive successor of `merge` that reaches `view`, and the
+  // There is an inductive successor of `merge` that reaches `view`, and the
   // edge from `view` to `succ_view` leads out of the UNION.
+  bool changed = false;
   for (VIEW *view : injection_sites) {
 
     assert(!view->AsMerge());
     assert(!view->AsSelect());
     assert(!view->AsInsert());
 
+    // TODO(pag): This is a special case to prevent redundant injection
+    //            of UNIONs forwarding TUPLE values, where the involvement
+    //            of a TUPLE is generally due to negations. This might not
+    //            be a good fix as it doesn't really consider the conditions
+    //            being overall tested here, and generally, that redundant union
+    //            ought to have been redundant, but not erroneous.
+    if (TUPLE *tuple = view->AsTuple()) {
+      VIEW *tuple_source = VIEW::GetIncomingView(tuple->input_columns);
+      if (tuple->ForwardsAllInputsAsIs(tuple_source) &&
+          !tuple->sets_condition && tuple->positive_conditions.Empty() &&
+          tuple->negative_conditions.Empty()) {
+        continue;
+      }
+    }
+
+    changed = true;
     MERGE *const new_union = merges.Create();
+#ifndef NDEBUG
+    new_union->producer = "INDUCTIVE-LEAVE";
+#endif
 
     auto col_index = 0u;
     for (auto col : view->columns) {
@@ -390,7 +410,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   }
 
   // If we injected any new UNIONs then reset and re-run.
-  if (!injection_sites.empty()) {
+  if (changed) {
     LinkViews(true);
     IdentifyInductions(log, true);
     return;

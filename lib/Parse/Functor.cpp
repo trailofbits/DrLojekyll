@@ -194,13 +194,17 @@ void ParserImpl::ParseFunctor(ParsedModuleImpl *module) {
           functor->rparen = tok;
           functor->directive_pos = sub_tokens.front().Position();
           functor->name = name;
+          context->display_manager.TryReadData(name.SpellingRange(),
+                                               &(functor->name_view));
 
-          for (auto [binding, type, name] : params) {
+          for (auto [binding, type, p_name] : params) {
             ParsedParameterImpl * const param =
                 functor->parameters.Create(functor);
             param->opt_binding = binding;
             param->opt_type = type;
-            param->name = name;
+            param->name = p_name;
+            context->display_manager.TryReadData(p_name.SpellingRange(),
+                                                 &(param->name_view));
             param->parsed_opt_type = type.IsValid();
             param->index = functor->parameters.Size() - 1u;
           }

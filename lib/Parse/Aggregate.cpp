@@ -118,6 +118,7 @@ bool ParserImpl::ParseAggregatedPredicate(
           anon_decl->directive_pos = tok.Position();
           anon_decl->name =
               Token::Synthetic(Lexeme::kIdentifierUnnamedAtom, tok_range);
+          context->display_manager.TryReadData(tok_range, &(anon_decl->name_view));
           anon_decl->inline_attribute =
               Token::Synthetic(Lexeme::kPragmaPerfInline, DisplayRange());
           assert(anon_decl->name.Lexeme() == Lexeme::kIdentifierUnnamedAtom);
@@ -127,6 +128,7 @@ bool ParserImpl::ParseAggregatedPredicate(
           anon_clause_toks.push_back(tok);
           pred->declaration = anon_decl;
           pred->name = anon_decl->name;
+          pred->name_view = anon_decl->name_view;
           anon_decl->context->positive_uses.AddUse(pred);
           state = 1;
           continue;
@@ -134,6 +136,7 @@ bool ParserImpl::ParseAggregatedPredicate(
         // Direct application of another predicate.
         } else if (Lexeme::kIdentifierAtom == lexeme) {
           pred->name = tok;
+          context->display_manager.TryReadData(tok.SpellingRange(), &(pred->name_view));
           state = 6;
           continue;
 
@@ -204,6 +207,7 @@ bool ParserImpl::ParseAggregatedPredicate(
           for (auto [p_type, p_name] : anon_params) {
             ParsedParameterImpl *p = anon_decl->parameters.Create(anon_decl);
             p->name = p_name;
+            context->display_manager.TryReadData(p_name.SpellingRange(), &(p->name_view));
             p->opt_type = p_type;
             p->parsed_opt_type = p->opt_type.IsValid();
 
@@ -364,11 +368,13 @@ bool ParserImpl::ParseAggregatedPredicate(
                     module, DeclarationKind::kLocal);
             local_decl->directive_pos = pred->name.Position();
             local_decl->name = pred->name;
+            local_decl->name_view = pred->name_view;
             local_decl->rparen = tok;
 
             for (ParsedVariableImpl *used_var : pred_args) {
               ParsedParameterImpl *param = local_decl->parameters.Create(local_decl);
               param->name = used_var->name;
+              param->name_view = used_var->name_view;
               param->opt_type = used_var->type;
               param->index = local_decl->parameters.Size() - 1u;
             }

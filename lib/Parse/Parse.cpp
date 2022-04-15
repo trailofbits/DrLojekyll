@@ -419,6 +419,10 @@ Token ParsedVariable::Name(void) const noexcept {
   return impl->name;
 }
 
+std::string_view ParsedVariable::NameAsString(void) const noexcept {
+  return impl->name_view;
+}
+
 TypeLoc ParsedVariable::Type(void) const noexcept {
   return impl->type;
 }
@@ -565,6 +569,14 @@ ParsedLiteral ParsedAssignment::RHS(void) const noexcept {
   return ParsedLiteral(&(impl->rhs));
 }
 
+Token ParsedPredicate::Name(void) const noexcept {
+  return impl->name;
+}
+
+std::string_view ParsedPredicate::NameAsString(void) const noexcept {
+  return impl->name_view;
+}
+
 DisplayRange ParsedPredicate::SpellingRange(void) const noexcept {
   Token last_tok = impl->rparen;
   if (!last_tok.IsValid()) {
@@ -669,6 +681,10 @@ Token ParsedParameter::Name(void) const noexcept {
   return impl->name;
 }
 
+std::string_view ParsedParameter::NameAsString(void) const noexcept {
+  return impl->name_view;
+}
+
 TypeLoc ParsedParameter::Type(void) const noexcept {
   return impl->opt_type;
 }
@@ -755,24 +771,48 @@ Token ParsedDeclaration::Name(void) const noexcept {
   return impl->name;
 }
 
+std::string_view ParsedDeclaration::NameAsString(void) const noexcept {
+  return impl->name_view;
+}
+
 Token ParsedFunctor::Name(void) const noexcept {
   return impl->name;
+}
+
+std::string_view ParsedFunctor::NameAsString(void) const noexcept {
+  return impl->name_view;
 }
 
 Token ParsedMessage::Name(void) const noexcept {
   return impl->name;
 }
 
+std::string_view ParsedMessage::NameAsString(void) const noexcept {
+  return impl->name_view;
+}
+
 Token ParsedQuery::Name(void) const noexcept {
   return impl->name;
+}
+
+std::string_view ParsedQuery::NameAsString(void) const noexcept {
+  return impl->name_view;
 }
 
 Token ParsedLocal::Name(void) const noexcept {
   return impl->name;
 }
 
+std::string_view ParsedLocal::NameAsString(void) const noexcept {
+  return impl->name_view;
+}
+
 Token ParsedExport::Name(void) const noexcept {
   return impl->name;
+}
+
+std::string_view ParsedExport::NameAsString(void) const noexcept {
+  return impl->name_view;
 }
 
 // Is this the first declaration?
@@ -991,6 +1031,14 @@ DisplayRange ParsedClause::SpellingRange(void) const noexcept {
   return DisplayRange((impl->negation.IsValid() ? impl->negation.Position()
                                                 : impl->name.Position()),
                       last_tok.NextPosition());
+}
+
+Token ParsedClause::Name(void) const noexcept {
+  return impl->name;
+}
+
+std::string_view ParsedClause::NameAsString(void) const noexcept {
+  return impl->name_view;
 }
 
 // Should this clause be highlighted in the data flow representation?

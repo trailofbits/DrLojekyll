@@ -254,6 +254,10 @@ static QueryViewImpl *BuildPredicate(
     return nullptr;
   }
 
+#ifndef NDEBUG
+  view->producer += pred.NameAsString();
+#endif
+
   // Add the output columns to the QueryViewImpl associated with the predicate.
   auto col_index = 0u;
   for (ParsedVariable var : pred.Arguments()) {
@@ -500,7 +504,9 @@ static QueryViewImpl *ConvertToClauseHead(
   tuple->color = context.color;
 
 #ifndef NDEBUG
-  tuple->producer = "CLAUSE-HEAD";
+  tuple->producer = "CLAUSE-HEAD(";
+  tuple->producer += clause.NameAsString();
+  tuple->producer += ")";
 #endif
 
   auto col_index = 0u;
@@ -808,14 +814,16 @@ static QueryViewImpl *TryApplyNegation(
   }
 
 #ifndef NDEBUG
-  sel->producer = "PRED-NEGATION";
+  sel->producer = "PRED-NEGATION(";
+  sel->producer += pred.NameAsString();
+  sel->producer += ")";
 #endif
 
   if (!all_needed) {
     const auto tuple = query->tuples.Create();
     tuple->color = context.color;
 #ifndef NDEBUG
-    tuple->producer = "PRED-NEGATION-SUBSET";
+    tuple->producer = "PRED-NEGATION-SUBSET(" + sel->producer + ")";
 #endif
     auto i = 0u;
     auto col_index = 0u;
@@ -2272,20 +2280,24 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     }
   });
 
-//  // Try to combine UNIONs that only have a single predecessor with their
-//  // predecessor views.
-//  for (MERGE *merge : query->merges) {
-//    if (merge->merged_views.Size() == 1u) {
+  // Try to combine UNIONs that only have a single predecessor with their
+  // predecessor views.
+  for (MERGE *merge : query->merges) {
+    if (merge->merged_views.Size() == 1u) {
 //      QueryView view(merge);
-//      QueryView pred_view(merge->merged_views[0]);
-//      if (!has_multiple_succs(pred_view) && !pred_view.IsUsedByNegation() &&
-//          !output_is_conditional(pred_view)) {
+
+      QueryView pred_view(merge->merged_views[0]);
+      if (!has_multiple_succs(pred_view) && !pred_view.IsUsedByNegation() &&
+          !output_is_conditional(pred_view)) {
+#ifndef NDEBUG
+        merge->producer += " (REDUNDANT?)";
+#endif
 //        const auto model = view_to_model[view];
 //        const auto pred_model = view_to_model[pred_view];
 //        EquivalenceSet::ForceUnion(model, pred_model);
-//      }
-//    }
-//  }
+      }
+    }
+  }
 }
 
 

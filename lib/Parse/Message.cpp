@@ -146,11 +146,15 @@ void ParserImpl::ParseMessage(ParsedModuleImpl *module) {
             param->opt_type = p_type;
             param->parsed_opt_type = param->opt_type.IsValid();
             param->name = p_name;
+            context->display_manager.TryReadData(p_name.SpellingRange(),
+                                                 &(param->name_view));
             param->index = message->parameters.Size() - 1u;
           }
 
           message->rparen = tok;
           message->name = name;
+          context->display_manager.TryReadData(name.SpellingRange(),
+                                               &(message->name_view));
           message->directive_pos = directive.Position();
           state = 5;
           continue;

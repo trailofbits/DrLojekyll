@@ -507,6 +507,8 @@ void ParserImpl::ParseLocalExport(
 
           local->rparen = tok;
           local->name = name;
+          context->display_manager.TryReadData(name.SpellingRange(),
+                                               &(local->name_view));
           local->directive_pos = sub_tokens.front().Position();
           local->has_mutable_parameter = has_mutable_parameter;
 
@@ -516,6 +518,8 @@ void ParserImpl::ParseLocalExport(
             ParsedParameterImpl * const param = local->parameters.Create(local);
             param->opt_type = p_type;
             param->name = p_name;
+            context->display_manager.TryReadData(p_name.SpellingRange(),
+                                                 &(param->name_view));
             param->parsed_opt_type = p_type.IsValid();
             param->opt_binding = p_binding;
             param->index = local->parameters.Size() - 1u;
@@ -944,12 +948,14 @@ bool ParserImpl::TryMatchClauseWithDecl(ParsedModuleImpl *module,
 
     local_decl->directive_pos = clause->name.Position();
     local_decl->name = clause->name;
+    local_decl->name_view = clause->name_view;
     local_decl->rparen = clause->rparen;
 
     for (ParsedVariableImpl *param_var : clause->head_variables) {
       ParsedParameterImpl * const param =
           local_decl->parameters.Create(local_decl);
       param->name = param_var->name;
+      param->name_view = param_var->name_view;
       param->index = local_decl->parameters.Size() - 1u;
     }
 
@@ -1048,6 +1054,9 @@ ParsedDeclarationImpl *ParserImpl::TryMatchPredicateWithDecl(
           module->declarations.CreateDerived<ParsedExportImpl>(
               module, DeclarationKind::kExport);
       export_decl->name = pred_name;
+      context->display_manager.TryReadData(pred_name.SpellingRange(),
+                                           &(export_decl->name_view));
+
       module->exports.AddUse(export_decl);
       context->declarations.emplace(id, export_decl);
 
@@ -1068,11 +1077,14 @@ ParsedDeclarationImpl *ParserImpl::TryMatchPredicateWithDecl(
             module, DeclarationKind::kLocal);
     local_decl->directive_pos = pred_name.Position();
     local_decl->name = pred_name;
+    context->display_manager.TryReadData(pred_name.SpellingRange(),
+                                         &(local_decl->name_view));
     local_decl->rparen = pred_end_tok;
 
     for (ParsedVariableImpl *used_var : pred_vars) {
       ParsedParameterImpl *param = local_decl->parameters.Create(local_decl);
       param->name = used_var->name;
+      param->name_view = used_var->name_view;
       param->opt_type = used_var->type;
       param->index = local_decl->parameters.Size() - 1u;
     }

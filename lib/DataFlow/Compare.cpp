@@ -307,7 +307,7 @@ bool QueryCompareImpl::TrySinkThroughMerge(QueryImpl *query, MERGE *merge) {
   lifted_merge->color = color;
 
 #ifndef NDEBUG
-  lifted_merge->producer = "LIFTED-MERGE:" + this->producer;
+  lifted_merge->producer = "LIFTED-MERGE(" + this->producer + ")";
 #endif
 
   auto col_index = 0u;

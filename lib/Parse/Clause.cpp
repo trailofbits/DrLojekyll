@@ -268,6 +268,8 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
     }
 
     pred->name = pred_name;
+    context->display_manager.TryReadData(pred_name.SpellingRange(), &(pred->name_view));
+
     pred->rparen = tok;
     pred->declaration = pred_decl;
     for (ParsedVariableImpl *pred_var : pred_vars) {
@@ -296,6 +298,7 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
         if (Lexeme::kIdentifierAtom == lexeme ||
             Lexeme::kIdentifierUnnamedAtom == lexeme) {
           clause->name = tok;
+          context->display_manager.TryReadData(tok.SpellingRange(), &(clause->name_view));
           clause_toks.push_back(tok);
           state = 1;
           continue;

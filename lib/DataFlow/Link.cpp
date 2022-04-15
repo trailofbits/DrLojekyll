@@ -14,6 +14,11 @@ static VIEW *ProxyInsertWithTuple(QueryImpl *impl, INSERT *view,
   proxy->can_receive_deletions = incoming_view->can_produce_deletions;
   proxy->can_produce_deletions = proxy->can_receive_deletions;
 
+#ifndef NDEBUG
+  proxy->producer = "PROXY-INSERT(";
+  proxy->producer += view->producer + ":" + incoming_view->producer + ")";
+#endif
+
   auto col_index = 0u;
   for (COL *col : view->input_columns) {
     COL *const proxy_col =
@@ -42,6 +47,11 @@ static void ProxyNegatedViews(QueryImpl *impl, NEGATION *view) {
     TUPLE *const tuple = impl->tuples.Create();
     tuple->color = negated_view->color;
 
+#ifndef NDEBUG
+    tuple->producer = "PROXY-NEGATED(";
+    tuple->producer += view->producer + ")";
+#endif
+
     negated_view->CopyDifferentialAndGroupIdsTo(tuple);
     tuple->can_receive_deletions = negated_view->can_produce_deletions;
     tuple->can_produce_deletions = tuple->can_receive_deletions;
@@ -64,6 +74,11 @@ static void ProxyNegatedViews(QueryImpl *impl, NEGATION *view) {
       incoming_view && !incoming_view->AsTuple()) {
 
     TUPLE *const proxy = impl->tuples.Create();
+
+#ifndef NDEBUG
+    proxy->producer = "PROXY-NEGATE(";
+    proxy->producer += view->producer + ":" + incoming_view->producer + ")";
+#endif
 
     incoming_view->CopyDifferentialAndGroupIdsTo(proxy);
     proxy->can_receive_deletions = incoming_view->can_produce_deletions;
@@ -125,6 +140,11 @@ static void ProxyJoinedViews(QueryImpl *impl, JOIN *join) {
     TUPLE *const proxy = impl->tuples.Create();
     new_joined_views.AddUse(proxy);
 
+#ifndef NDEBUG
+    proxy->producer = "PROXY-JOINED(";
+    proxy->producer += view->producer + ")";
+#endif
+
     view->CopyDifferentialAndGroupIdsTo(proxy);
     proxy->can_receive_deletions = view->can_produce_deletions;
     proxy->can_produce_deletions = proxy->can_receive_deletions;
@@ -175,6 +195,11 @@ static void ProxyMergedViews(QueryImpl *impl, MERGE *merge) {
 
     TUPLE *const proxy = impl->tuples.Create();
     new_merged_views.AddUse(proxy);
+
+#ifndef NDEBUG
+    proxy->producer = "PROXY-MERGED(";
+    proxy->producer += view->producer + ")";
+#endif
 
     view->CopyDifferentialAndGroupIdsTo(proxy);
     proxy->can_receive_deletions = view->can_produce_deletions;

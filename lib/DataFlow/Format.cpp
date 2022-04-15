@@ -8,7 +8,7 @@
 
 #include "EquivalenceSet.h"
 
-#define DEBUG(...)
+#define DEBUG(...) __VA_ARGS__
 
 namespace hyde {
 namespace {

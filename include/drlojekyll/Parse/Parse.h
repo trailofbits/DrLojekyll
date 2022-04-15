@@ -93,6 +93,7 @@ class ParsedVariable : public Node<ParsedVariable, ParsedVariableImpl> {
 
   // Returns the token corresponding with the name of this variable.
   Token Name(void) const noexcept;
+  std::string_view NameAsString(void) const noexcept;
 
   // Returns the type of the variable.
   TypeLoc Type(void) const noexcept;
@@ -172,6 +173,9 @@ class ParsedAssignment : public Node<ParsedAssignment, ParsedAssignmentImpl> {
 class ParsedPredicateImpl;
 class ParsedPredicate : public Node<ParsedPredicate, ParsedPredicateImpl> {
  public:
+  Token Name(void) const noexcept;
+  std::string_view NameAsString(void) const noexcept;
+
   DisplayRange SpellingRange(void) const noexcept;
 
   // Returns `true` if this is a positive predicate.
@@ -273,6 +277,7 @@ class ParsedParameter : public Node<ParsedParameter, ParsedParameterImpl> {
 
   DisplayRange SpellingRange(void) const noexcept;
   Token Name(void) const noexcept;
+  std::string_view NameAsString(void) const noexcept;
   TypeLoc Type(void) const noexcept;
   ParameterBinding Binding(void) const noexcept;
   unsigned Index(void) const noexcept;
@@ -301,6 +306,9 @@ class ParsedClause : public Node<ParsedClause, ParsedClauseImpl> {
   static ParsedClause Containing(ParsedAssignment var) noexcept;
   static ParsedClause Containing(ParsedComparison cmp) noexcept;
   static ParsedClause Containing(ParsedAggregate agg) noexcept;
+
+  Token Name(void) const noexcept;
+  std::string_view NameAsString(void) const noexcept;
 
   DisplayRange SpellingRange(void) const noexcept;
 
@@ -411,6 +419,9 @@ class ParsedDeclaration : public Node<ParsedDeclaration, ParsedDeclarationImpl> 
   // Return the name of this declaration as a token.
   Token Name(void) const noexcept;
 
+  // Return the name of this declaration as a string.
+  std::string_view NameAsString(void) const noexcept;
+
   // Is this the first declaration?
   bool IsFirstDeclaration(void) const noexcept;
 
@@ -516,6 +527,7 @@ class ParsedQuery : public Node<ParsedQuery, ParsedQueryImpl> {
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
   Token Name(void) const noexcept;
+  std::string_view NameAsString(void) const noexcept;
   unsigned Arity(void) const noexcept;
   ParsedParameter NthParameter(unsigned n) const noexcept;
 
@@ -562,6 +574,7 @@ class ParsedExport : public Node<ParsedExport, ParsedExportImpl> {
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
   Token Name(void) const noexcept;
+  std::string_view NameAsString(void) const noexcept;
   unsigned Arity(void) const noexcept;
   ParsedParameter NthParameter(unsigned n) const noexcept;
 
@@ -597,6 +610,7 @@ class ParsedLocal : public Node<ParsedLocal, ParsedLocalImpl> {
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
   Token Name(void) const noexcept;
+  std::string_view NameAsString(void) const noexcept;
   unsigned Arity(void) const noexcept;
   ParsedParameter NthParameter(unsigned n) const noexcept;
 
@@ -662,6 +676,7 @@ class ParsedFunctor : public Node<ParsedFunctor, ParsedFunctorImpl> {
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
   Token Name(void) const noexcept;
+  std::string_view NameAsString(void) const noexcept;
   unsigned Arity(void) const noexcept;
   ParsedParameter NthParameter(unsigned n) const noexcept;
 
@@ -735,6 +750,7 @@ class ParsedMessage : public Node<ParsedMessage, ParsedMessageImpl> {
   DisplayRange SpellingRange(void) const noexcept;
   uint64_t Id(void) const noexcept;
   Token Name(void) const noexcept;
+  std::string_view NameAsString(void) const noexcept;
   unsigned Arity(void) const noexcept;
   ParsedParameter NthParameter(unsigned n) const noexcept;
 
