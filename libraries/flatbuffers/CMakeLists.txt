@@ -66,17 +66,15 @@ set(removed_file_list
 set(replacement_file_list
 
   # Replaced, because we have a matching file under "${CMAKE_CURRENT_SOURCE_DIR}/patches"
+  cpp_generator.h
+  cpp_generator.cc
   idl_gen_python.cpp
   idl_gen_grpc.cpp
   idl_gen_cpp.cpp
   idl_parser.cpp
-  cpp_generator.cc
-  cpp_generator.h
 )
 
 add_library(flatc_internals
-  ${patched_file_list}
-  
   # Added, because it does not exist in the original target
   "${CMAKE_CURRENT_SOURCE_DIR}/patches/disable_logger.cpp"
 )
@@ -146,6 +144,7 @@ foreach(property_name ${property_name_list})
         continue()
       endif()
       if("${source_file_name}" IN_LIST replacement_file_list)
+        message("Replacing ${source_file_name}")
         target_sources(flatc_internals "${property_scope}"
           "${CMAKE_CURRENT_SOURCE_DIR}/patches/${source_file_name}")
       else()
