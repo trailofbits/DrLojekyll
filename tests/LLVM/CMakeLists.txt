@@ -18,7 +18,11 @@ list(REMOVE_ITEM LLVM_LIBRARIES LLVMMC LLVMCore LLVMSupport)
 list(APPEND LLVM_LIBRARIES LLVMMC LLVMCore LLVMSupport)
 
 add_executable(analyze-llvm
-  Standalone.cpp)
+  Interface.cpp
+  Interface.h
+  Main.cpp
+  Report.cpp
+  Report.h)
 
 target_link_libraries(analyze-llvm
   PRIVATE
