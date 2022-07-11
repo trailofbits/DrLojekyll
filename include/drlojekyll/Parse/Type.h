@@ -80,6 +80,10 @@ class TypeLoc {
   bool IsReferentiallyTransparent(const ParsedModule &module,
                                   Language lang) const noexcept;
 
+  // Does the value type admit a designated null value, or do we need to wrap
+  // it in something else, e.g. `std::optional`.
+  bool IsNullable(const ParsedModule &module, Language lang) const noexcept;
+
   inline bool IsForeign(void) const noexcept {
     return UnderlyingKind() == TypeKind::kForeignType;
   }

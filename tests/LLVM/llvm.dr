@@ -1,0 +1,177 @@
+
+
+#database llvm.
+
+#inline(c++:database:prologue) ```c++
+
+#include <filesystem>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/Instruction.h>
+#include <llvm/IR/Instructions.h>
+
+```.
+
+#foreign Path ```c++ std::filesystem::path``` @transparent.
+#foreign Argument ```c++ llvm::Argument *``` @transparent @nullable.
+#foreign Instruction ```c++ llvm::Instruction *``` @transparent @nullable.
+#foreign BasicBlock ```c++ llvm::BasicBlock *``` @transparent @nullable.
+#foreign Function ```c++ llvm::Function *``` @transparent @nullable.
+#foreign Module ```c++ llvm::Module *``` @transparent @nullable.
+#foreign Value ```c++ llvm::Value *``` @transparent @nullable.
+#foreign Variable ```c++ llvm::GlobalVariable *``` @transparent @nullable.
+#foreign Alias ```c++ llvm::GlobalAlias *``` @transparent @nullable.
+#foreign Use ```c++ llvm::Use *``` @transparent @nullable.
+
+#foreign OpCode ```c++ unsigned``` @transparent.
+#constant OpCode OP_Ret ```c++ llvm::Instruction::Ret``` @unique.
+#constant OpCode OP_Br ```c++ llvm::Instruction::Br``` @unique.
+#constant OpCode OP_Switch ```c++ llvm::Instruction::Switch``` @unique.
+#constant OpCode OP_IndirectBr ```c++ llvm::Instruction::IndirectBr``` @unique.
+#constant OpCode OP_Invoke ```c++ llvm::Instruction::Invoke``` @unique.
+#constant OpCode OP_Resume ```c++ llvm::Instruction::Resume``` @unique.
+#constant OpCode OP_Unreachable ```c++ llvm::Instruction::Unreachable``` @unique.
+#constant OpCode OP_CleanupRet ```c++ llvm::Instruction::CleanupRet``` @unique.
+#constant OpCode OP_CatchRet ```c++ llvm::Instruction::CatchRet``` @unique.
+#constant OpCode OP_CatchSwitch ```c++ llvm::Instruction::CatchSwitch``` @unique.
+#constant OpCode OP_CallBr ```c++ llvm::Instruction::CallBr``` @unique.
+#constant OpCode OP_FNeg ```c++ llvm::Instruction::FNeg``` @unique.
+#constant OpCode OP_Add ```c++ llvm::Instruction::Add``` @unique.
+#constant OpCode OP_FAdd ```c++ llvm::Instruction::FAdd``` @unique.
+#constant OpCode OP_Sub ```c++ llvm::Instruction::Sub``` @unique.
+#constant OpCode OP_FSub ```c++ llvm::Instruction::FSub``` @unique.
+#constant OpCode OP_Mul ```c++ llvm::Instruction::Mul``` @unique.
+#constant OpCode OP_FMul ```c++ llvm::Instruction::FMul``` @unique.
+#constant OpCode OP_UDiv ```c++ llvm::Instruction::UDiv``` @unique.
+#constant OpCode OP_SDiv ```c++ llvm::Instruction::SDiv``` @unique.
+#constant OpCode OP_FDiv ```c++ llvm::Instruction::FDiv``` @unique.
+#constant OpCode OP_URem ```c++ llvm::Instruction::URem``` @unique.
+#constant OpCode OP_SRem ```c++ llvm::Instruction::SRem``` @unique.
+#constant OpCode OP_FRem ```c++ llvm::Instruction::FRem``` @unique.
+#constant OpCode OP_Shl ```c++ llvm::Instruction::Shl``` @unique.
+#constant OpCode OP_LShr ```c++ llvm::Instruction::LShr``` @unique.
+#constant OpCode OP_AShr ```c++ llvm::Instruction::AShr``` @unique.
+#constant OpCode OP_And ```c++ llvm::Instruction::And``` @unique.
+#constant OpCode OP_Or ```c++ llvm::Instruction::Or``` @unique.
+#constant OpCode OP_Xor ```c++ llvm::Instruction::Xor``` @unique.
+#constant OpCode OP_Alloca ```c++ llvm::Instruction::Alloca``` @unique.
+#constant OpCode OP_Load ```c++ llvm::Instruction::Load``` @unique.
+#constant OpCode OP_Store ```c++ llvm::Instruction::Store``` @unique.
+#constant OpCode OP_GetElementPtr ```c++ llvm::Instruction::GetElementPtr``` @unique.
+#constant OpCode OP_Fence ```c++ llvm::Instruction::Fence``` @unique.
+#constant OpCode OP_AtomicCmpXchg ```c++ llvm::Instruction::AtomicCmpXchg``` @unique.
+#constant OpCode OP_AtomicRMW ```c++ llvm::Instruction::AtomicRMW``` @unique.
+#constant OpCode OP_Trunc ```c++ llvm::Instruction::Trunc``` @unique.
+#constant OpCode OP_ZExt ```c++ llvm::Instruction::ZExt``` @unique.
+#constant OpCode OP_SExt ```c++ llvm::Instruction::SExt``` @unique.
+#constant OpCode OP_FPToUI ```c++ llvm::Instruction::FPToUI``` @unique.
+#constant OpCode OP_FPToSI ```c++ llvm::Instruction::FPToSI``` @unique.
+#constant OpCode OP_UIToFP ```c++ llvm::Instruction::UIToFP``` @unique.
+#constant OpCode OP_SIToFP ```c++ llvm::Instruction::SIToFP``` @unique.
+#constant OpCode OP_FPTrunc ```c++ llvm::Instruction::FPTrunc``` @unique.
+#constant OpCode OP_FPExt ```c++ llvm::Instruction::FPExt``` @unique.
+#constant OpCode OP_PtrToInt ```c++ llvm::Instruction::PtrToInt``` @unique.
+#constant OpCode OP_IntToPtr ```c++ llvm::Instruction::IntToPtr``` @unique.
+#constant OpCode OP_BitCast ```c++ llvm::Instruction::BitCast``` @unique.
+#constant OpCode OP_AddrSpaceCast ```c++ llvm::Instruction::AddrSpaceCast``` @unique.
+#constant OpCode OP_CleanupPad ```c++ llvm::Instruction::CleanupPad``` @unique.
+#constant OpCode OP_CatchPad ```c++ llvm::Instruction::CatchPad``` @unique.
+#constant OpCode OP_ICmp ```c++ llvm::Instruction::ICmp``` @unique.
+#constant OpCode OP_FCmp ```c++ llvm::Instruction::FCmp``` @unique.
+#constant OpCode OP_PHI ```c++ llvm::Instruction::PHI``` @unique.
+#constant OpCode OP_Call ```c++ llvm::Instruction::Call``` @unique.
+#constant OpCode OP_Select ```c++ llvm::Instruction::Select``` @unique.
+#constant OpCode OP_UserOp1 ```c++ llvm::Instruction::UserOp1``` @unique.
+#constant OpCode OP_UserOp2 ```c++ llvm::Instruction::UserOp2``` @unique.
+#constant OpCode OP_VAArg ```c++ llvm::Instruction::VAArg``` @unique.
+#constant OpCode OP_ExtractElement ```c++ llvm::Instruction::ExtractElement``` @unique.
+#constant OpCode OP_InsertElement ```c++ llvm::Instruction::InsertElement``` @unique.
+#constant OpCode OP_ShuffleVector ```c++ llvm::Instruction::ShuffleVector``` @unique.
+#constant OpCode OP_ExtractValue ```c++ llvm::Instruction::ExtractValue``` @unique.
+#constant OpCode OP_InsertValue ```c++ llvm::Instruction::InsertValue``` @unique.
+#constant OpCode OP_LandingPad ```c++ llvm::Instruction::LandingPad``` @unique.
+#constant OpCode OP_Freeze ```c++ llvm::Instruction::Freeze``` @unique.
+
+; Load a module from a file.
+#functor load_module(bound Path FilePath, free Module M) @range(?).
+
+; Access the functions of a module.
+#functor module_function(bound Module M, free Function F) @range(*).
+#functor module_function(free Module M, bound Function F) @range(.).
+#functor module_function(bound Module M, bound Function F) @range(?).
+
+; Access the global variables of a module.
+#functor module_variable(bound Module M, free Variable V) @range(*).
+#functor module_variable(free Module M, bound Variable V) @range(.).
+#functor module_variable(bound Module M, bound Variable V) @range(?).
+
+; Access the blocks of a function.
+#functor function_block(bound Function F, free BasicBlock B) @range(*).
+#functor function_block(free Function F, bound BasicBlock B) @range(.).
+#functor function_block(bound Function F, bound BasicBlock B) @range(?).
+
+; Access the instructions of a function.
+#functor function_instruction(bound Function F, free Instruction I) @range(*).
+#functor function_instruction(free Function F, bound Instruction I) @range(.).
+#functor function_instruction(bound Function F, bound Instruction I) @range(?).
+
+; Access the arguments of a function.
+#functor function_argument(bound Function F, free Argument A) @range(*).
+#functor function_argument(free Function F, bound Argument A) @range(.).
+#functor function_argument(bound Function F, bound Argument A) @range(?).
+
+; Access the instructions of a block.
+#functor block_instruction(bound BasicBlock B, free Instruction I) @range(*).
+#functor block_instruction(free BasicBlock B, bound Instruction I) @range(.).
+#functor block_instruction(bound BasicBlock B, bound Instruction I) @range(?).
+
+; Access the terminator instructions of a block.
+#functor block_terminator(bound BasicBlock B, free Instruction I) @range(.).
+#functor block_terminator(free BasicBlock B, bound Instruction I) @range(?).
+#functor block_terminator(bound BasicBlock B, bound Instruction I) @range(?).
+
+; Access the successors of a block.
+#functor block_successor(bound BasicBlock B_from, free BasicBlock B_to) @range(*).
+#functor block_successor(free BasicBlock B_from, bound BasicBlock B_to) @range(*).
+#functor block_successor(bound BasicBlock B_from, bound BasicBlock B_to) @range(?).
+
+; Access the successors of an instruction.
+#functor instruction_successor(bound Instruction I_from, free Instruction I_to) @range(*).
+#functor instruction_successor(free Instruction I_from, bound Instruction I_to) @range(*).
+#functor instruction_successor(bound Instruction I_from, bound Instruction I_to) @range(?).
+
+; Access the uses of a function.
+#functor function_use(bound Function F, free Use U) @range(*).
+#functor function_use(free Function F, bound Use U) @range(?).
+#functor function_use(bound Function F, bound Use U) @range(?).
+
+; Access the uses of a global variable.
+#functor variable_use(bound Variable V, free Use U) @range(*).
+#functor variable_use(free Variable V, bound Use U) @range(?).
+#functor variable_use(bound Variable V, bound Use U) @range(?).
+
+; Access the uses of an argument.
+#functor argument_use(bound Argument A, free Use U) @range(*).
+#functor argument_use(free Argument A, bound Use U) @range(?).
+#functor argument_use(bound Argument A, bound Use U) @range(?).
+
+; Access the uses of an instruction.
+#functor instruction_use(bound Instruction I, free Use U) @range(*).
+#functor instruction_use(free Instruction I, bound Use U) @range(?).
+#functor instruction_use(bound Instruction I, bound Use U) @range(?).
+
+; Access the user of a use as an instruction.
+#functor instruction_user(bound Instruction I, free Use U) @range(*).
+#functor instruction_user(free Instruction I, bound Use U) @range(?).
+#functor instruction_user(bound Instruction I, bound Use U) @range(?).
+
+; Access the user of a use as an instruction.
+#functor instruction_opcode(bound Instruction I, free OpCode O) @range(.).
+#functor instruction_opcode(bound Instruction I, bound OpCode O) @range(?).
+
+#message add_from_from_file(Path FilePath).
+
+#export module(M)
+    : add_from_from_file(P)
+    , load_module(P, M).

@@ -57,6 +57,7 @@ void ParserImpl::ParseForeignTypeDecl(ParsedModuleImpl *module) {
   auto report_trailing = true;
   Language last_lang = Language::kUnknown;
   Token transparent;
+  Token nullable;
 
   auto set_transparent = [&]() {
     type->info[static_cast<unsigned>(last_lang)].is_transparent = true;
@@ -64,6 +65,17 @@ void ParserImpl::ParseForeignTypeDecl(ParsedModuleImpl *module) {
       for (auto &info : type->info) {
         if (info.can_override) {
           info.is_transparent = true;
+        }
+      }
+    }
+  };
+
+  auto set_nullable = [&]() {
+    type->info[static_cast<unsigned>(last_lang)].is_nullable = true;
+    if (last_lang == Language::kUnknown) {
+      for (auto &info : type->info) {
+        if (info.can_override) {
+          info.is_nullable = true;
         }
       }
     }
@@ -275,6 +287,12 @@ void ParserImpl::ParseForeignTypeDecl(ParsedModuleImpl *module) {
           state = 3;
           continue;
 
+        } else if (Lexeme::kPragmaPerfNullable == lexeme) {
+          nullable = tok;
+          set_nullable();
+          state = 3;
+          continue;
+
         } else if (Lexeme::kPuncPeriod == lexeme) {
           state = 4;
           continue;
@@ -336,6 +354,22 @@ void ParserImpl::ParseForeignTypeDecl(ParsedModuleImpl *module) {
           } else {
             transparent = tok;
             set_transparent();
+            continue;
+          }
+
+        } else if (Lexeme::kPragmaPerfNullable == lexeme) {
+          if (nullable.IsValid()) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "The '@nullable' pragma can only be used once";
+
+            err.Note(scope_range, nullable.SpellingRange())
+                << "Previous usage of the '@nullable' pragma is here";
+
+            report_trailing = false;
+
+          } else {
+            nullable = tok;
+            set_nullable();
             continue;
           }
 

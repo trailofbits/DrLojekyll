@@ -149,6 +149,17 @@ struct Bytes final : public std::vector<uint8_t> {
 
   inline Bytes(const char *data)
       : std::vector<uint8_t>(BytesFromString<char>(std::string_view(data))) {}
+
+  std::string ToString(void) const {
+    std::string data;
+    if (empty()) {
+      return data;
+    } else {
+      data.insert(data.end(), reinterpret_cast<const char *>(&(front())),
+                  &(reinterpret_cast<const char *>(&(back()))[1]));
+    }
+    return data;
+  }
 };
 
 

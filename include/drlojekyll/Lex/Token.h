@@ -401,6 +401,16 @@ enum class Lexeme : uint8_t {
   // desirable because we really want the result of all the JSON parsing stuff
   // to join against the remaining relations.
   kPragmaPerfBarrier,
+
+  // Used to mark a foreign type as nullable. This means that the foreign type
+  // supports a natural Boolean test for present/absence. For example:
+  //
+  //    #foreign Instruction ```c++ llvm::Instruction *``` @transparent @nullable.
+  //
+  // Here, the instruction is transparent and also nullable, meaning that the
+  // code generator doesn't need to use `std::optional<llvm::Instruction *>` to
+  // represent the absence of an instruction.
+  kPragmaPerfNullable,
 };
 
 enum class TypeKind : uint32_t;
@@ -490,11 +500,11 @@ class Token final : public OpaqueData {
   // Return a fake token at `range`.
   static Token Synthetic(::hyde::Lexeme lexeme, DisplayRange range);
 
-  inline bool operator==(const Token that) const noexcept {
+  inline bool operator==(Token that) const noexcept {
     return this->OpaqueData::operator==(that) && position == that.position;
   }
 
-  inline bool operator!=(const Token that) const noexcept {
+  inline bool operator!=(Token that) const noexcept {
     return this->OpaqueData::operator!=(that) || position != that.position;
   }
 

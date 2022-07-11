@@ -342,12 +342,14 @@ void GenerateClientHeader(Program program, ParsedModule module,
      << "#include <memory>\n"
      << "#include <string>\n"
      << "#include <vector>\n\n"
-     << "#include <flatbuffers/flatbuffers.h>\n"
-     << "#include <flatbuffers/grpc.h>\n"
      << "#include <drlojekyll/Runtime/Runtime.h>\n"
-     << "#include <drlojekyll/Runtime/FlatBuffers.h>\n"
-     << "#include <drlojekyll/Runtime/Client.h>\n"
-     << "#include \"" << file_name << "_generated.h\"\n\n";
+     << "#if __has_include(\"" << file_name << "_generated.h\")\n"
+     << "# include <flatbuffers/flatbuffers.h>\n"
+     << "# include <flatbuffers/grpc.h>\n"
+     << "# include <drlojekyll/Runtime/FlatBuffers.h>\n"
+     << "# include <drlojekyll/Runtime/Client.h>\n"
+     << "# include \"" << file_name << "_generated.h\"\n"
+     << "#endif\n\n";
 
   for (auto code : inlines) {
     if (code.Stage() == "c++:client:interface:prologue") {
@@ -443,10 +445,12 @@ void GenerateClientImpl(Program program, ParsedModule module,
                         bool has_removed_inputs, bool has_removed_outputs,
                         OutputStream &os) {
   os << "/* Auto-generated file */\n\n"
-     << "#include <grpcpp/grpcpp.h>\n"
-     << "#include <flatbuffers/flatbuffers.h>\n"
-     << "#include \"" << file_name << "_generated.h\"\n"
-     << "#include \"" << file_name << ".grpc.fb.h\"\n"
+     << "#if __has_include(\"" << file_name << "_generated.h\")\n"
+     << "# include <grpcpp/grpcpp.h>\n"
+     << "# include <flatbuffers/flatbuffers.h>\n"
+     << "# include \"" << file_name << "_generated.h\"\n"
+     << "# include \"" << file_name << ".grpc.fb.h\"\n"
+     << "#endif\n\n"
      << "#include \"" << file_name << ".client.h\"\n\n";
 
   for (auto code : inlines) {

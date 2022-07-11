@@ -600,6 +600,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
           const auto out_type = out_var.Type();
           const auto out_type_is_transparent =
               out_type.IsReferentiallyTransparent(module, Language::kCxx);
+          const auto out_type_is_nullable =
+              out_type.IsNullable(module, Language::kCxx);
           os << os.Indent() << "auto tmp_" << id << " = ";
           call_functor();
           os << ";\n";
@@ -610,7 +612,11 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
           if (!out_type_is_transparent) {
             os << "storage.Intern(";
           }
-          os << "std::move(tmp_" << id << ".value())";
+          if (out_type_is_nullable) {
+            os << "tmp_" << id;
+          } else {
+            os << "std::move(tmp_" << id << ".value())";
+          }
           if (!out_type_is_transparent) {
             os << ")";
           }
@@ -1719,7 +1725,9 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
      << "#pragma once\n\n"
      << "#define DRLOJEKYLL_DATABASE_CODE\n\n"
      << "#include <drlojekyll/Runtime/Runtime.h>\n\n"
-     << "#include \"" << file_name << "_generated.h\"\n"
+     << "#if __has_include(\"" << file_name << "_generated.h\")\n"
+     << "# include \"" << file_name << "_generated.h\"\n"
+     << "#endif\n\n"
      << "#include <algorithm>\n"
      << "#include <cstdio>\n"
      << "#include <cinttypes>\n"

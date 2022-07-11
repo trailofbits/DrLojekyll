@@ -1,0 +1,10 @@
+
+#import "llvm.dr".
+
+#message call(Function F_from, Function F_to)
+    : module(M)
+    , module_function(M, F_to)
+    , function_use(F_to, Use_of_F_to)
+    , instruction_user(I_call, Use_of_F_to)
+    , instruction_opcode(I_call, OP_Call)
+    , function_instruction(F_from, I_call).

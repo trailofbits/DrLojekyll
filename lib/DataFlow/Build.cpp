@@ -1812,7 +1812,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
       assert(pred.IsNegated());
       const auto decl = ParsedDeclaration::Of(pred);
       if (decl.IsFunctor()) {
-        assert(!pred.IsNegatedWithNever());
+        assert(pred.IsNegatedWithNever());
         context.functors.push_back(pred);
       } else if (pred.Arity()) {
         context.negated_predicates.push_back(pred);

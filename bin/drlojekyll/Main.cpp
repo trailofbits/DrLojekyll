@@ -55,6 +55,7 @@ namespace {
 static unsigned gFirstId = 0u;
 static std::string gDatabaseName = "datalog";
 static bool gHasDatabaseName = false;
+static bool gGenerateServiceCode = false;
 static const char *gCxxOutDir = nullptr;
 static const char *gPyOutDir = nullptr;
 
@@ -194,7 +195,7 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
       gIRStream->Flush();
     }
 
-    if (gCxxOutDir || gPyOutDir) {
+    if ((gCxxOutDir || gPyOutDir) && gGenerateServiceCode) {
       if (auto ret = GenerateFlatBufferOutput(parser, fb_schema, error_log)) {
         return ret;
       }
@@ -212,22 +213,24 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
           (dir / (gDatabaseName + ".interface.h")).generic_string());
       hyde::cxx::GenerateInterfaceCode(*program_opt, interface_fs.os);
 
-      hyde::FileStream server_fs(
-          display_manager,
-          (dir / (gDatabaseName + ".server.cpp")).generic_string());
+      if (gGenerateServiceCode) {
+        hyde::FileStream server_fs(
+            display_manager,
+            (dir / (gDatabaseName + ".server.cpp")).generic_string());
 
-      hyde::cxx::GenerateServerCode(*program_opt, server_fs.os);
+        hyde::cxx::GenerateServerCode(*program_opt, server_fs.os);
 
-      hyde::FileStream client_h_fs(
-          display_manager,
-          (dir / (gDatabaseName + ".client.h")).generic_string());
+        hyde::FileStream client_h_fs(
+            display_manager,
+            (dir / (gDatabaseName + ".client.h")).generic_string());
 
-      hyde::FileStream client_cpp_fs(
-          display_manager,
-          (dir / (gDatabaseName + ".client.cpp")).generic_string());
+        hyde::FileStream client_cpp_fs(
+            display_manager,
+            (dir / (gDatabaseName + ".client.cpp")).generic_string());
 
-      hyde::cxx::GenerateClientCode(*program_opt, client_h_fs.os,
-                                    client_cpp_fs.os);
+        hyde::cxx::GenerateClientCode(*program_opt, client_h_fs.os,
+                                      client_cpp_fs.os);
+      }
     }
 
     if (gPyOutDir) {
@@ -508,6 +511,10 @@ extern "C" int main(int argc, const char *argv[]) {
         std::filesystem::path path(argv[i]);
         parser.AddModuleSearchPath(std::move(path));
       }
+
+    // Generate service code.
+    } else if (!strcmp(argv[i], "--service") || !strcmp(argv[i], "-service")) {
+      hyde::gGenerateServiceCode = true;
 
     // Help message :-)
     } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-help") ||

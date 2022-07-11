@@ -1543,6 +1543,19 @@ bool ParsedForeignType::IsReferentiallyTransparent(
   }
 }
 
+// Returns `true` if the representation of this foreign type in the target
+// language `lang` is nullable, i.e. if there exists in the space of types a
+// value that is distinguished and implicitly converted in the target language
+// as Boolean false.
+bool ParsedForeignType::IsNullable(Language lang_) const noexcept {
+  if (impl->is_enum || impl->is_built_in) {
+    return false;
+  } else {
+    const auto lang = static_cast<unsigned>(lang_);
+    return impl->info[lang].is_nullable;
+  }
+}
+
 // Return the prefix and suffix for construction for this language.
 std::optional<std::pair<std::string_view, std::string_view>>
 ParsedForeignType::Constructor(Language lang_) const noexcept {

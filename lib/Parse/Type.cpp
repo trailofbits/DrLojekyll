@@ -99,6 +99,37 @@ bool TypeLoc::IsReferentiallyTransparent(const ParsedModule &module,
   return false;
 }
 
+// Does the value type admit a designated null value, or do we need to wrap
+// it in something else, e.g. `std::optional`.
+bool TypeLoc::IsNullable(const ParsedModule &module,
+                         Language lang) const noexcept {
+  switch (UnderlyingKind()) {
+    case TypeKind::kInvalid: return false;
+    case TypeKind::kBoolean:
+    case TypeKind::kSigned8:
+    case TypeKind::kSigned16:
+    case TypeKind::kSigned32:
+    case TypeKind::kSigned64:
+    case TypeKind::kUnsigned8:
+    case TypeKind::kUnsigned16:
+    case TypeKind::kUnsigned32:
+    case TypeKind::kUnsigned64:
+    case TypeKind::kFloat:
+    case TypeKind::kDouble:
+    case TypeKind::kBytes:
+      return false;
+    case TypeKind::kForeignType: {
+      if (auto type = module.ForeignType(Kind())) {
+        return type->IsNullable(lang);
+      } else {
+        assert(false);
+        return false;
+      }
+    }
+  }
+  return false;
+}
+
 std::string_view TypeLoc::Spelling(const ParsedModule &module) const {
   if (auto ty = module.ForeignType(kind)) {
     return ty->NameAsString();

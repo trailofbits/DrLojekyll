@@ -1,7 +1,7 @@
 # Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
 function(compile_datalog)
-  set(one_val_args LIBRARY_NAME SERVICE_NAME DATABASE_NAME CXX_OUTPUT_DIR
+  set(one_val_args LIBRARY_NAME CLIENT_NAME SERVER_NAME DATABASE_NAME CXX_OUTPUT_DIR
                    PY_OUTPUT_DIR DOT_OUTPUT_FILE DR_OUTPUT_FILE IR_OUTPUT_FILE
                    DRLOJEKYLL_CC DRLOJEKYLL_RT FB_OUTPUT_FILE WORKING_DIRECTORY
                    FIRST_ID)
@@ -66,16 +66,10 @@ function(compile_datalog)
   # Output directory in which C++ code is placed.
   if(DR_CXX_OUTPUT_DIR)
     list(APPEND dr_args -cpp-out "${DR_CXX_OUTPUT_DIR}")
-
+    
     set(dr_cxx_output_files
-      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.server.cpp"
-      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.cpp"
-      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.h"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.interface.h"
-      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.db.h"
-      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}_generated.h"
-      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.grpc.fb.h"
-      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.grpc.fb.cc")
+      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.db.h")
   else()
     set(dr_cxx_output_files "")
   endif()
@@ -141,9 +135,33 @@ function(compile_datalog)
     endif()
   endforeach(source_file)
   
-  if(DR_LIBRARY_NAME OR DR_SERVICE_NAME)
+  # Looks like we need to generate client/server service code.
+  if(NOT "x${DR_CLIENT_NAME}${DR_SERVER_NAME}x" STREQUAL "xx")
     find_package(gRPC CONFIG REQUIRED)
     find_package(Flatbuffers CONFIG REQUIRED)
+
+    list(APPEND dr_args -service)
+
+    list(APPEND DR_LIBRARIES
+      gRPC::gpr
+      gRPC::upb
+      gRPC::grpc
+      gRPC::grpc++
+      flatbuffers::flatbuffers)
+    
+    set(dr_cxx_client_service_files
+      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}_generated.h"
+      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.cpp"
+      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.h")
+
+    set(dr_cxx_server_service_files
+      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.server.cpp"
+      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.grpc.fb.h"
+      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.grpc.fb.cc")
+
+    list(APPEND dr_cxx_output_files
+      ${dr_cxx_client_service_files}
+      ${dr_cxx_server_service_files})
   endif()
 
   add_custom_command(
@@ -173,8 +191,6 @@ function(compile_datalog)
   
   set(runtime_libs
     ${DR_DRLOJEKYLL_RT}
-    gRPC::gpr gRPC::upb gRPC::grpc gRPC::grpc++
-    flatbuffers::flatbuffers
     ${DR_LIBRARIES}
   )
   
@@ -190,23 +206,19 @@ function(compile_datalog)
     if(NOT DR_CXX_OUTPUT_DIR)
       message(FATAL_ERROR "CXX_OUTPUT_DIR argument to compile_datalog is required when using LIBRARY_NAME")
     endif()
-      
-    add_library("${DR_LIBRARY_NAME}" STATIC
-      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.db.h"
-      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}_generated.h"
-      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.cpp"
-      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.client.h")
+    
+    add_library("${DR_LIBRARY_NAME}" INTERFACE
+      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.db.h")
     
     add_dependencies("${DR_LIBRARY_NAME}"
       "${target_base}_outputs")
 
-    target_link_libraries("${DR_LIBRARY_NAME}" PUBLIC
+    target_link_libraries("${DR_LIBRARY_NAME}" INTERFACE
       ${runtime_libs})
 
     target_include_directories("${DR_LIBRARY_NAME}"
-      PUBLIC
+      INTERFACE
         $<BUILD_INTERFACE:${DR_CXX_OUTPUT_DIR}>
-      PRIVATE
         $<BUILD_INTERFACE:${DR_WORKING_DIRECTORY}>
         ${DR_INCLUDE_DIRECTORIES})
   
@@ -214,23 +226,48 @@ function(compile_datalog)
   
   # Generate an executable that we can set up as a standalone service that will
   # run the database as a server.
-  if(DR_SERVICE_NAME)
+  if(NOT "x${DR_CLIENT_NAME}x" STREQUAL "xx")
+    if(NOT DR_CXX_OUTPUT_DIR)
+      message(FATAL_ERROR "CXX_OUTPUT_DIR argument to compile_datalog is required when using LIBRARY_NAME")
+    endif()
+    
+    add_library("${DR_CLIENT_NAME}" STATIC
+      ${dr_cxx_client_service_files})
+    
+    add_dependencies("${DR_CLIENT_NAME}"
+      "${target_base}_outputs")
 
-    add_executable("${DR_SERVICE_NAME}"
+    target_link_libraries("${DR_CLIENT_NAME}"
+      PUBLIC
+        "${DR_LIBRARY_NAME}"
+        ${runtime_libs})
+
+    target_include_directories("${DR_CLIENT_NAME}"
+      PRIVATE
+        $<BUILD_INTERFACE:${DR_CXX_OUTPUT_DIR}>
+        $<BUILD_INTERFACE:${DR_WORKING_DIRECTORY}>
+        ${DR_INCLUDE_DIRECTORIES})
+  endif()
+  
+  # Generate an executable that we can set up as a standalone service that will
+  # run the database as a server.
+  if(NOT "x${DR_SERVER_NAME}x" STREQUAL "xx")
+
+    add_executable("${DR_SERVER_NAME}"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.server.cpp"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.grpc.fb.h"
       "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.grpc.fb.cc")
 
-    add_dependencies("${DR_SERVICE_NAME}"
+    add_dependencies("${DR_SERVER_NAME}"
       "${target_base}_outputs")
 
-    target_include_directories("${DR_SERVICE_NAME}"
+    target_include_directories("${DR_SERVER_NAME}"
       PRIVATE
         $<BUILD_INTERFACE:${DR_CXX_OUTPUT_DIR}>
         $<BUILD_INTERFACE:${DR_WORKING_DIRECTORY}>
         ${DR_INCLUDE_DIRECTORIES})
 
-    target_link_libraries("${DR_SERVICE_NAME}" PRIVATE
+    target_link_libraries("${DR_SERVER_NAME}" PRIVATE
       ${runtime_libs})
   endif()
   

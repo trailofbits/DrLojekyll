@@ -328,6 +328,10 @@ OutputStream &operator<<(OutputStream &os, ParsedForeignType type) {
       os << " @transparent";
     }
 
+    if (type.IsNullable(lang)) {
+      os << " @nullable";
+    }
+
     os << '.';
   }
   return os;

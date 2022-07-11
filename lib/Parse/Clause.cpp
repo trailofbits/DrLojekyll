@@ -233,18 +233,18 @@ void ParserImpl::ParseClause(ParsedModuleImpl *module,
   auto link_pred = [&](void) {
     assert(pred_decl != nullptr);
 
-    if (negation_tok.IsValid() &&
-        negation_tok.Lexeme() == Lexeme::kPragmaPerfNever) {
-      if (pred_decl->context->kind == DeclarationKind::kFunctor) {
-        context->error_log.Append(
-            scope_range, ParsedPredicate(pred).SpellingRange())
-            << "Functor applications cannot be negated with '@never'";
+    if (pred_decl->context->kind == DeclarationKind::kFunctor &&
+        negation_tok.IsValid() &&
+        negation_tok.Lexeme() != Lexeme::kPragmaPerfNever) {
+      context->error_log.Append(
+          scope_range, negation_tok.SpellingRange())
+          << "Functor applications must be negated with '@never', not with '!'.";
 
-      } else if (pred->argument_uses.Empty()) {
-        context->error_log.Append(
-            scope_range, ParsedPredicate(pred).SpellingRange())
-            << "Zero-argument predicates cannot be negated with '@never'";
-      }
+    } else if (pred_decl->parameters.Empty() &&
+               negation_tok.Lexeme() == Lexeme::kPragmaPerfNever) {
+      context->error_log.Append(
+          scope_range, negation_tok.SpellingRange())
+          << "Zero-argument predicates cannot be negated with '@never'";
     }
 
     if (!pred) {

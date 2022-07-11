@@ -782,9 +782,11 @@ void GenerateServerCode(const Program &program, OutputStream &os) {
      << "#include <flatbuffers/flatbuffers.h>\n"
      << "#include <glog/logging.h>\n"
      << "#include <gflags/gflags.h>\n\n"
-     << "#include \"" << file_name << "_generated.h\"\n"
-     << "#include \"" << file_name << ".grpc.fb.h\"\n"
-     << "#include \"" << file_name << ".interface.h\"\n"
+     << "#if __has_include(\"" << file_name << "_generated.h\")\n"
+     << "# include \"" << file_name << "_generated.h\"\n"
+     << "# include \"" << file_name << ".grpc.fb.h\"\n"
+     << "# include \"" << file_name << ".interface.h\"\n"
+     << "#endif\n\n"
      << "#include \"" << file_name << ".db.h\"\n\n";
 
   for (auto code : inlines) {

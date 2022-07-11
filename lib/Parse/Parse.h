@@ -503,6 +503,7 @@ class ParsedForeignTypeImpl : public Def<ParsedForeignTypeImpl>, public User {
     bool can_override{true};
     bool is_present{false};
     bool is_transparent{false};
+    bool is_nullable{false};
     std::unique_ptr<UseList<ParsedForeignConstantImpl>> constants;
   } info[kNumLanguages];
 };

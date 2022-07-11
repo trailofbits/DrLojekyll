@@ -994,6 +994,12 @@ class ParsedForeignType : public Node<ParsedForeignType, ParsedForeignTypeImpl> 
   // identity. This is the case for trivial types, e.g. integers.
   bool IsReferentiallyTransparent(Language lang) const noexcept;
 
+  // Returns `true` if the representation of this foreign type in the target
+  // language `lang` is nullable, i.e. if there exists in the space of types a
+  // value that is distinguished and implicitly converted in the target language
+  // as Boolean false.
+  bool IsNullable(Language lang) const noexcept;
+
   // Return the prefix and suffix for construction for this language.
   std::optional<std::pair<std::string_view, std::string_view>>
   Constructor(Language lang) const noexcept;
