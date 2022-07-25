@@ -82,7 +82,6 @@ Another common pattern is to use `#epilogue` code to embed self-tests.
 code_data: "```" <anything...> "```" ;
 code_data: "```c++" <anything...> "```" ;
 code_data: "```python" <anything...> "```" ;
-code_data: "```flat" <anything...> "```" ;
 code_data: <double quoted string literal> ;
 
 cxx_target: "server" ":" ;
@@ -94,7 +93,6 @@ cxx_inline_stage: cxx_target "prologue" ;
 cxx_inline_stage: cxx_target "epiogue" ;
 
 inline_stage: "c++" ":" cxx_inline_stage ;
-inline_stage: "flat" ":" flat_inline_stage ;
 inline_stage: "python" ":" py_inline_stage ;
 
 // Inline code statements to be emitted to the generated code.

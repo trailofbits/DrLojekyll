@@ -259,18 +259,16 @@ enum class Lexeme : uint8_t {
   kLiteralTrue,
   kLiteralFalse,
 
-  // Literal C/C++, Python, or FlatBuffer code. Looks like:
+  // Literal C/C++, Python code. Looks like:
   //
   //      ```<lang> stuff here```
   //
   // For example:
   //      ```python <code>```
   //      ```c++ <code>```
-  //      ```flat <code>```
   kLiteralCode,
   kLiteralCxxCode,
   kLiteralPythonCode,
-  kLiteralFlatBufferCode,
 
   // Identifiers, e.g. for atoms, functors, messages, etc.
   kIdentifierAtom,

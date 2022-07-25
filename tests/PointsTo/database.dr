@@ -8,11 +8,6 @@
 #foreign Allocation ```c++ uint32_t``` @transparent.
 #foreign Field ```c++ uint32_t``` @transparent.
 
-#foreign Variable ```flat uint32``` @transparent.
-#foreign Allocation ```flat uint32``` @transparent.
-#foreign Field ```flat uint32``` @transparent.
-
-
 #message load(Variable Base, Variable Dest, Field AccessedField).
 #message assign_alloc(Variable Var, Allocation Heap).
 #message primitive_assign(Variable Source, Variable Dest).

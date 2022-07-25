@@ -246,4 +246,8 @@ class LLVMInterface {
 
   static bool instruction_successor_bb(llvm::Instruction *I_from,
                                        llvm::Instruction *I_to);
+
+
+  static bool instruction_dominators_bb(llvm::Instruction *I_dominator,
+                                        llvm::Instruction *I_dominated);
 };

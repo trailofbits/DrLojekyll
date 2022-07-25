@@ -14,16 +14,6 @@
 #include <drlojekyll/Parse/Parser.h>
 #include <drlojekyll/Version/Version.h>
 
-#if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wconversion"
-#endif
-#include <flatbuffers/flatc.h>
-#include <flatbuffers/util.h>
-#if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic pop
-#endif
-
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
@@ -55,113 +45,12 @@ namespace {
 static unsigned gFirstId = 0u;
 static std::string gDatabaseName = "datalog";
 static bool gHasDatabaseName = false;
-static bool gGenerateServiceCode = false;
 static const char *gCxxOutDir = nullptr;
 static const char *gPyOutDir = nullptr;
 
 static OutputStream *gDOTStream = nullptr;
 static OutputStream *gDRStream = nullptr;
-static OutputStream *gFlatCodeStream = nullptr;
 static OutputStream *gIRStream = nullptr;
-
-// Generate a flatbuffer schema in memory.
-static void GenerateFlatBufferSchema(
-    DisplayManager display_manager, Program program,
-    std::string *schema) {
-  if (!schema->empty()) {
-    return;
-  }
-
-  std::stringstream fb_ss;
-  hyde::OutputStream fb_os(display_manager, fb_ss);
-  fb_os.SetIndentSize(2u);
-  flat::GenerateInterfaceCode(program, fb_os);
-  fb_os.Flush();
-  fb_ss.str().swap(*schema);
-}
-
-// Run the FlatBuffers parser and compiler to emit C++ and Python code.
-static int GenerateFlatBufferOutput(const Parser &dr_parser,
-                                    const std::string &schema,
-                                    ErrorLog error_log) {
-
-  flatbuffers::IDLOptions opts;
-  opts.generate_all = true;
-  opts.cpp_static_reflection = true;
-  opts.cpp_std = "C++17";
-  opts.lang_to_generate = flatbuffers::IDLOptions::kCpp |
-                          flatbuffers::IDLOptions::kPython;
-  opts.generate_name_strings = true;
-  opts.mini_reflect = flatbuffers::IDLOptions::kTypesAndNames;
-
-  // If we have an include inside of a FlatBuffer `#prologue`, then don't
-  // generate code for that.
-  opts.generate_all = false;
-
-  flatbuffers::Parser parser(opts);
-
-  std::vector<std::string> include_dirs;
-  std::vector<const char *> include_dirs_cstrs;
-  for (auto path : dr_parser.SearchPaths()) {
-    include_dirs.emplace_back(path.generic_string());
-  }
-  for (const auto &path : include_dirs) {
-    include_dirs_cstrs.emplace_back(path.c_str());
-  }
-  include_dirs_cstrs.push_back(nullptr);
-
-  std::string source_file_name = gDatabaseName + ":in-memory.fbs";
-
-  auto ret = parser.Parse(schema.c_str(), &(include_dirs_cstrs[0]),
-                          source_file_name.c_str());
-
-  if (!ret) {
-    error_log.Append()
-        << parser.error_;
-    return EXIT_FAILURE;
-  }
-
-  if (gCxxOutDir) {
-    auto out_dir = std::filesystem::path(std::string(gCxxOutDir) + "/").lexically_normal().generic_string();
-    auto ret1 = flatbuffers::GenerateCPP(parser, out_dir.c_str(),
-                                         gDatabaseName);
-    auto ret2 = flatbuffers::GenerateCppGRPC(parser, out_dir.c_str(),
-                                             gDatabaseName);
-    assert(ret1);
-    assert(ret2);
-    (void) ret1; (void) ret2;
-  }
-
-  if (gPyOutDir) {
-    auto out_dir = std::filesystem::path(std::string(gPyOutDir) + "/").lexically_normal();
-    auto out_dir_str = out_dir.generic_string();
-
-    // The Python codegen for FlatBuffer gRPC stuff needs to execute in the
-    // target working directory.
-    const auto current_dir = std::filesystem::current_path();
-    std::filesystem::current_path(out_dir);
-
-    // If `#database` is manually specified, then this'll introduce a Python
-    // module.
-    if (gHasDatabaseName) {
-      std::filesystem::create_directories(gDatabaseName);
-    }
-
-    parser.opts.generate_object_based_api = true;
-    auto ret1 = flatbuffers::GeneratePython(parser, out_dir_str.c_str(),
-                                            gDatabaseName);
-
-    auto ret2 = flatbuffers::GeneratePythonGRPC(parser, out_dir_str.c_str(),
-                                                gDatabaseName);
-
-    std::filesystem::current_path(current_dir);
-    assert(ret1);
-    assert(ret2);
-    (void) ret1; (void) ret2;
-  }
-
-  return EXIT_SUCCESS;
-}
 
 static int CompileModule(const Parser &parser, DisplayManager display_manager,
                          ErrorLog error_log, ParsedModule module) {
@@ -179,26 +68,9 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
       return EXIT_FAILURE;
     }
 
-    if (gCxxOutDir || gPyOutDir || gFlatCodeStream) {
-      GenerateFlatBufferSchema(
-          display_manager, *program_opt, &fb_schema);
-
-      // FlatBuffer schema output.
-      if (gFlatCodeStream) {
-        (*gFlatCodeStream) << fb_schema;
-        gFlatCodeStream->Flush();
-      }
-    }
-
     if (gIRStream) {
       (*gIRStream) << *program_opt;
       gIRStream->Flush();
-    }
-
-    if ((gCxxOutDir || gPyOutDir) && gGenerateServiceCode) {
-      if (auto ret = GenerateFlatBufferOutput(parser, fb_schema, error_log)) {
-        return ret;
-      }
     }
 
     if (gCxxOutDir) {
@@ -212,25 +84,6 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
           display_manager,
           (dir / (gDatabaseName + ".interface.h")).generic_string());
       hyde::cxx::GenerateInterfaceCode(*program_opt, interface_fs.os);
-
-      if (gGenerateServiceCode) {
-        hyde::FileStream server_fs(
-            display_manager,
-            (dir / (gDatabaseName + ".server.cpp")).generic_string());
-
-        hyde::cxx::GenerateServerCode(*program_opt, server_fs.os);
-
-        hyde::FileStream client_h_fs(
-            display_manager,
-            (dir / (gDatabaseName + ".client.h")).generic_string());
-
-        hyde::FileStream client_cpp_fs(
-            display_manager,
-            (dir / (gDatabaseName + ".client.cpp")).generic_string());
-
-        hyde::cxx::GenerateClientCode(*program_opt, client_h_fs.os,
-                                      client_cpp_fs.os);
-      }
     }
 
     if (gPyOutDir) {
@@ -239,22 +92,13 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
         dir /= gDatabaseName;
       }
 
-      hyde::FileStream interface_fs(
+      hyde::FileStream db_fs(
           display_manager,
           (dir / "__init__.py").generic_string());
-      hyde::python::GenerateInterfaceCode(*program_opt, interface_fs.os);
+      db_fs.os.SetIndentSize(4u);
+      hyde::python::GenerateDatabaseCode(*program_opt, db_fs.os);
     }
 
-//        if (gPyCodeStream) {
-//          gPyCodeStream->SetIndentSize(4u);
-//          hyde::python::GenerateDatabaseCode(*program_opt, *gPyCodeStream);
-//        }
-//
-//        if (gPyInterfaceCodeStream) {
-//          gPyInterfaceCodeStream->SetIndentSize(4u);
-//          hyde::python::GenerateInterfaceCode(*program_opt,
-//                                              *gPyInterfaceCodeStream);
-//        }
   } catch (...) {
     ret = EXIT_FAILURE;
   }
@@ -340,7 +184,6 @@ static int HelpMessage(const char *argv[]) {
       << "  -ir-out <PATH>            Emit IR output to PATH." << std::endl
       << "  -cpp-out <DIR>            Emit transpiled C++ output files into DIR." << std::endl
       << "  -py-out <DIR>             Emit transpiled Python output files into DIR." << std::endl
-      << "  -flat-out <PATH>          Emit a FlatBuffer schema to PATH." << std::endl
       << "  -dr-out <PATH>            Emit an amalgamation of all the input and transitively." << std::endl
       << "                            imported modules to PATH." << std::endl
       << "  -dot-out <PATH>           Emit the data flow graph in GraphViz DOT format to PATH." << std::endl
@@ -391,8 +234,6 @@ static int VersionMessage(void) {
 }  // namespace hyde
 
 extern "C" int main(int argc, const char *argv[]) {
-  // Prevent Appveyor-CI hangs.
-  flatbuffers::SetupDefaultCRTReportMode();
 
   hyde::DisplayManager display_manager;
   hyde::ErrorLog error_log(display_manager);
@@ -436,19 +277,6 @@ extern "C" int main(int argc, const char *argv[]) {
             << "' must be followed by a directory path for Python code output";
       } else {
         hyde::gPyOutDir = argv[i];
-      }
-
-    } else if (!strcmp(argv[i], "-flat-out") ||
-               !strcmp(argv[i], "--flat-out")) {
-      ++i;
-      if (i >= argc) {
-        error_log.Append()
-            << "Command-line argument '" << argv[i - 1]
-            << "' must be followed by a file path for FlatBuffer "
-            << "schema output";
-      } else {
-        fb_out.reset(new hyde::FileStream(display_manager, argv[i]));
-        hyde::gFlatCodeStream = &(fb_out->os);
       }
 
     } else if (!strcmp(argv[i], "-ir-out") || !strcmp(argv[i], "--ir-out")) {
@@ -511,10 +339,6 @@ extern "C" int main(int argc, const char *argv[]) {
         std::filesystem::path path(argv[i]);
         parser.AddModuleSearchPath(std::move(path));
       }
-
-    // Generate service code.
-    } else if (!strcmp(argv[i], "--service") || !strcmp(argv[i], "-service")) {
-      hyde::gGenerateServiceCode = true;
 
     // Help message :-)
     } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-help") ||

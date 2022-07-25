@@ -20,8 +20,6 @@ target_link_libraries(drlojekyll PRIVATE
     Parse
     Util
     Version
-
-    flatc_internals
 )
 
 if(DRLOJEKYLL_ENABLE_SANITIZERS)

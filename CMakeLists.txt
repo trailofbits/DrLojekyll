@@ -21,8 +21,6 @@ endif()
 
 defineWarningSilencerTarget()
 
-add_subdirectory("libraries" EXCLUDE_FROM_ALL)
-
 if(DRLOJEKYLL_ENABLE_VENDORED_LIBRARIES)
   add_subdirectory("vendor" EXCLUDE_FROM_ALL)
 endif()
@@ -113,7 +111,7 @@ target_compile_options(settings_private INTERFACE ${CXX_WARNING_OPTIONS})
 
 if(WARNINGS_AS_ERRORS)
     target_compile_options(settings_private INTERFACE ${CXX_WARNINGS_AS_ERRORS_OPTION})
-endif()
+endif(WARNINGS_AS_ERRORS)
 
 # sanitizer settings -------------------------
 if(DRLOJEKYLL_ENABLE_SANITIZERS)
@@ -124,7 +122,7 @@ if(DRLOJEKYLL_ENABLE_SANITIZERS)
         OPTIONS
             -fsanitize-address-use-after-scope
     )
-endif()
+endif(DRLOJEKYLL_ENABLE_SANITIZERS)
 
 # fuzzer settings ----------------------------
 if(DRLOJEKYLL_ENABLE_LIBFUZZER)
@@ -141,7 +139,7 @@ if(DRLOJEKYLL_ENABLE_LIBFUZZER)
 
     # make a `settings_fuzz_target` library that enables `-fsanitize=fuzzer`
     add_sanitizer_settings(settings_fuzz_target SANITIZERS fuzzer)
-endif()
+endif(DRLOJEKYLL_ENABLE_LIBFUZZER)
 
 if(DRLOJEKYLL_ENABLE_INSTALL)
   if(DRLOJEKYLL_ENABLE_SANITIZERS)
@@ -149,13 +147,13 @@ if(DRLOJEKYLL_ENABLE_INSTALL)
       TARGETS drlojekyll_sanitizers
       EXPORT "${PROJECT_NAME}Targets"
   )
-  endif()
+  endif(DRLOJEKYLL_ENABLE_SANITIZERS)
   
   install(
       TARGETS settings_public settings_private
       EXPORT "${PROJECT_NAME}Targets"
   )
-endif()
+endif(DRLOJEKYLL_ENABLE_INSTALL)
 
 # --------------------------------------------
 # targets ------------------------------------
@@ -169,8 +167,8 @@ add_subdirectory(bin)
 
 if(DRLOJEKYLL_ENABLE_LIBFUZZER)
   add_subdirectory(fuzz)
-endif()
+endif(DRLOJEKYLL_ENABLE_LIBFUZZER)
 
 if(DRLOJEKYLL_ENABLE_TESTS)
   add_subdirectory(tests)
-endif()
+endif(DRLOJEKYLL_ENABLE_TESTS)

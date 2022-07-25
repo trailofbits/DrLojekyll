@@ -5,12 +5,14 @@
 #inline(c++:database:prologue) ```c++
 
 #include <filesystem>
+
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
 
+#include <llvm/Analysis/MemoryLocation.h>
 ```.
 
 #foreign Path ```c++ std::filesystem::path``` @transparent.
@@ -23,6 +25,7 @@
 #foreign Variable ```c++ llvm::GlobalVariable *``` @transparent @nullable.
 #foreign Alias ```c++ llvm::GlobalAlias *``` @transparent @nullable.
 #foreign Use ```c++ llvm::Use *``` @transparent @nullable.
+#foreign MemoryLocation ```c++ llvm::MemoryLocation``` @transparent.
 
 #foreign OpCode ```c++ unsigned``` @transparent.
 #constant OpCode OP_Ret ```c++ llvm::Instruction::Ret``` @unique.
@@ -140,6 +143,12 @@
 #functor instruction_successor(bound Instruction I_from, free Instruction I_to) @range(*).
 #functor instruction_successor(free Instruction I_from, bound Instruction I_to) @range(*).
 #functor instruction_successor(bound Instruction I_from, bound Instruction I_to) @range(?).
+
+;#functor instruction_dominates(bound Instruction I_dominator, free Instruction I_dominated) @range(*).
+;#functor instruction_dominates(bound Instruction I_dominator, bound Instruction I_dominated) @range(?).
+
+;#functor instruction_post_dominates(bound Instruction I, free Instruction I_dom) @range(*).
+;#functor instruction_post_dominates(bound Instruction I, bound Instruction I_dom) @range(?).
 
 ; Access the uses of a function.
 #functor function_use(bound Function F, free Use U) @range(*).

@@ -434,7 +434,8 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     const auto functor = region.Functor();
     const auto id = region.Id();
 
-    os << os.Indent() << "::hyde::rt::index_t num_results_" << id << " = 0;\n";
+    os << os.Indent() << "::hyde::rt::index_t num_results_" << id << " = 0;\n"
+       << os.Indent() << "(void) num_results_" << id << ";\n";
 
     auto output_vars = region.OutputVariables();
 
@@ -486,11 +487,9 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
           os << os.Indent() << TypeName(os, module, out_type)
              << " " << Var(os, out_var) << " = ";
           if (!out_type_is_transparent) {
-            os << "storage.Intern(";
-          }
-          os << "std::move(tmp_" << id << ")";
-          if (!out_type_is_transparent) {
-            os << ")";
+            os << "storage.Intern(std::move(tmp_" << id << "))";
+          } else {
+            os << "tmp_" << id;
           }
           os << ";\n";
           do_body();
@@ -512,11 +511,10 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
             os << os.Indent() << TypeName(os, module, out_type)
                << " " << Var(os, out_var) << " = ";
             if (!out_type_is_transparent) {
-              os << "storage.Intern(";
-            }
-            os << "std::move(std::get<" << (out_var_index++) << ">(tmp_" << id << "))";
-            if (!out_type_is_transparent) {
-              os << ")";
+              os << "storage.Intern(std::move(std::get<"
+                 << (out_var_index++) << ">(tmp_" << id << ")))";
+            } else {
+              os << "std::get<" << (out_var_index++) << ">(tmp_" << id << ")";
             }
             os << ";\n";
           }
@@ -565,11 +563,11 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
             os << os.Indent() << TypeName(os, module, out_type)
                << " " << Var(os, out_var) << " = ";
             if (!out_type_is_transparent) {
-              os << "storage.Intern(";
+              os << "storage.Intern(std::move(";
             }
-            os << "std::move(std::get<" << (out_var_index++) << ">(tmp_" << id << "))";
+            os << "std::get<" << (out_var_index++) << ">(tmp_" << id << ")";
             if (!out_type_is_transparent) {
-              os << ")";
+              os << "_)";
             }
             os << ";\n";
           }
@@ -610,15 +608,15 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
           os << os.Indent() << TypeName(os, module, out_type)
              << " " << Var(os, out_var) << " = ";
           if (!out_type_is_transparent) {
-            os << "storage.Intern(";
+            os << "storage.Intern(std::move(";
           }
           if (out_type_is_nullable) {
             os << "tmp_" << id;
           } else {
-            os << "std::move(tmp_" << id << ".value())";
+            os << "tmp_" << id << ".value()";
           }
           if (!out_type_is_transparent) {
-            os << ")";
+            os << "))";
           }
           os << ";\n";
           do_body();
@@ -641,11 +639,11 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
             os << os.Indent() << TypeName(os, module, out_type)
                << " " << Var(os, out_var) << " = ";
             if (!out_type_is_transparent) {
-              os << "storage.Intern(";
+              os << "storage.Intern(std::move(";
             }
-            os << "std::move(std::get<" << (out_var_index++) << ">(tmp_" << id << "))";
+            os << "std::get<" << (out_var_index++) << ">(tmp_" << id << ")";
             if (!out_type_is_transparent) {
-              os << ")";
+              os << "))";
             }
             os << ";\n";
           }
@@ -1725,9 +1723,6 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
      << "#pragma once\n\n"
      << "#define DRLOJEKYLL_DATABASE_CODE\n\n"
      << "#include <drlojekyll/Runtime/Runtime.h>\n\n"
-     << "#if __has_include(\"" << file_name << "_generated.h\")\n"
-     << "# include \"" << file_name << "_generated.h\"\n"
-     << "#endif\n\n"
      << "#include <algorithm>\n"
      << "#include <cstdio>\n"
      << "#include <cinttypes>\n"
@@ -1803,7 +1798,7 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
      << "\n";
 
   for (auto table : program.Tables()) {
-    os << os.Indent() << "::hyde::rt::Table<StorageT, " << table.Id() << "> "
+    os << os.Indent() << "::hyde::Table<StorageT, " << table.Id() << "> "
        << Table(os, table) << ";\n";
   }
 

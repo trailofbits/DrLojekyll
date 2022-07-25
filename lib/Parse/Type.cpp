@@ -81,8 +81,7 @@ bool TypeLoc::IsReferentiallyTransparent(const ParsedModule &module,
     case TypeKind::kBytes:
       if (Language::kPython == lang) {
         return true;
-      } else if (Language::kCxx == lang ||
-                 Language::kFlatBuffer == lang) {
+      } else if (Language::kCxx == lang) {
         return false;
       } else {
         return false;

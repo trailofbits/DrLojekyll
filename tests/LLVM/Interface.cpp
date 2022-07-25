@@ -3,12 +3,15 @@
 #include "Interface.h"
 
 #include <cstdlib>
+#include <unordered_map>
 #include <vector>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wold-style-cast"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wunused-variable"
+#include <llvm/IR/Dominators.h>
+#include <llvm/Analysis/PostDominators.h>
 #include <llvm/IRReader/IRReader.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/Error.h>
@@ -103,4 +106,9 @@ llvm::Module *LLVMInterface::load_module_bf(
 
   impl->modules.emplace_back(std::move(module));
   return impl->modules.back().get();
+}
+
+bool LLVMInterface::instruction_dominators_bb(llvm::Instruction *I_dominator,
+                                              llvm::Instruction *I_dominated) {
+
 }

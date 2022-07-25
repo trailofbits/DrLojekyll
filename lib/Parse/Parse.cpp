@@ -1352,7 +1352,6 @@ std::string ParsedDatabaseName::NamespaceName(Language lang) const noexcept {
       next_sep = "::";
       break;
     case Language::kPython:
-    case Language::kFlatBuffer:
       next_sep = ".";
       break;
     case Language::kUnknown:

@@ -8,14 +8,6 @@ namespace hyde {
 namespace {
 
 static const std::unordered_set<std::string> kValidStages{
-  "c++:client:interface:prologue",
-  "c++:client:interface:prologue:namespace",
-  "c++:client:interface:epilogue:namespace",
-  "c++:client:interface:epilogue",
-  "c++:client:database:prologue",
-  "c++:client:database:prologue:namespace",
-  "c++:client:database:epilogue:namespace",
-  "c++:client:database:epilogue",
   "c++:database:descriptors:prologue",
   "c++:database:descriptors:epilogue",
   "c++:database:functors:prologue",
@@ -36,23 +28,6 @@ static const std::unordered_set<std::string> kValidStages{
   "c++:interface:prologue:namespace",
   "c++:interface:epilogue:namespace",
   "c++:interface:epilogue",
-  "c++:server:prologue",
-  "c++:server:prologue:namespace",
-  "c++:server:epilogue:namespace",
-  "c++:server:epilogue",
-  "c++:server:prologue:main",
-  "c++:server:epilogue:main",
-  "flat:interface:service:prologue",
-  "flat:interface:service:epilogue",
-  "flat:interface:prologue",
-  "flat:interface:prologue:namespace",
-  "flat:interface:enums:prologue",
-  "flat:interface:enums:epilogue",
-  "flat:interface:messages:prologue",
-  "flat:interface:messages:epilogue",
-  "flat:interface:queries:prologue",
-  "flat:interface:queries:epilogue",
-  "flat:interface:epilogue:namespace",
   "python:database:prologue",
   "python:database:epilogue",
 };
@@ -179,15 +154,6 @@ void ParserImpl::ParseInlineCode(ParsedModuleImpl *module) {
       return;
     }
     language = Language::kPython;
-
-  } else if (Lexeme::kLiteralFlatBufferCode == tok.Lexeme()) {
-    const auto code_id = tok.CodeId();
-    if (!context->string_pool.TryReadCode(code_id, &code) || !fixup_code()) {
-      context->error_log.Append(scope_range, tok_range)
-          << "Empty or invalid FlatBuffer code literal in inline statement";
-      return;
-    }
-    language = Language::kFlatBuffer;
 
   // Parse out a string literal, e.g. `#epilogue "..."`.
   } else if (Lexeme::kLiteralString == tok.Lexeme()) {

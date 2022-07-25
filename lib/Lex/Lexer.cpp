@@ -294,10 +294,6 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
             make_literal(Lexeme::kLiteralPythonCode, 6u);
             return true;
 
-          } else if (!impl->data.find("flat")) {
-            make_literal(Lexeme::kLiteralFlatBufferCode, 4u);
-            return true;
-
           } else {
             make_literal(Lexeme::kLiteralCode, 0u);
             return true;

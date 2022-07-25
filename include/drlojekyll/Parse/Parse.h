@@ -33,7 +33,7 @@ class ParsedClause;
 class ParsedComparison;
 class ParsedPredicate;
 
-enum class Language : unsigned { kUnknown, kCxx, kPython, kFlatBuffer };
+enum class Language : unsigned { kUnknown, kCxx, kPython };
 static constexpr auto kNumLanguages = 4u;
 
 // Represents a literal.
