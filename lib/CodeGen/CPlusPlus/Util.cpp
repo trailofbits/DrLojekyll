@@ -70,7 +70,6 @@ std::string TypeName(ParsedModule module, TypeLoc kind) {
     case TypeKind::kUnsigned64: return "uint64_t";
     case TypeKind::kFloat: return "float";
     case TypeKind::kDouble: return "double";
-    case TypeKind::kBytes: return "::hyde::rt::Bytes";
     case TypeKind::kForeignType:
       if (auto type = module.ForeignType(kind); type) {
         if (type->IsEnum()) {
@@ -86,7 +85,7 @@ std::string TypeName(ParsedModule module, TypeLoc kind) {
         }
       }
       [[clang::fallthrough]];
-    default: assert(false); return "::hyde::rt::Any";
+    default: assert(false); return "<invalid type>";
   }
 }
 
@@ -148,10 +147,6 @@ std::string TypeValueOrDefault(ParsedModule module, TypeLoc loc,
     case TypeKind::kUnsigned64:
     case TypeKind::kFloat:
     case TypeKind::kDouble: default_val = "0"; break;
-
-    // Default constructors
-    case TypeKind::kBytes:
-      break;
     case TypeKind::kForeignType:
       if (auto type = module.ForeignType(loc); type) {
         if (auto constructor = type->Constructor(Language::kCxx); constructor) {

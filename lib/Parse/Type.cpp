@@ -55,7 +55,6 @@ const char *Spelling(TypeKind kind) noexcept {
     case TypeKind::kUnsigned64: return "u64";
     case TypeKind::kFloat: return "f32";
     case TypeKind::kDouble: return "f64";
-    case TypeKind::kBytes: return "bytes";
     case TypeKind::kForeignType: return "<foreign>";
   }
   return "<invalid>";
@@ -78,14 +77,6 @@ bool TypeLoc::IsReferentiallyTransparent(const ParsedModule &module,
     case TypeKind::kFloat:
     case TypeKind::kDouble:
       return true;
-    case TypeKind::kBytes:
-      if (Language::kPython == lang) {
-        return true;
-      } else if (Language::kCxx == lang) {
-        return false;
-      } else {
-        return false;
-      }
     case TypeKind::kForeignType: {
       if (auto type = module.ForeignType(Kind())) {
         return type->IsReferentiallyTransparent(lang);
@@ -115,7 +106,6 @@ bool TypeLoc::IsNullable(const ParsedModule &module,
     case TypeKind::kUnsigned64:
     case TypeKind::kFloat:
     case TypeKind::kDouble:
-    case TypeKind::kBytes:
       return false;
     case TypeKind::kForeignType: {
       if (auto type = module.ForeignType(Kind())) {

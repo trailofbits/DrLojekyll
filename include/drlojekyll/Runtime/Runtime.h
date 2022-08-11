@@ -14,7 +14,6 @@
 #include <vector>
 
 #include "Column.h"
-#include "Bytes.h"
 #include "Endian.h"
 #include "Index.h"
 #include "Int.h"
@@ -25,10 +24,10 @@
 namespace hyde {
 namespace rt {
 
-using index_t = size_t;
+template <typename... T>
+struct Shape {};
 
-// DrLojekyll supported types
-using Any = void;
+using index_t = size_t;
 
 enum class TupleState : uint8_t {
   kAbsent,

@@ -19,237 +19,6 @@ namespace hyde {
 namespace cxx {
 namespace {
 
-// Declare Table Descriptors that contain additional metadata about columns,
-// indexes, and tables. The output of this code looks roughly like this:
-//
-//      template <>
-//      struct ColumnDescriptor<12> {
-//        static constexpr bool kIsNamed = false;
-//        static constexpr unsigned kId = 12;
-//        static constexpr unsigned kTableId = 10;
-//        static constexpr unsigned kOffset = 1;
-//        using Type = uint64_t;
-//      };
-//      template <>
-//      struct IndexDescriptor<141> {
-//        static constexpr unsigned kId = 141;
-//        static constexpr unsigned kTableId = 10;
-//        using Columns = TypeList<KeyColumn<11>, ValueColumn<12>>;
-//        using KeyColumnIds = IdList<11>;
-//        using ValueColumnIds = IdList<12>;
-//      };
-//      template <>
-//      struct TableDescriptor<10> {
-//        using ColumnIds = IdList<11, 12>;
-//        using IndexIds = IdList<141>;
-//        static constexpr unsigned kNumColumns = 2;
-//      };
-//
-// We use the IDs of columns/indices/tables in place of type names so that we
-// can have circular references.
-static void DeclareDescriptors(OutputStream &os, Program program,
-                               ParsedModule module,
-                               const std::vector<ParsedInline> &inlines) {
-
-  for (auto code : inlines) {
-    if (code.Stage() == "c++:database:descriptors:prologue") {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
-
-  // Table and column descriptors
-  os << "namespace hyde::rt {\n";
-  for (auto table : program.Tables()) {
-    for (auto col : table.Columns()) {
-      os << os.Indent() << "template <>\n"
-         << os.Indent() << "struct ColumnDescriptor<" << col.Id() << "> {\n";
-      os.PushIndent();
-      os << os.Indent() << "static constexpr bool kIsNamed = false;\n"
-         << os.Indent() << "static constexpr unsigned kId = " << col.Id()
-         << ";\n"
-         << os.Indent() << "static constexpr unsigned kTableId = " << table.Id()
-         << ";\n"
-         << os.Indent() << "static constexpr unsigned kOffset = " << col.Index()
-         << ";\n"
-         << os.Indent() << "using Type = ";
-
-      TypeLoc col_type(col.Type());
-      os << TypeName(os, module, col_type) << ";\n";
-      os.PopIndent();
-      os << os.Indent() << "};\n";
-    }
-
-    auto sep = "";
-
-    std::vector<DataIndex> indexes;
-    for (DataIndex index : table.Indices()) {
-      indexes.push_back(index);
-    }
-
-    std::sort(indexes.begin(), indexes.end(),
-              [] (DataIndex a, DataIndex b) {
-                return a.ValueColumns().size() < b.ValueColumns().size();
-              });
-
-    unsigned i = 0u;
-    for (auto index : indexes) {
-
-      const auto key_cols = index.KeyColumns();
-      const auto val_cols = index.ValueColumns();
-
-      os << os.Indent() << "template <>\n"
-         << os.Indent() << "struct IndexDescriptor<" << index.Id() << "> {\n";
-      os.PushIndent();
-      os << os.Indent() << "static constexpr unsigned kId = " << index.Id()
-         << ";\n"
-         << os.Indent() << "static constexpr unsigned kTableId = " << table.Id()
-         << ";\n"
-         << os.Indent() << "static constexpr unsigned kOffset = "
-         << (i++) << ";\n"
-         << os.Indent() << "static constexpr unsigned kNumKeyColumns = "
-         << key_cols.size() << ";\n"
-         << os.Indent() << "static constexpr unsigned kNumValueColumns = "
-         << val_cols.size() << ";\n"
-         << os.Indent() << "static constexpr bool kCoversAllColumns = "
-         << (0 == val_cols.size() ? "true" : "false") << ";\n"
-         << os.Indent() << "using Columns = TypeList<";
-
-      // In C++ codegen, the Index knows which columns are keys/values, but they
-      // need to be ordered as they were in the table
-      auto key_col_iter = key_cols.begin();
-      auto val_col_iter = val_cols.begin();
-
-      // Assumes keys and values are sorted by index within their respective lists
-
-      sep = "";
-      while (key_col_iter != key_cols.end() || val_col_iter != val_cols.end()) {
-        os << sep;
-        if (val_col_iter == val_cols.end() ||
-            (key_col_iter != key_cols.end() &&
-             (*key_col_iter).Index() < (*val_col_iter).Index())) {
-          os << "KeyColumn<" << (*key_col_iter).Id() << ">";
-          key_col_iter++;
-        } else {
-          os << "ValueColumn<" << (*val_col_iter).Id() << ">";
-          val_col_iter++;
-        }
-        sep = ", ";
-      }
-
-      os << ">;\n" << os.Indent() << "using KeyColumnIds = IdList<";
-      sep = "";
-      for (auto key_col : key_cols) {
-        os << sep << key_col.Id();
-        sep = ", ";
-      }
-
-      os << ">;\n" << os.Indent() << "using ValueColumnIds = IdList<";
-      sep = "";
-      for (auto val_col : val_cols) {
-        os << sep << val_col.Id();
-        sep = ", ";
-      }
-
-      os << ">;\n"
-         << os.Indent() << "using KeyColumnOffsets = IdList<";
-      sep = "";
-      for (auto key_col : key_cols) {
-        os << sep << key_col.Index();
-        sep = ", ";
-      }
-      os << ">;\n"
-          << os.Indent() << "using ValueColumnOffsets = IdList<";
-       sep = "";
-       for (auto val_col : val_cols) {
-         os << sep << val_col.Index();
-         sep = ", ";
-       }
-       os << ">;\n";
-      os.PopIndent();
-      os << os.Indent() << "};\n";
-    }
-
-    os << os.Indent() << "template <>\n"
-       << os.Indent() << "struct TableDescriptor<" << table.Id() << "> {\n";
-    os.PushIndent();
-
-    // Does this table have an index that fully covers it?
-    os << os.Indent() << "static constexpr bool kHasCoveringIndex = ";
-    for (auto index : table.Indices()) {
-      if (index.ValueColumns().empty()) {
-        os << "true;\n";
-        goto print_rest;
-      }
-    }
-    os << "false;\n";
-
-  print_rest:
-    os << os.Indent() << "using ColumnIds = IdList<";
-    sep = "";
-    for (auto col : table.Columns()) {
-      os << sep << col.Id();
-      sep = ", ";
-    }
-    os << ">;\n" << os.Indent() << "using IndexIds = IdList<";
-    sep = "";
-
-    // Print out the indexes in order of the number of decreasing number of
-    // key columns. Thus, if there's an index over all columns, then it appears
-    // first.
-    assert(!indexes.empty());
-    for (auto index : indexes) {
-      os << sep << index.Id();
-      sep = ", ";
-    }
-    os << ">;\n"
-        << os.Indent() << "static constexpr unsigned kFirstIndexId = "
-        << indexes[0].Id() << ";\n"
-        << os.Indent() << "static constexpr unsigned kNumColumns = "
-        << table.Columns().size() << ";\n";
-
-    os.PopIndent();
-    os << "};\n";
-
-    os << "\n";
-  }
-  os << "}  // namepace hyde::rt\n\n";
-
-  for (auto code : inlines) {
-    if (code.Stage() == "c++:database:descriptors:epilogue") {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
-}
-
-static void DefineGlobal(OutputStream &os, ParsedModule module,
-                         DataVariable global) {
-  TypeLoc type = global.Type();
-
-  os << os.Indent();
-  if (global.IsConstant()) {
-    switch (global.Type().Kind()) {
-      case TypeKind::kBoolean:
-      case TypeKind::kSigned8:
-      case TypeKind::kSigned16:
-      case TypeKind::kSigned32:
-      case TypeKind::kSigned64:
-      case TypeKind::kUnsigned8:
-      case TypeKind::kUnsigned16:
-      case TypeKind::kUnsigned32:
-      case TypeKind::kUnsigned64:
-      case TypeKind::kDouble:
-      case TypeKind::kFloat:
-        os << "static constexpr ";
-        break;
-      default:
-        os << "static const ";
-        break;
-    }
-  }
-
-  os << TypeName(os, module, type) << " " << Var(os, global) << ";\n";
-}
-
 static bool CanInlineDefineConstant(ParsedModule module, DataVariable global) {
   switch (global.DefiningRole()) {
     case VariableRole::kConstantZero:
@@ -261,6 +30,22 @@ static bool CanInlineDefineConstant(ParsedModule module, DataVariable global) {
 
   auto type = global.Type();
   return type.IsReferentiallyTransparent(module, Language::kCxx);
+}
+
+static void DefineGlobal(OutputStream &os, ParsedModule module,
+                         DataVariable global) {
+  TypeLoc type = global.Type();
+
+  os << os.Indent();
+  if (global.IsConstant()) {
+    if (CanInlineDefineConstant(module, global)) {
+      os << "static constexpr ";
+    } else {
+      os << "static const ";
+    }
+  }
+
+  os << TypeName(os, module, type) << " " << Var(os, global) << ";\n";
 }
 
 // Similar to DefineGlobal except has constexpr to enforce const-ness
@@ -283,55 +68,6 @@ static void DefineConstant(OutputStream &os, ParsedModule module,
        << Var(os, global) << ";\n";
   }
 }
-//
-//// We want to enable referential transparency in the code, so that if an Nth
-//// value is produced by some mechanism that is equal to some prior value, then
-//// we replace its usage with the prior value.
-//static void DefineTypeRefResolver(OutputStream &os) {
-//
-//  // Has merge_into method
-//  os << os.Indent() << "template<typename T>\n"
-//     << os.Indent()
-//     << "typename ::hyde::rt::enable_if<::hyde::rt::has_merge_into<T,\n"
-//     << os.Indent() << "         void(T::*)(T &)>::value, T>::type\n"
-//     << os.Indent() << "_resolve(T &obj) {\n";
-//  os.PushIndent();
-//  os << os.Indent() << "auto ref_list = _refs[std::hash<T>(obj)];\n"
-//     << os.Indent() << "for (auto maybe_obj : ref_list) {\n";
-//  os.PushIndent();
-//  os << os.Indent() << "// TODO(ekilmer): This isn't going to work...\n";
-//  os << os.Indent() << "if (&obj == &maybe_obj) {\n";
-//  os.PushIndent();
-//  os << os.Indent() << "return obj;\n";
-//  os.PopIndent();
-//  os << os.Indent() << "} else if (obj == maybe_obj) {\n";
-//  os.PushIndent();
-//  os << os.Indent() << "T prior_obj = static_cast<T>(maybe_obj);\n"
-//     << os.Indent() << "obj.merge_into(prior_obj);\n"
-//     << os.Indent() << "return prior_obj;\n";
-//  os.PopIndent();
-//  os << os.Indent() << "}\n";
-//  os.PopIndent();
-//  os << os.Indent() << "}\n"
-//     << os.Indent() << "ref_list.push_back(obj);\n"
-//     << os.Indent() << "return obj;\n";
-//  os.PopIndent();
-//  os << os.Indent() << "}\n\n";
-//
-//  // Does not have merge_into
-//  os << os.Indent() << "template<typename T>\n"
-//     << os.Indent() << os.Indent() << "auto _resolve(T &&obj) {\n";
-//  os.PushIndent();
-//  os << os.Indent() << "return obj;\n";
-//  os.PopIndent();
-//  os << os.Indent() << "}\n\n";
-//  os << os.Indent() << "template<typename T>\n"
-//     << os.Indent() << os.Indent() << "auto _resolve(T &obj) {\n";
-//  os.PushIndent();
-//  os << os.Indent() << "return obj;\n";
-//  os.PopIndent();
-//  os << os.Indent() << "}\n\n";
-//}
 
 class CPPCodeGenVisitor final : public ProgramVisitor {
  public:
@@ -434,7 +170,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     const auto functor = region.Functor();
     const auto id = region.Id();
 
-    os << os.Indent() << "::hyde::rt::index_t num_results_" << id << " = 0;\n"
+    os << os.Indent() << "size_t num_results_" << id << " = 0;\n"
        << os.Indent() << "(void) num_results_" << id << ";\n";
 
     auto output_vars = region.OutputVariables();
@@ -1028,7 +764,7 @@ class CPPCodeGenVisitor final : public ProgramVisitor {
     os << os.Indent();
 
     auto i = 0u;
-    os << "::hyde::rt::Vector<StorageT";
+    os << "Vector<StorageT";
     for (auto table : region.Tables()) {
       (void) table;
       for (auto var : region.OutputVariables(i++)) {
@@ -1432,9 +1168,9 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
 
   const auto vec_params = proc.VectorParameters();
   const auto var_params = proc.VariableParameters();
+  auto sep = "";
 
   // First, declare all vector parameters.
-  auto sep = "";
   for (auto vec : vec_params) {
     os << sep << "::hyde::rt::Vector<StorageT";
     const auto &col_types = vec.ColumnTypes();
@@ -1462,17 +1198,19 @@ static void DefineProcedure(OutputStream &os, ParsedModule module,
   os << ") {\n";
   os.PushIndent();
 
-  // Define the vectors that will be created and used within this procedure.
+  // Define the vectors that will be created and used within all procedures.
   // These vectors exist to support inductions, joins (pivot vectors), etc.
-  for (auto vec : proc.DefinedVectors()) {
-    os << os.Indent() << "::hyde::rt::Vector<StorageT";
-
-    for (auto type : vec.ColumnTypes()) {
-      auto type_loc = TypeLoc(type);
-      os << ", " << TypeName(os, module, type_loc);
+  // Define the vectors that will be created and used within all procedures.
+  // These vectors exist to support inductions, joins (pivot vectors), etc.
+  for (DataVector vec : proc.DefinedVectors()) {
+    os << os.Indent() << "VectorT " << Vector(os, vec)
+       << "(storage, ::hyde::rt::Shape<";
+    sep = "";
+    for (TypeLoc type : vec.ColumnTypes()) {
+      os << sep << TypeName(os, module, type);
+      sep = ", ";
     }
-
-    os << "> " << Vector(os, vec) << "(storage, " << vec.Id() << "u);\n";
+    os << ">{});";
   }
 
   // Visit the body of the procedure. Procedure bodies are never empty; the
@@ -1511,7 +1249,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
     os << os.Indent() << "template <typename _Generator>\n";
   }
 
-  os << os.Indent() << "::hyde::rt::index_t " << decl.Name() << '_'
+  os << os.Indent() << "size_t " << decl.Name() << '_'
      << decl.BindingPattern() << "(";
 
   auto sep = "";
@@ -1549,7 +1287,7 @@ static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
          << "(storage.Intern(std::move(val_param_" << param.Index() << ")));\n";
     }
   }
-  os << os.Indent() << "::hyde::rt::index_t num_generated = 0;\n"
+  os << os.Indent() << "size_t num_generated = 0;\n"
      << os.Indent() << "(void) num_generated;\n";
 
   if (spec.forcing_function) {
@@ -1778,51 +1516,87 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
     }
   }
 
-  DeclareDescriptors(os, program, module, inlines);
-
   if (!ns_name.empty()) {
     os << "namespace " << ns_name << " {\n";
   }
   // A program gets its own class
-  os << "template <typename StorageT, typename LogT=" << gClassName
-     << "Log<StorageT>, typename FunctorsT=" << gClassName << "Functors<StorageT>>\n";
+  os << "template <typename StorageT, typename LogT, typename FunctorsT>\n";
   os << "class " << gClassName << " {\n";
   os.PushIndent();  // class
 
   os << os.Indent() << "public:\n";
   os.PushIndent();  // public:
 
-  os << os.Indent() << "StorageT &storage;\n"
+  os
+     << os.Indent() << "using TableT = typename StorageT::Table;\n"
+     << os.Indent() << "using IndexT = typename StorageT::Index;\n"
+     << os.Indent() << "using DiffTableT = typename StorageT::DifferentialTable;\n"
+     << os.Indent() << "using VectorT = typename StorageT::Vector;\n\n"
+     << os.Indent() << "StorageT &storage;\n"
      << os.Indent() << "LogT &log;\n"
      << os.Indent() << "FunctorsT &functors;\n"
      << "\n";
 
-  for (auto table : program.Tables()) {
-    os << os.Indent() << "::hyde::Table<StorageT, " << table.Id() << "> "
-       << Table(os, table) << ";\n";
+  for (DataTable table : program.Tables()) {
+    if (table.IsDifferential()) {
+      os << os.Indent() << "DiffTableT " << Table(os, table) << ";\n";
+    } else {
+      os << os.Indent() << "TableT " << Table(os, table) << ";\n";
+    }
+
+    for (DataIndex index : table.Indices()) {
+      os << os.Indent() << "IndexT " << Index(os, index) << ";\n";
+    }
   }
 
   for (auto global : program.GlobalVariables()) {
     DefineGlobal(os, module, global);
   }
+
   os << "\n";
 
-  for (auto constant : program.Constants()) {
+  for (DataVariable constant : program.Constants()) {
     DefineConstant(os, module, constant);
   }
 
   os << "\n"
      << os.Indent() << "explicit " << gClassName
-     << "(StorageT &s, LogT &l, FunctorsT &f)\n";
+     << "(StorageT &storage_, LogT &log_, FunctorsT &functors_)\n";
   os.PushIndent();  // constructor
-  os << os.Indent() << ": storage(s),\n"
-     << os.Indent() << "  log(l),\n"
-     << os.Indent() << "  functors(f)";
+  os << os.Indent() << ": storage(storage_),\n"
+     << os.Indent() << "  log(log_),\n"
+     << os.Indent() << "  functors(functors_)";
 
-  for (auto table : program.Tables()) {
-    os << ",\n" << os.Indent() << "  " << Table(os, table) << "(s)";
+  // Initialize the tables and indices.
+  for (DataTable table : program.Tables()) {
+    os << ",\n" << os.Indent() << "  " << Table(os, table)
+       << "(storage, " << table.Id() << ", ::hyde::rt::Shape<";
+    auto sep = "";
+    for (DataColumn col : table.Columns()) {
+      os << sep << TypeName(os, module, col.Type());
+      sep = ", ";
+    }
+    os << ">{})";
+
+    for (DataIndex index : table.Indices()) {
+      os << os.Indent() << ",\n" << os.Indent() << "  " << Index(os, index)
+         << "(storage, " << index.Id() << ", ::hyde::rt::Shape<";
+      sep = "";
+      for (DataColumn col : index.KeyColumns()) {
+        os << sep << TypeName(os, module, col.Type());
+        sep = ", ";
+      }
+      os << ">{}, ::hyde::rt::Shape<";
+      sep = "";
+      for (DataColumn col : index.ValueColumns()) {
+        os << sep << TypeName(os, module, col.Type());
+        sep = ", ";
+      }
+      os << ">{})";
+    }
   }
 
+  // Initialize the global variables.
   for (auto global : program.GlobalVariables()) {
     if (!global.IsConstant()) {
       os << ",\n"
@@ -1830,6 +1604,8 @@ void GenerateDatabaseCode(const Program &program, OutputStream &os) {
          << TypeValueOrDefault(module, global.Type(), global);
     }
   }
+
+  // Initialize the non-constexpr constants.
   for (auto constant : program.Constants()) {
     if (!CanInlineDefineConstant(module, constant)) {
       os << ",\n"

@@ -321,6 +321,9 @@ class DataTable : public Node<DataTable, DataTableImpl> {
   // Return the list of views associated with this table.
   const std::vector<QueryView> Views(void) const noexcept;
 
+  // Are there any views that will possibly remove entries from this table?
+  bool IsDifferential(void) const noexcept;
+
  private:
   using Node<DataTable, DataTableImpl>::Node;
 };

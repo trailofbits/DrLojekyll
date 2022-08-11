@@ -670,10 +670,6 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
           if (impl->data == "bound") {
             tentative_lexeme = Lexeme::kKeywordBound;
 
-          } else if (impl->data == "bytes") {
-            tentative_lexeme = Lexeme::kTypeBytes;
-            tentative_type_kind = TypeKind::kBytes;
-
           } else if (impl->data == "false") {
             auto &ident = ret.As<lex::IdentifierToken>();
             ident.Store<Lexeme>(Lexeme::kLiteralFalse);

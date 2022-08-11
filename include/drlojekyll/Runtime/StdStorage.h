@@ -66,34 +66,34 @@ class StdStorage {
   StdStorage(void);
   ~StdStorage(void);
 
-  // Intern a value.
-  template <typename T>
-  const T &Intern(T &&val) {
-    using Writer = ByteCountingWriterProxy<HashingWriter>;
-    Writer writer;
-    Serializer<NullReader, Writer, T>::Write(writer, val);
-
-    InternedValue dummy_val;
-    dummy_val.data = &val;
-    dummy_val.destroy_data = &InternedValue::DestroyTemporary;
-    dummy_val.hash = writer.Digest();
-    dummy_val.serialized_length = writer.num_bytes;
-    dummy_val.compare_values = &InternedValue::CompareValues<T>;
-
-    auto [it, added] = interned_data.emplace(std::move(dummy_val));
-    if (added) {
-      const InternedValue &persist_val = *it;
-      persist_val.data = new T(std::forward<T>(val));
-      persist_val.destroy_data = &InternedValue::DestroyPersistent<T>;
-    }
-
-    return *reinterpret_cast<const T *>(it->data);
-  }
-
-  template <typename T, typename ParamT>
-  inline const T &Intern(ParamT val) {
-    return Intern(T(val));
-  }
+//  // Intern a value.
+//  template <typename T>
+//  const T &Intern(T &&val) {
+//    using Writer = ByteCountingWriterProxy<HashingWriter>;
+//    Writer writer;
+//    Serializer<NullReader, Writer, T>::Write(writer, val);
+//
+//    InternedValue dummy_val;
+//    dummy_val.data = &val;
+//    dummy_val.destroy_data = &InternedValue::DestroyTemporary;
+//    dummy_val.hash = writer.Digest();
+//    dummy_val.serialized_length = writer.num_bytes;
+//    dummy_val.compare_values = &InternedValue::CompareValues<T>;
+//
+//    auto [it, added] = interned_data.emplace(std::move(dummy_val));
+//    if (added) {
+//      const InternedValue &persist_val = *it;
+//      persist_val.data = new T(std::forward<T>(val));
+//      persist_val.destroy_data = &InternedValue::DestroyPersistent<T>;
+//    }
+//
+//    return *reinterpret_cast<const T *>(it->data);
+//  }
+//
+//  template <typename T, typename ParamT>
+//  inline const T &Intern(ParamT val) {
+//    return Intern(T(val));
+//  }
 
  private:
   std::unordered_set<InternedValue, HashInternedValue,

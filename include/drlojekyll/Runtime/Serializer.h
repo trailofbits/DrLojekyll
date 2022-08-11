@@ -13,7 +13,6 @@
 #define XXH_INLINE_ALL
 #include "xxhash.h"
 
-#include "Bytes.h"
 #include "Endian.h"
 #include "Int.h"
 #include "Reference.h"
@@ -24,12 +23,17 @@ namespace rt {
 
 enum class TupleState : uint8_t;
 
+
+// Represents an empty key/value.
+struct Empty {};
+
 // An unserializer that always returns default-initialzied values.
 struct NullReader {
  public:
-  HYDE_RT_ALWAYS_INLINE void *ReadPointer(void) {
-    return {};
+  HYDE_RT_ALWAYS_INLINE uint32_t SizeLeft(void) const noexcept {
+    return 0;
   }
+
   HYDE_RT_ALWAYS_INLINE uint32_t ReadSize(void) {
     return {};
   }
@@ -66,18 +70,13 @@ struct NullReader {
   HYDE_RT_ALWAYS_INLINE int8_t ReadI8(void) {
     return {};
   }
-  HYDE_RT_ALWAYS_INLINE void Skip(uint32_t num_bytes) {
-    assert(0u < num_bytes);
-  }
+  HYDE_RT_ALWAYS_INLINE void Skip(uint32_t) {}
 };
 
 // A serializer that writes out nothing.
 struct NullWriter {
  public:
   HYDE_RT_ALWAYS_INLINE uint8_t *Current(void) const noexcept {
-    return nullptr;
-  }
-  HYDE_RT_ALWAYS_INLINE uint8_t *WritePointer(void *) noexcept {
     return nullptr;
   }
   HYDE_RT_ALWAYS_INLINE uint8_t *WriteSize(uint32_t) noexcept {
@@ -94,8 +93,7 @@ struct NullWriter {
   HYDE_RT_ALWAYS_INLINE uint8_t *WriteI32(int32_t) noexcept { return nullptr; }
   HYDE_RT_ALWAYS_INLINE uint8_t *WriteI16(int16_t) noexcept { return nullptr; }
   HYDE_RT_ALWAYS_INLINE uint8_t *WriteI8(int8_t) noexcept { return nullptr; }
-  HYDE_RT_ALWAYS_INLINE uint8_t *Skip(uint32_t num_bytes) noexcept {
-    assert(0u < num_bytes);
+  HYDE_RT_ALWAYS_INLINE uint8_t *Skip(uint32_t) noexcept {
     return nullptr;
   }
   HYDE_RT_ALWAYS_INLINE void EnterFixedSizeComposite(uint32_t) noexcept {}
@@ -108,6 +106,9 @@ struct NullWriter {
 template <typename Self>
 class ByteWriter {
  public:
+  HYDE_RT_ALWAYS_INLINE explicit ByteWriter(char *write_ptr_)
+      : write_ptr(reinterpret_cast<uint8_t *>(write_ptr_)) {}
+
   HYDE_RT_ALWAYS_INLINE explicit ByteWriter(uint8_t *write_ptr_)
       : write_ptr(write_ptr_) {}
 
@@ -116,111 +117,153 @@ class ByteWriter {
   }
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
-  uint8_t *WritePointer(void *ptr) noexcept {
-    auto addr = reinterpret_cast<intptr_t>(ptr);
-    auto write_addr = reinterpret_cast<intptr_t>(write_ptr);
-    return WriteI64(addr - write_addr);
+  void WriteF64(double d) noexcept {
+    alignas(double) uint8_t data[sizeof(double)];
+    *(new (data) double) = d;
+    auto self = static_cast<Self *>(this);
+
+    // Serialize data to big-endian byte order for lexicographic sorting
+    // using `memcmp`.
+    if HYDE_RT_CONSTEXPR_ENDIAN (HYDE_RT_BIG_ENDIAN) {
+      self->WriteU8(data[0]);
+      self->WriteU8(data[1]);
+      self->WriteU8(data[2]);
+      self->WriteU8(data[3]);
+      self->WriteU8(data[4]);
+      self->WriteU8(data[5]);
+      self->WriteU8(data[6]);
+      self->WriteU8(data[7]);
+
+    } else {
+      self->WriteU8(data[7]);
+      self->WriteU8(data[6]);
+      self->WriteU8(data[5]);
+      self->WriteU8(data[4]);
+      self->WriteU8(data[3]);
+      self->WriteU8(data[2]);
+      self->WriteU8(data[1]);
+      self->WriteU8(data[0]);
+    }
   }
 
-  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
-  uint8_t *WriteF64(double d) noexcept {
-    uint64_t q = {};
-    *(new (&q) double) = d;
-    const auto ptr =
-        static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 0));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 8));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 16));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 24));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 32));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 40));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 48));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 56));
-    return ptr;
+  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE void WriteF32(float f) noexcept {
+    alignas(float) uint8_t data[sizeof(float)];
+    *(new (data) float) = f;
+    auto self = static_cast<Self *>(this);
+
+    // Serialize data to big-endian byte order for lexicographic sorting
+    // using `memcmp`.
+    if HYDE_RT_CONSTEXPR_ENDIAN (HYDE_RT_BIG_ENDIAN) {
+      self->WriteU8(data[0]);
+      self->WriteU8(data[1]);
+      self->WriteU8(data[2]);
+      self->WriteU8(data[3]);
+
+    } else {
+      self->WriteU8(data[3]);
+      self->WriteU8(data[2]);
+      self->WriteU8(data[1]);
+      self->WriteU8(data[0]);
+    }
   }
 
-  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
-  uint8_t *WriteF32(float f) noexcept {
-    uint32_t d = {};
-    *(new (&d) float) = f;
-    const auto ptr =
-        static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(d >> 0));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(d >> 8));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(d >> 16));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(d >> 24));
-    return ptr;
+  [[gnu::hot]] HYDE_RT_ALWAYS_INLINE void WriteU64(uint64_t q) noexcept {
+    alignas(uint64_t) uint8_t data[sizeof(uint64_t)];
+    *(new (data) uint64_t) = q;
+    auto self = static_cast<Self *>(this);
+
+    // Serialize data to big-endian byte order for lexicographic sorting
+    // using `memcmp`.
+    if HYDE_RT_CONSTEXPR_ENDIAN (HYDE_RT_BIG_ENDIAN) {
+      self->WriteU8(data[0]);
+      self->WriteU8(data[1]);
+      self->WriteU8(data[2]);
+      self->WriteU8(data[3]);
+      self->WriteU8(data[4]);
+      self->WriteU8(data[5]);
+      self->WriteU8(data[6]);
+      self->WriteU8(data[7]);
+
+    } else {
+      self->WriteU8(data[7]);
+      self->WriteU8(data[6]);
+      self->WriteU8(data[5]);
+      self->WriteU8(data[4]);
+      self->WriteU8(data[3]);
+      self->WriteU8(data[2]);
+      self->WriteU8(data[1]);
+      self->WriteU8(data[0]);
+    }
   }
 
-  [[gnu::hot]] HYDE_RT_ALWAYS_INLINE uint8_t *WriteU64(uint64_t q) noexcept {
-    const auto ptr =
-        static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 0));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 8));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 16));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 24));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 32));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 40));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 48));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(q >> 56));
-    return ptr;
+  [[gnu::hot]] HYDE_RT_ALWAYS_INLINE void WriteU32(uint32_t d) noexcept {
+    alignas(uint32_t) uint8_t data[sizeof(uint32_t)];
+    *(new (data) uint32_t) = d;
+    auto self = static_cast<Self *>(this);
+
+    // Serialize data to big-endian byte order for lexicographic sorting
+    // using `memcmp`.
+    if HYDE_RT_CONSTEXPR_ENDIAN (HYDE_RT_BIG_ENDIAN) {
+      self->WriteU8(data[0]);
+      self->WriteU8(data[1]);
+      self->WriteU8(data[2]);
+      self->WriteU8(data[3]);
+
+    } else {
+      self->WriteU8(data[3]);
+      self->WriteU8(data[2]);
+      self->WriteU8(data[1]);
+      self->WriteU8(data[0]);
+    }
   }
 
-  [[gnu::hot]] HYDE_RT_ALWAYS_INLINE uint8_t *WriteU32(uint32_t d) noexcept {
-    const auto ptr =
-        static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(d >> 0));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(d >> 8));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(d >> 16));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(d >> 24));
-    return ptr;
+  [[gnu::hot]] HYDE_RT_ALWAYS_INLINE void WriteU16(uint16_t h) noexcept {
+    alignas(uint16_t) uint8_t data[sizeof(uint16_t)];
+    *(new (data) uint16_t) = h;
+    auto self = static_cast<Self *>(this);
+
+    // Serialize data to big-endian byte order for lexicographic sorting
+    // using `memcmp`.
+    if HYDE_RT_CONSTEXPR_ENDIAN (HYDE_RT_BIG_ENDIAN) {
+      self->WriteU8(data[0]);
+      self->WriteU8(data[1]);
+
+    } else {
+      self->WriteU8(data[1]);
+      self->WriteU8(data[0]);
+    }
   }
 
-  [[gnu::hot]] HYDE_RT_ALWAYS_INLINE uint8_t *WriteU16(uint16_t h) noexcept {
-    const auto ptr =
-        static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(h >> 0));
-    static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(h >> 8));
-    return ptr;
-  }
-
-  [[gnu::hot]] HYDE_RT_ALWAYS_INLINE uint8_t *WriteU8(uint8_t b) noexcept {
-    const auto ptr = write_ptr;
+  [[gnu::hot]] HYDE_RT_ALWAYS_INLINE void WriteU8(uint8_t b) noexcept {
     *write_ptr++ = b;
-    return ptr;
   }
 
-  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
-  uint8_t *WriteI64(int64_t q) noexcept {
-    return WriteU64(static_cast<uint64_t>(q));
+  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE void WriteI64(int64_t q) noexcept {
+    WriteU64(static_cast<uint64_t>(q));
   }
 
-  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
-  uint8_t *WriteI32(int32_t w) noexcept {
-    return WriteU32(static_cast<uint32_t>(w));
+  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE void WriteI32(int32_t w) noexcept {
+    WriteU32(static_cast<uint32_t>(w));
   }
 
-  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
-  uint8_t *WriteI16(int16_t h) noexcept {
-    return WriteU16(static_cast<uint16_t>(h));
+  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE void WriteI16(int16_t h) noexcept {
+    WriteU16(static_cast<uint16_t>(h));
   }
 
-  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
-  uint8_t *WriteI8(int8_t b) noexcept {
-    return static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(b));
+  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE void WriteI8(int8_t b) noexcept {
+    WriteU8(static_cast<uint8_t>(b));
   }
 
-  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
-  uint8_t *WriteB(bool b) noexcept {
-    return static_cast<Self *>(this)->WriteU8(static_cast<uint8_t>(!!b));
+  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE void WriteB(bool b) noexcept {
+    WriteU8(static_cast<uint8_t>(!!b));
   }
 
-  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE
-  uint8_t *WriteSize(uint32_t d) noexcept {
-    return WriteU32(d);
+  [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE void WriteSize(uint32_t d) noexcept {
+    WriteU32(d);
   }
 
-  [[gnu::hot]] HYDE_RT_ALWAYS_INLINE
-  uint8_t *Skip(uint32_t num_bytes) noexcept {
-    assert(0u < num_bytes);
-    auto ptr = write_ptr;
+  [[gnu::hot]] HYDE_RT_ALWAYS_INLINE void Skip(uint32_t num_bytes) noexcept {
     write_ptr += num_bytes;
-    return ptr;
   }
 
   HYDE_RT_ALWAYS_INLINE void EnterFixedSizeComposite(uint32_t) {}
@@ -236,6 +279,12 @@ class UnsafeByteWriter : public ByteWriter<UnsafeByteWriter> {
  public:
   using ByteWriter<UnsafeByteWriter>::WriteU8;
 
+  HYDE_RT_ALWAYS_INLINE explicit UnsafeByteWriter(std::string &data)
+      : ByteWriter(&(data[0])) {}
+
+  HYDE_RT_ALWAYS_INLINE explicit UnsafeByteWriter(char *write_ptr_)
+      : ByteWriter(write_ptr_) {}
+
   HYDE_RT_ALWAYS_INLINE explicit UnsafeByteWriter(uint8_t *write_ptr_)
       : ByteWriter(write_ptr_) {}
 };
@@ -243,64 +292,152 @@ class UnsafeByteWriter : public ByteWriter<UnsafeByteWriter> {
 template <typename Self>
 class ByteReader {
  public:
-  // Constructor for use by a `SlabReference`.
-  explicit ByteReader(const uint8_t *read_ptr_) noexcept
-      : read_ptr(read_ptr_) {}
+  explicit ByteReader(const char *read_ptr_, const char *end_read_ptr_) noexcept
+      : read_ptr(reinterpret_cast<const uint8_t *>(read_ptr_)),
+        end_read_ptr(reinterpret_cast<const uint8_t *>(end_read_ptr_)) {}
 
-  [[gnu::hot]] HYDE_RT_ALWAYS_INLINE void *ReadPointer(void) noexcept {
-    const auto read_addr = reinterpret_cast<intptr_t>(read_ptr);
-    const auto disp = ReadI64();
-    return reinterpret_cast<void *>(read_addr + disp);
+  explicit ByteReader(const uint8_t *read_ptr_,
+                      const uint8_t *end_read_ptr_) noexcept
+      : read_ptr(read_ptr_),
+        end_read_ptr(end_read_ptr_) {}
+
+  HYDE_RT_ALWAYS_INLINE uint32_t SizeLeft(void) const noexcept {
+    return static_cast<uint32_t>(end_read_ptr - read_ptr);
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE double ReadF64(void) noexcept {
     alignas(double) uint8_t data[8u];
-    data[0] = static_cast<Self *>(this)->ReadU8();
-    data[1] = static_cast<Self *>(this)->ReadU8();
-    data[2] = static_cast<Self *>(this)->ReadU8();
-    data[3] = static_cast<Self *>(this)->ReadU8();
-    data[4] = static_cast<Self *>(this)->ReadU8();
-    data[5] = static_cast<Self *>(this)->ReadU8();
-    data[6] = static_cast<Self *>(this)->ReadU8();
-    data[7] = static_cast<Self *>(this)->ReadU8();
+    auto self = static_cast<Self *>(this);
+
+    // Data is serialized in big-endian byte order, we need to deserialize it
+    // into the host byte order.
+    if HYDE_RT_CONSTEXPR_ENDIAN (HYDE_RT_BIG_ENDIAN) {
+      data[0] = self->ReadU8();
+      data[1] = self->ReadU8();
+      data[2] = self->ReadU8();
+      data[3] = self->ReadU8();
+      data[4] = self->ReadU8();
+      data[5] = self->ReadU8();
+      data[6] = self->ReadU8();
+      data[7] = self->ReadU8();
+
+    // Host is little-endian, serialized data is big-endian, so the first byte
+    // read is the high-order byte, so we need to store it at `data[7]`, as
+    // `data[0]` is our low-order byte.
+    } else {
+      data[7] = self->ReadU8();
+      data[6] = self->ReadU8();
+      data[5] = self->ReadU8();
+      data[4] = self->ReadU8();
+      data[3] = self->ReadU8();
+      data[2] = self->ReadU8();
+      data[1] = self->ReadU8();
+      data[0] = self->ReadU8();
+    }
+
     return *(new (data) double);
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE float ReadF32(void) noexcept {
     alignas(float) uint8_t data[4u];
-    data[0] = static_cast<Self *>(this)->ReadU8();
-    data[1] = static_cast<Self *>(this)->ReadU8();
-    data[2] = static_cast<Self *>(this)->ReadU8();
-    data[3] = static_cast<Self *>(this)->ReadU8();
+    auto self = static_cast<Self *>(this);
+
+    // Data is serialized in big-endian byte order, we need to deserialize it
+    // into the host byte order.
+    if HYDE_RT_CONSTEXPR_ENDIAN (HYDE_RT_BIG_ENDIAN) {
+      data[0] = self->ReadU8();
+      data[1] = self->ReadU8();
+      data[2] = self->ReadU8();
+      data[3] = self->ReadU8();
+
+    // Host is little endian, serialized data is big endian, so the first byte
+    // read is the high-order byte, so we need to store it at `data[3]`, as
+    // `data[0]` is our low-order byte.
+    } else {
+      data[3] = self->ReadU8();
+      data[2] = self->ReadU8();
+      data[1] = self->ReadU8();
+      data[0] = self->ReadU8();
+    }
+
     return *(new (data) float);
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE uint64_t ReadU64(void) noexcept {
     alignas(uint64_t) uint8_t data[8u];
-    data[0] = static_cast<Self *>(this)->ReadU8();
-    data[1] = static_cast<Self *>(this)->ReadU8();
-    data[2] = static_cast<Self *>(this)->ReadU8();
-    data[3] = static_cast<Self *>(this)->ReadU8();
-    data[4] = static_cast<Self *>(this)->ReadU8();
-    data[5] = static_cast<Self *>(this)->ReadU8();
-    data[6] = static_cast<Self *>(this)->ReadU8();
-    data[7] = static_cast<Self *>(this)->ReadU8();
+    auto self = static_cast<Self *>(this);
+
+    // Data is serialized in big-endian byte order, we need to deserialize it
+    // into the host byte order.
+    if HYDE_RT_CONSTEXPR_ENDIAN (HYDE_RT_BIG_ENDIAN) {
+      data[0] = self->ReadU8();
+      data[1] = self->ReadU8();
+      data[2] = self->ReadU8();
+      data[3] = self->ReadU8();
+      data[4] = self->ReadU8();
+      data[5] = self->ReadU8();
+      data[6] = self->ReadU8();
+      data[7] = self->ReadU8();
+
+    // Host is little endian, serialized data is big endian, so the first byte
+    // read is the high-order byte, so we need to store it at `data[7]`, as
+    // `data[0]` is our low-order byte.
+    } else {
+      data[7] = self->ReadU8();
+      data[6] = self->ReadU8();
+      data[5] = self->ReadU8();
+      data[4] = self->ReadU8();
+      data[3] = self->ReadU8();
+      data[2] = self->ReadU8();
+      data[1] = self->ReadU8();
+      data[0] = self->ReadU8();
+    }
     return *(new (data) uint64_t);
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE uint32_t ReadU32(void) noexcept {
     alignas(uint32_t) uint8_t data[4u];
-    data[0] = static_cast<Self *>(this)->ReadU8();
-    data[1] = static_cast<Self *>(this)->ReadU8();
-    data[2] = static_cast<Self *>(this)->ReadU8();
-    data[3] = static_cast<Self *>(this)->ReadU8();
+    auto self = static_cast<Self *>(this);
+
+    // Data is serialized in big-endian byte order, we need to deserialize it
+    // into the host byte order.
+    if HYDE_RT_CONSTEXPR_ENDIAN (HYDE_RT_BIG_ENDIAN) {
+      data[0] = self->ReadU8();
+      data[1] = self->ReadU8();
+      data[2] = self->ReadU8();
+      data[3] = self->ReadU8();
+
+    // Host is little endian, serialized data is big endian, so the first byte
+    // read is the high-order byte, so we need to store it at `data[3]`, as
+    // `data[0]` is our low-order byte.
+    } else {
+      data[3] = self->ReadU8();
+      data[2] = self->ReadU8();
+      data[1] = self->ReadU8();
+      data[0] = self->ReadU8();
+    }
+
     return *(new (data) uint32_t);
   }
 
   [[gnu::hot]] HYDE_RT_ALWAYS_INLINE uint16_t ReadU16(void) noexcept {
     alignas(uint16_t) uint8_t data[2];
-    data[0] = static_cast<Self *>(this)->ReadU8();
-    data[1] = static_cast<Self *>(this)->ReadU8();
+    auto self = static_cast<Self *>(this);
+
+    // Data is serialized in big-endian byte order, we need to deserialize it
+    // into the host byte order.
+    if HYDE_RT_CONSTEXPR_ENDIAN (HYDE_RT_BIG_ENDIAN) {
+      data[0] = self->ReadU8();
+      data[1] = self->ReadU8();
+
+    // Host is little endian, serialized data is big endian, so the first byte
+    // read is the high-order byte, so we need to store it at `data[1]`, as
+    // `data[0]` is our low-order byte.
+    } else {
+      data[1] = self->ReadU8();
+      data[0] = self->ReadU8();
+    }
+
     return *(new (data) uint16_t);
   }
 
@@ -329,8 +466,9 @@ class ByteReader {
   }
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE bool ReadB(void) noexcept {
-    return !!static_cast<Self *>(this)->ReadU8();
+    return !!ReadU8();
   }
+
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE uint32_t
   ReadSize(void) noexcept {
     return ReadU32();
@@ -341,41 +479,38 @@ class ByteReader {
   }
 
   const uint8_t *read_ptr;
+  const uint8_t * const end_read_ptr;
 };
 
-// A reader for reading the discontinuous data in a `SlabList`. This reader is
-// considered unsafe because no bounds checking is performed.
+// A reader for reading continuous data starting from `read_ptr_`; no bounds
+// checking is performed.
 class UnsafeByteReader : public ByteReader<UnsafeByteReader> {
  public:
   using ByteReader<UnsafeByteReader>::ReadU8;
 
-  HYDE_RT_ALWAYS_INLINE explicit UnsafeByteReader(const uint8_t *read_ptr_)
-      : ByteReader(read_ptr_) {}
+  HYDE_RT_ALWAYS_INLINE UnsafeByteReader(const std::string &data) noexcept
+      : UnsafeByteReader(data.data(), data.size()) {}
 
+  HYDE_RT_ALWAYS_INLINE UnsafeByteReader(std::string_view data) noexcept
+      : UnsafeByteReader(data.data(), data.size()) {}
+
+  HYDE_RT_ALWAYS_INLINE explicit UnsafeByteReader(const char *read_ptr_, size_t size)
+      : ByteReader(read_ptr_, &(read_ptr_[size])) {}
+
+  HYDE_RT_ALWAYS_INLINE explicit UnsafeByteReader(
+      const uint8_t *read_ptr_, size_t size)
+      : ByteReader(read_ptr_, &(read_ptr_[size])) {}
 };
 
-// A reader for reading the discontinuous data in a `SlabList`. This reader is
-// considered unsafe because no bounds checking is performed.
+// A reader for reading at most `num_bytes` of data starting at `read_ptr_`.
+// Bounds checking is performed.
 class ByteRangeReader : public UnsafeByteReader {
  public:
-  // Constructor for use by a `SlabReference`.
-  explicit ByteRangeReader(const uint8_t *read_ptr_, size_t num_bytes) noexcept
-      : UnsafeByteReader(read_ptr_),
-        max_read_ptr(&(read_ptr_[num_bytes])) {}
-
-
-  [[gnu::hot]] HYDE_RT_ALWAYS_INLINE void *ReadPointer(void) noexcept {
-    if (&(read_ptr[7]) >= max_read_ptr) {
-      error = true;
-      return nullptr;
-    } else {
-      return UnsafeByteReader::ReadPointer();
-    }
-  }
+  using UnsafeByteReader::UnsafeByteReader;
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE double
   ReadF64(void) noexcept {
-    if (&(read_ptr[7]) >= max_read_ptr) {
+    if (&(read_ptr[7]) >= end_read_ptr) {
       error = true;
       return {};
     } else {
@@ -385,7 +520,7 @@ class ByteRangeReader : public UnsafeByteReader {
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE float
   ReadF32(void) noexcept {
-    if (&(read_ptr[3]) >= max_read_ptr) {
+    if (&(read_ptr[3]) >= end_read_ptr) {
       error = true;
       return {};
     } else {
@@ -395,7 +530,7 @@ class ByteRangeReader : public UnsafeByteReader {
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE uint64_t
   ReadU64(void) noexcept {
-    if (&(read_ptr[7]) >= max_read_ptr) {
+    if (&(read_ptr[7]) >= end_read_ptr) {
       error = true;
       return {};
     } else {
@@ -405,7 +540,7 @@ class ByteRangeReader : public UnsafeByteReader {
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE uint32_t
   ReadU32(void) noexcept {
-    if (&(read_ptr[3]) >= max_read_ptr) {
+    if (&(read_ptr[3]) >= end_read_ptr) {
       error = true;
       return {};
     } else {
@@ -415,7 +550,7 @@ class ByteRangeReader : public UnsafeByteReader {
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE uint16_t
   ReadU16(void) noexcept {
-    if (&(read_ptr[1]) >= max_read_ptr) {
+    if (&(read_ptr[1]) >= end_read_ptr) {
       error = true;
       return {};
     } else {
@@ -425,7 +560,7 @@ class ByteRangeReader : public UnsafeByteReader {
 
   [[gnu::hot]] HYDE_RT_FLATTEN HYDE_RT_ALWAYS_INLINE uint8_t
   ReadU8(void) noexcept {
-    if (read_ptr >= max_read_ptr) {
+    if (read_ptr >= end_read_ptr) {
       error = true;
       return {};
     } else {
@@ -459,252 +594,12 @@ class ByteRangeReader : public UnsafeByteReader {
 
   [[gnu::hot]] void Skip(uint32_t num_bytes) noexcept {
     read_ptr = &(read_ptr[num_bytes]);
-    if (read_ptr > max_read_ptr) {
+    if (read_ptr > end_read_ptr) {
       error = true;
     }
   }
 
-  const uint8_t *max_read_ptr;
   bool error{false};
-};
-
-struct HashingBase {
- public:
-  HYDE_RT_ALWAYS_INLINE HashingBase(void) {
-    Reset();
-  }
-
-  HYDE_RT_ALWAYS_INLINE void Reset(void) noexcept {
-    XXH64_reset(&state, 0);
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint64_t Digest(void) noexcept {
-    return XXH64_digest(&state);
-  }
-
-  XXH64_state_t state;
-
-  union {
-    uint64_t u64;
-    int64_t i64;
-    double f64;
-    float f32;
-    uint8_t data[8];
-  } u;
-
-  static_assert(sizeof(u) == sizeof(uint64_t));
-};
-
-struct HashingWriter : public HashingBase {
- public:
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *Current(void) const noexcept {
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WritePointer(void *p) {
-    u.u64 = reinterpret_cast<uintptr_t>(p);
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteSize(uint32_t num_bytes) {
-    u.u64 = num_bytes;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteF64(double d) {
-    u.f64 = d;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteF32(float f) {
-    u.u64 = 0;
-    u.f32 = f;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU64(uint64_t q) {
-    u.u64 = q;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU32(uint32_t d) {
-    u.u64 = d;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU16(uint16_t h) {
-    u.u64 = h;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU8(uint8_t b) {
-    u.u64 = b;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteB(bool b) {
-    u.u64 = b;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI64(int64_t q) {
-    u.i64 = q;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI32(int32_t d) {
-    u.i64 = d;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI16(int16_t h) {
-    u.i64 = h;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI8(int8_t b) {
-    u.i64 = b;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *Skip(uint32_t n) {
-    assert(0u < n);
-    u.u64 = n;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE void EnterFixedSizeComposite(uint32_t) {}
-  HYDE_RT_ALWAYS_INLINE void EnterVariableSizedComposite(uint32_t) {}
-  HYDE_RT_ALWAYS_INLINE void ExitComposite(void) {}
-
-  HYDE_RT_ALWAYS_INLINE void Reset(void) noexcept {
-    XXH64_reset(&state, 0);
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint64_t Digest(void) noexcept {
-    return XXH64_digest(&state);
-  }
-};
-
-// A reader that computes a hash as it reads.
-template <typename SubReader>
-struct HashingReader : public SubReader, HashingBase {
- public:
-  using SubReader::SubReader;
-
-  HYDE_RT_ALWAYS_INLINE void *ReadPointer(void) {
-    auto ret = SubReader::ReadPointer();
-    u.u64 = reinterpret_cast<uintptr_t>(ret);
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return ret;
-  }
-
-  // This is the one special case where we actual do the read.
-  HYDE_RT_ALWAYS_INLINE uint32_t ReadSize(void) {
-    auto ret = SubReader::ReadSize();
-    u.u64 = ret;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return ret;
-  }
-
-  HYDE_RT_ALWAYS_INLINE double ReadF64(void) {
-    auto ret = SubReader::ReadF64();
-    u.f64 = ret;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return ret;
-  }
-
-  HYDE_RT_ALWAYS_INLINE float ReadF32(void) {
-    auto ret = SubReader::ReadF32();
-    u.f32 = ret;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return ret;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint64_t ReadU64(void) {
-    auto ret = SubReader::ReadU64();
-    u.u64 = ret;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return ret;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint32_t ReadU32(void) {
-    auto ret = SubReader::ReadU32();
-    u.u64 = ret;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return ret;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint16_t ReadU16(void) {
-    auto ret = SubReader::ReadU16();
-    u.u64 = ret;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return ret;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t ReadU8(void) {
-    auto ret = SubReader::ReadU8();
-    u.u64 = ret;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return ret;
-  }
-
-  HYDE_RT_ALWAYS_INLINE bool ReadB(void) {
-    auto ret = SubReader::ReadB();
-    u.u64 = ret;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return ret;
-  }
-
-  HYDE_RT_ALWAYS_INLINE int64_t ReadI64(void) {
-    auto ret = SubReader::ReadI64();
-    u.i64 = ret;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return ret;
-  }
-
-  HYDE_RT_ALWAYS_INLINE int32_t ReadI32(void) {
-    auto ret = SubReader::ReadI32();
-    u.i64 = ret;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return ret;
-  }
-
-  HYDE_RT_ALWAYS_INLINE int16_t ReadI16(void) {
-    auto ret = SubReader::ReadI16();
-    u.i64 = ret;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return ret;
-  }
-
-  HYDE_RT_ALWAYS_INLINE int8_t ReadI8(void) {
-    auto ret = SubReader::ReadI8();
-    u.i64 = ret;
-    XXH64_update(&state, u.data, sizeof(u.data));
-    return ret;
-  }
-
-  HYDE_RT_ALWAYS_INLINE void Skip(uint32_t n) {
-    assert(0u < n);
-    SubReader::Skip(n);
-    u.u64 = n;
-    XXH64_update(&state, u.data, sizeof(u.data));
-  }
 };
 
 // A serializing writer that ignores the values being written, and instead
@@ -714,75 +609,69 @@ struct ByteCountingWriterProxy : public SubWriter {
  public:
   using SubWriter::SubWriter;
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WritePointer(void *v) {
-    num_bytes += 8;
-    return SubWriter::WritePointer(v);
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteSize(uint32_t v) {
+  HYDE_RT_ALWAYS_INLINE void WriteSize(uint32_t v) {
     num_bytes += 4;
-    return SubWriter::WriteSize(v);
+    SubWriter::WriteSize(v);
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteF64(double v) {
+  HYDE_RT_ALWAYS_INLINE void WriteF64(double v) {
     num_bytes += 8;
-    return SubWriter::WriteF64(v);
+    SubWriter::WriteF64(v);
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteF32(float v) {
+  HYDE_RT_ALWAYS_INLINE void WriteF32(float v) {
     num_bytes += 4;
-    return SubWriter::WriteF32(v);
+    SubWriter::WriteF32(v);
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU64(uint64_t v) {
+  HYDE_RT_ALWAYS_INLINE void WriteU64(uint64_t v) {
     num_bytes += 8;
-    return SubWriter::WriteU64(v);
+    SubWriter::WriteU64(v);
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU32(uint32_t v) {
+  HYDE_RT_ALWAYS_INLINE void WriteU32(uint32_t v) {
     num_bytes += 4;
-    return SubWriter::WriteU32(v);
+    SubWriter::WriteU32(v);
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU16(uint16_t v) {
+  HYDE_RT_ALWAYS_INLINE void WriteU16(uint16_t v) {
     num_bytes += 2;
-    return SubWriter::WriteU16(v);
+    SubWriter::WriteU16(v);
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU8(uint8_t v) {
+  HYDE_RT_ALWAYS_INLINE void WriteU8(uint8_t v) {
     num_bytes += 1;
-    return SubWriter::WriteU8(v);
+    SubWriter::WriteU8(v);
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteB(bool v) {
+  HYDE_RT_ALWAYS_INLINE void WriteB(bool v) {
     num_bytes += 1;
-    return SubWriter::WriteB(v);
+    SubWriter::WriteB(v);
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI64(int64_t v) {
+  HYDE_RT_ALWAYS_INLINE void WriteI64(int64_t v) {
     num_bytes += 8;
-    return SubWriter::WriteI64(v);
+    SubWriter::WriteI64(v);
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI32(int32_t v) {
+  HYDE_RT_ALWAYS_INLINE void WriteI32(int32_t v) {
     num_bytes += 4;
-    return SubWriter::WriteI32(v);
+    SubWriter::WriteI32(v);
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI16(int16_t v) {
+  HYDE_RT_ALWAYS_INLINE void WriteI16(int16_t v) {
     num_bytes += 2;
-    return SubWriter::WriteI16(v);
+    SubWriter::WriteI16(v);
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI8(int8_t v) {
+  HYDE_RT_ALWAYS_INLINE void WriteI8(int8_t v) {
     num_bytes += 1;
-    return SubWriter::WriteI8(v);
+    SubWriter::WriteI8(v);
   }
 
-  HYDE_RT_ALWAYS_INLINE uint8_t *Skip(uint32_t n) {
-    assert(0u < n);
+  HYDE_RT_ALWAYS_INLINE void Skip(uint32_t n) {
     num_bytes += n;
-    return SubWriter::Skip(n);
+    SubWriter::Skip(n);
   }
 
   uint32_t num_bytes{0};
@@ -796,355 +685,13 @@ static constexpr bool kIsByteCountingWriter = false;
 template <>
 inline constexpr bool kIsByteCountingWriter<ByteCountingWriter> = true;
 
-// A serializing writer that ignores the values being written, and instead
-// performs an element-wise equality comparison.
-template <typename Reader>
-struct ByteEqualityComparingWriter : public Reader {
- public:
-  using Reader::Reader;
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *Current(void) const noexcept {
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WritePointer(void *rhs) {
-    if (!equal) {
-      equal = static_cast<const uint8_t *>(Reader::ReadPointer()) ==
-              static_cast<const uint8_t *>(rhs);
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteSize(uint32_t rhs) {
-    if (equal) {
-      equal = Reader::ReadSize() == rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteF64(double rhs) {
-    if (equal) {
-      equal = Reader::ReadF64() == rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteF32(float rhs) {
-    if (equal) {
-      equal = Reader::ReadF32() == rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU64(uint64_t rhs) {
-    if (equal) {
-      equal = Reader::ReadU64() == rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU32(uint32_t rhs) {
-    if (equal) {
-      equal = Reader::ReadU32() == rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU16(uint16_t rhs) {
-    if (equal) {
-      equal = Reader::ReadU16() == rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU8(uint8_t rhs) {
-    if (equal) {
-      equal = Reader::ReadU8() == rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteB(bool rhs) {
-    if (equal) {
-      equal = Reader::ReadB() == rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI64(int64_t rhs) {
-    if (equal) {
-      equal = Reader::ReadI64() == rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI32(int32_t rhs) {
-    if (equal) {
-      equal = Reader::ReadI32() == rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI16(int16_t rhs) {
-    if (equal) {
-      equal = Reader::ReadI16() == rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI8(int8_t rhs) {
-    if (equal) {
-      equal = Reader::ReadI8() == rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *Skip(uint32_t n) {
-    assert(0u < n);
-    if (equal) {
-      Reader::Skip(n);
-    }
-    return nullptr;
-  }
-
-  bool equal{true};
-};
-
-// A serializing writer that ignores the values being written, and instead
-// performs an element-wise less-than comparison.
-template <typename Reader>
-struct ByteLessThanComparingWriter : public Reader {
- public:
-  using Reader::Reader;
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *Current(void) const noexcept {
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WritePointer(void *rhs) {
-    if (!less) {
-      less = static_cast<const uint8_t *>(Reader::ReadPointer()) <
-             static_cast<const uint8_t *>(rhs);
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteSize(uint32_t rhs) {
-    if (!less) {
-      less = Reader::ReadSize() < rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteF64(double rhs) {
-    if (!less) {
-      less = Reader::ReadF64() < rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteF32(float rhs) {
-    if (!less) {
-      less = Reader::ReadF32() < rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU64(uint64_t rhs) {
-    if (!less) {
-      less = Reader::ReadU64() < rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU32(uint32_t rhs) {
-    if (!less) {
-      less = Reader::ReadU32() < rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU16(uint16_t rhs) {
-    if (!less) {
-      less = Reader::ReadU16() < rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU8(uint8_t rhs) {
-    if (!less) {
-      less = Reader::ReadU8() < rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteB(bool rhs) {
-    if (!less) {
-      less = Reader::ReadB() < rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI64(int64_t rhs) {
-    if (!less) {
-      less = Reader::ReadI64() < rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI32(int32_t rhs) {
-    if (!less) {
-      less = Reader::ReadI32() < rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI16(int16_t rhs) {
-    if (!less) {
-      less = Reader::ReadI16() < rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI8(int8_t rhs) {
-    if (!less) {
-      less = Reader::ReadI8() < rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *Skip(uint32_t n) {
-    assert(0u < n);
-    if (!less) {
-      Reader::Skip(n);
-    }
-    return nullptr;
-  }
-
-  bool less{false};
-};
-
-// A serializing writer that ignores the values being written, and instead
-// performs an element-wise greater-than comparison.
-template <typename Reader>
-struct ByteGreaterThanComparingWriter : public Reader {
- public:
-  using Reader::Reader;
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WritePointer(void *rhs) {
-    if (!greater) {
-      greater = static_cast<const uint8_t *>(Reader::ReadPointer()) >
-                static_cast<const uint8_t *>(rhs);
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteSize(uint32_t rhs) {
-    if (!greater) {
-      greater = Reader::ReadSize() > rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteF64(double rhs) {
-    if (!greater) {
-      greater = Reader::ReadF64() > rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteF32(float rhs) {
-    if (!greater) {
-      greater = Reader::ReadF32() > rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU64(uint64_t rhs) {
-    if (!greater) {
-      greater = Reader::ReadU64() > rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU32(uint32_t rhs) {
-    if (!greater) {
-      greater = Reader::ReadU32() > rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU16(uint16_t rhs) {
-    if (!greater) {
-      greater = Reader::ReadU16() > rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteU8(uint8_t rhs) {
-    if (!greater) {
-      greater = Reader::ReadU8() > rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteB(bool rhs) {
-    if (!greater) {
-      greater = Reader::ReadB() > rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI64(int64_t rhs) {
-    if (!greater) {
-      greater = Reader::ReadI64() > rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI32(int32_t rhs) {
-    if (!greater) {
-      greater = Reader::ReadI32() > rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI16(int16_t rhs) {
-    if (!greater) {
-      greater = Reader::ReadI16() > rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *WriteI8(int8_t rhs) {
-    if (!greater) {
-      greater = Reader::ReadI8() > rhs;
-    }
-    return nullptr;
-  }
-
-  HYDE_RT_ALWAYS_INLINE uint8_t *Skip(uint32_t n) {
-    assert(0u < n);
-    if (!greater) {
-      Reader::Skip(n);
-    }
-    return nullptr;
-  }
-
-  bool greater{false};
-};
-
 // A reader that actually figures out how many serialized bytes something will
 // require (`NullReader`), or that something occupied (using a real `Reader`)
 template <typename SubReader>
 struct ByteCountingReader : public SubReader {
  public:
   using SubReader::SubReader;
-
-  HYDE_RT_ALWAYS_INLINE void *ReadPointer(void) {
-    num_bytes += 8u;
-    return SubReader::ReadPointer();
-  }
+  using SubReader::SizeLeft;
 
   // This is the one special case where we actual do the read.
   HYDE_RT_ALWAYS_INLINE uint32_t ReadSize(void) {
@@ -1219,7 +766,6 @@ struct ByteCountingReader : public SubReader {
   }
 
   HYDE_RT_ALWAYS_INLINE void Skip(uint32_t n) {
-    assert(0u < n);
     num_bytes += n;
     SubReader::Skip(n);
   }
@@ -1233,9 +779,25 @@ static constexpr bool kIsByteCountingReader = false;
 template <typename T>
 static constexpr bool kIsByteCountingReader<ByteCountingReader<T>> = true;
 
-// Methods to overload for serializing data
-template <typename Reader, typename Writer, typename DataT>
-struct Serializer;
+// Serialize enumerations in terms of their underlying type.
+template <typename Reader, typename Writer, typename T>
+struct Serializer {
+
+  static_assert(std::is_enum_v<T>);
+  using UT = std::underlying_type_t<T>;
+
+  static constexpr bool kIsFixedSize = true;
+  HYDE_RT_FLATTEN HYDE_RT_INLINE static void Write(Writer &writer, T data) {
+    Serializer<Reader, Writer, UT>::Write(writer, static_cast<UT>(data));
+  }
+  HYDE_RT_FLATTEN HYDE_RT_INLINE static void Read(Reader &reader, T &out) {
+    Serializer<Reader, Writer, UT>::Read(
+        reader, reinterpret_cast<UT &>(out));
+  }
+  static constexpr uint32_t SizeInBytes(void) noexcept {
+    return static_cast<uint32_t>(sizeof(T));
+  }
+};
 
 template <typename T>
 static constexpr bool kHasTrivialFixedSizeSerialization =
@@ -1245,38 +807,10 @@ template <typename T>
 static constexpr size_t kFixedSerializationSize =
     Serializer<NullReader, NullWriter, T>::SizeInBytes();
 
-template <typename T>
-static constexpr bool kHasTrivialFixedSizeSerialization<Mutable<T>> =
-    kHasTrivialFixedSizeSerialization<T>;
-
-template <typename T>
-static constexpr size_t kFixedSerializationSize<Mutable<T>> =
-    kFixedSerializationSize<T>;
-
-template <typename T>
-static constexpr bool kHasTrivialFixedSizeSerialization<Addressable<T>> =
-    kHasTrivialFixedSizeSerialization<T>;
-
-template <typename T>
-static constexpr size_t kFixedSerializationSize<Addressable<T>> =
-    kFixedSerializationSize<T>;
-
 // Methods to overload for serializing data
 template <typename Reader, typename Writer, typename DataT>
 struct Serializer<Reader, Writer, const DataT>
     : Serializer<Reader, Writer, DataT> {};
-
-template <typename Reader, typename Writer, typename DataT>
-struct Serializer<Reader, Writer, Mutable<DataT>>
-    : Serializer<Reader, Writer, DataT> {};
-
-template <typename Reader, typename Writer, typename DataT>
-struct Serializer<Reader, Writer, Addressable<DataT>>
-    : Serializer<Reader, Writer, DataT> {};
-
-template <typename Reader, typename Writer, typename DataT>
-struct Serializer<Reader, Writer, Address<DataT>>
-    : Serializer<Reader, Writer, DataT *> {};
 
 #define HYDE_RT_SERIALIZER_NAMESPACE_BEGIN
 #define HYDE_RT_SERIALIZER_NAMESPACE_END
@@ -1284,18 +818,16 @@ struct Serializer<Reader, Writer, Address<DataT>>
   template <> \
   inline constexpr bool kCanReadWriteUnsafely<type> = true
 
-#define DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(type, cast_op, cast_type, \
-                                               method_suffix, size) \
+#define HYDE_RT_MAKE_FUNDAMENTAL_SERIALIZER(type, cast_op, cast_type, \
+                                       method_suffix, size) \
   HYDE_RT_SERIALIZER_NAMESPACE_BEGIN \
   template <typename Reader, typename Writer> \
   struct Serializer<Reader, Writer, type> { \
     static constexpr bool kIsFixedSize = true; \
-    HYDE_RT_FLATTEN HYDE_RT_INLINE static uint8_t *Write(Writer &writer, \
-                                                         type data) { \
-      return writer.Write##method_suffix(cast_op<cast_type>(data)); \
+    HYDE_RT_FLATTEN HYDE_RT_INLINE static void Write(Writer &writer, type data) { \
+      writer.Write##method_suffix(cast_op<cast_type>(data)); \
     } \
-    HYDE_RT_FLATTEN HYDE_RT_INLINE static void Read(Reader &reader, \
-                                                    type &out) { \
+    HYDE_RT_FLATTEN HYDE_RT_INLINE static void Read(Reader &reader, type &out) { \
       out = cast_op<type>(reader.Read##method_suffix()); \
     } \
     static constexpr uint32_t SizeInBytes(void) noexcept { \
@@ -1305,92 +837,116 @@ struct Serializer<Reader, Writer, Address<DataT>>
   HYDE_RT_DEFINE_UNSAFE_SERIALIZER_PRIV(type); \
   HYDE_RT_SERIALIZER_NAMESPACE_END
 
-#define DRLOJEKYLL_MAKE_ENUM_SERIALIZER(type, cast_type) \
-  HYDE_RT_SERIALIZER_NAMESPACE_BEGIN \
-  template <typename Reader, typename Writer> \
-  struct Serializer<Reader, Writer, type> \
-      : public Serializer<Reader, Writer, cast_type> { \
-    using Parent = Serializer<Reader, Writer, cast_type>; \
-    static constexpr bool kIsFixedSize = Parent::kIsFixedSize; \
-    HYDE_RT_FLATTEN HYDE_RT_INLINE static uint8_t *Write(Writer &writer, \
-                                                         type data) { \
-      return Parent::Write(writer, static_cast<cast_type>(data)); \
-    } \
-    HYDE_RT_FLATTEN HYDE_RT_INLINE static void Read(Reader &reader, \
-                                                    type &out) { \
-      Parent::Read(reader, reinterpret_cast<cast_type &>(out)); \
-    } \
-    static constexpr uint32_t SizeInBytes(void) noexcept { \
-      return Parent::SizeInBytes(); \
-    } \
-  }; \
-  HYDE_RT_DEFINE_UNSAFE_SERIALIZER_PRIV(type); \
-  HYDE_RT_SERIALIZER_NAMESPACE_END
-
 template <typename T>
-static constexpr bool kCanReadWriteUnsafely = false;
+inline constexpr bool kCanReadWriteUnsafely =
+    std::is_enum_v<T> || std::is_arithmetic_v<T>;
 
-#if CHAR_MIN < 0
-DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(char, static_cast, int8_t, I8, 1)
-#else
-DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(char, static_cast, uint8_t, U8, 1)
-#endif
+template <>
+inline constexpr bool kCanReadWriteUnsafely<Empty> = true;
 
-DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(bool, static_cast, bool, B, 1)
-
-DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(TupleState, static_cast, uint8_t, U8, 1)
-
-DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(uint8_t, static_cast, uint8_t, U8, 1)
-DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(int8_t, static_cast, int8_t, I8, 1)
-
-DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(uint16_t, static_cast, uint16_t, U16, 2)
-DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(int16_t, static_cast, int16_t, I16, 2)
-
-DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(uint32_t, static_cast, uint32_t, U32, 4)
-DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(int32_t, static_cast, int32_t, I32, 4)
-
-DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(uint64_t, static_cast, uint64_t, U64, 8)
-DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(int64_t, static_cast, int64_t, I64, 8)
-
-DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(float, static_cast, float, F32, 4)
-DRLOJEKYLL_MAKE_FUNDAMENTAL_SERIALIZER(double, static_cast, double, F64, 8)
-
-template <typename Reader, typename Writer, typename T>
-struct Serializer<Reader, Writer, T *> {
+template <typename Reader, typename Writer>
+struct Serializer<Reader, Writer, Empty> {
   static constexpr bool kIsFixedSize = true;
-  static uint8_t *Write(Writer &writer, T *data) {
-    return writer.WritePointer(reinterpret_cast<void *>(data));
-  }
-
-  static void Read(Reader &reader, T *&out) {
-    out = reinterpret_cast<T *>(reader.ReadPointer());
-  }
-
+  HYDE_RT_INLINE static void Write(Writer &, Empty) {}
+  HYDE_RT_INLINE static void Read(Reader &, Empty &) {}
   static constexpr uint32_t SizeInBytes(void) noexcept {
-    return 8;
+    return 0u;
   }
 };
+
+#if CHAR_MIN < 0
+HYDE_RT_MAKE_FUNDAMENTAL_SERIALIZER(char, static_cast, int8_t, I8, 1)
+#else
+HYDE_RT_MAKE_FUNDAMENTAL_SERIALIZER(char, static_cast, uint8_t, U8, 1)
+#endif
+
+HYDE_RT_MAKE_FUNDAMENTAL_SERIALIZER(bool, static_cast, bool, B, 1)
+
+HYDE_RT_MAKE_FUNDAMENTAL_SERIALIZER(uint8_t, static_cast, uint8_t, U8, 1)
+HYDE_RT_MAKE_FUNDAMENTAL_SERIALIZER(int8_t, static_cast, int8_t, I8, 1)
+
+HYDE_RT_MAKE_FUNDAMENTAL_SERIALIZER(uint16_t, static_cast, uint16_t, U16, 2)
+HYDE_RT_MAKE_FUNDAMENTAL_SERIALIZER(int16_t, static_cast, int16_t, I16, 2)
+
+HYDE_RT_MAKE_FUNDAMENTAL_SERIALIZER(uint32_t, static_cast, uint32_t, U32, 4)
+HYDE_RT_MAKE_FUNDAMENTAL_SERIALIZER(int32_t, static_cast, int32_t, I32, 4)
+
+HYDE_RT_MAKE_FUNDAMENTAL_SERIALIZER(uint64_t, static_cast, uint64_t, U64, 8)
+HYDE_RT_MAKE_FUNDAMENTAL_SERIALIZER(int64_t, static_cast, int64_t, I64, 8)
+
+HYDE_RT_MAKE_FUNDAMENTAL_SERIALIZER(float, static_cast, float, F32, 4)
+HYDE_RT_MAKE_FUNDAMENTAL_SERIALIZER(double, static_cast, double, F64, 8)
+
+
+template<typename Reader, typename Writer, typename T>
+struct Serializer<Reader, Writer, T *> {
+  static constexpr bool kIsFixedSize = true;
+  [[gnu::noinline]] static void Write(Writer &writer, T *data) {
+    if constexpr (sizeof(void *) == 8) {
+      writer.WriteU64(static_cast<uintptr_t>(data));
+    } else {
+      writer.WriteU32(static_cast<uintptr_t>(data));
+    }
+  }
+  [[gnu::noinline]] static void Read(Reader &reader, T *&out) {
+    if constexpr (sizeof(void *) == 8) {
+      out = static_cast<uintptr_t>(reader.ReadU64());
+    } else {
+      out = static_cast<uintptr_t>(reader.ReadU32());
+    }
+  }
+  static constexpr uint32_t SizeInBytes(void) noexcept {
+    return sizeof(uintptr_t);
+  }
+};
+
+template<typename Reader, typename Writer, typename T>
+struct Serializer<Reader, Writer, const T *> {
+  static constexpr bool kIsFixedSize = true;
+  [[gnu::noinline]] static void Write(Writer &writer, const T *data) {
+    if constexpr (sizeof(void *) == 8) {
+      writer.WriteU64(static_cast<uintptr_t>(data));
+    } else {
+      writer.WriteU32(static_cast<uintptr_t>(data));
+    }
+  }
+  [[gnu::noinline]] static void Read(Reader &reader, const T *&out) {
+    if constexpr (sizeof(void *) == 8) {
+      out = static_cast<uintptr_t>(reader.ReadU64());
+    } else {
+      out = static_cast<uintptr_t>(reader.ReadU32());
+    }
+  }
+  static constexpr uint32_t SizeInBytes(void) noexcept {
+    return sizeof(uintptr_t);
+  }
+};
+
+template <typename T>
+inline constexpr bool kCanReadWriteUnsafely<T *> = true;
+
+template <typename T>
+inline constexpr bool kCanReadWriteUnsafely<const T *> = true;
+
 
 #ifndef HYDE_RT_MISSING_INT128
 template <typename Reader, typename Writer>
 struct Serializer<Reader, Writer, int128_t> {
   static constexpr bool kIsFixedSize = true;
-  static uint8_t *Write(Writer &writer, int128_t val) {
+  static void Write(Writer &writer, int128_t val) {
     alignas(int128_t) uint8_t data[16u];
     *(new (data) int128_t) = val;
 
-    if constexpr (HYDE_RT_LITTLE_ENDIAN) {
-      auto ret = writer.WriteU8(data[0]);
+    if HYDE_RT_CONSTEXPR_ENDIAN (HYDE_RT_LITTLE_ENDIAN) {
+      writer.WriteU8(data[0]);
       for (auto i = 1u; i < 16u; ++i) {
         writer.WriteU8(data[i]);
       }
-      return ret;
     } else {
-      auto ret = writer.WriteU8(data[16u - 1u]);
+      writer.WriteU8(data[16u - 1u]);
       for (auto i = 2u; i <= 16u; ++i) {
         writer.WriteU8(data[16u - i]);
       }
-      return ret;
     }
   }
 
@@ -1411,22 +967,20 @@ template <typename Reader, typename Writer>
 struct Serializer<Reader, Writer, uint128_t> {
   static constexpr bool kIsFixedSize = true;
 
-  static uint8_t *Write(Writer &writer, uint128_t val) {
+  static void Write(Writer &writer, uint128_t val) {
     alignas(uint128_t) uint8_t data[16u];
     *(new (data) uint128_t) = val;
 
-    if constexpr (HYDE_RT_LITTLE_ENDIAN) {
-      auto ret = writer.WriteU8(data[0]);
+    if HYDE_RT_CONSTEXPR_ENDIAN (HYDE_RT_LITTLE_ENDIAN) {
+      writer.WriteU8(data[0]);
       for (auto i = 1u; i < 16u; ++i) {
         writer.WriteU8(data[i]);
       }
-      return ret;
     } else {
-      auto ret = writer.WriteU8(data[16u - 1u]);
+      writer.WriteU8(data[16u - 1u]);
       for (auto i = 2u; i <= 16u; ++i) {
         writer.WriteU8(data[16u - i]);
       }
-      return ret;
     }
   }
 
@@ -1443,29 +997,6 @@ struct Serializer<Reader, Writer, uint128_t> {
   }
 };
 #endif  // HYDE_RT_MISSING_INT128
-
-template <typename Reader, typename Writer, typename DataT>
-struct Serializer<Reader, Writer, InternRef<DataT>> {
- public:
-  using RefT = InternRef<DataT>;
-
-  HYDE_RT_INLINE
-  static uint8_t *Write(Writer &writer, RefT ref) {
-    return Serializer<Reader, Writer, DataT>::Write(writer, *(ref.ref));
-  }
-
-  HYDE_RT_INLINE
-  static void Read(Reader &reader, RefT) {
-    abort();
-  }
-};
-
-template <typename Reader, typename Writer, typename DataT>
-struct Serializer<Reader, Writer, const InternRef<DataT> &>
-    : public Serializer<Reader, Writer, InternRef<DataT>> {};
-
-template <typename T>
-static constexpr bool kCanReadWriteUnsafely<T *> = true;
 
 #undef HYDE_RT_DEFINE_UNSAFE_SERIALIZER_PRIV
 #define HYDE_RT_DEFINE_UNSAFE_SERIALIZER_PRIV(type)
@@ -1498,10 +1029,9 @@ struct LinearContainerReader<ByteCountingReader<SubReader>, ContainerType,
  public:
   using Reader = ByteCountingReader<SubReader>;
 
-  HYDE_RT_FLATTEN HYDE_RT_INLINE static void Read(Reader &reader,
-                                                  ContainerType &) {
+  HYDE_RT_FLATTEN HYDE_RT_INLINE static void Read(Reader &reader, ContainerType &) {
     if (const auto size = reader.ReadSize(); size) {
-      if (kHasTrivialFixedSizeSerialization<ElementType>) {
+      if constexpr (kHasTrivialFixedSizeSerialization<ElementType>) {
         reader.Skip(
             static_cast<uint32_t>(size * kFixedSerializationSize<ElementType>));
       } else {
@@ -1519,11 +1049,11 @@ struct LinearContainerReader<ByteCountingReader<SubReader>, ContainerType,
 template <typename Writer, typename ContainerType, typename ElementType>
 struct LinearContainerWriter {
  public:
-  HYDE_RT_FLATTEN HYDE_RT_INLINE static uint8_t *Write(
+  HYDE_RT_FLATTEN HYDE_RT_INLINE static void Write(
       Writer &writer, const ContainerType &data) {
     const auto size = static_cast<uint32_t>(data.size());
     writer.EnterVariableSizedComposite(size);
-    auto ret = writer.WriteSize(size);
+    writer.WriteSize(size);
 
     // NOTE(pag): Induction variable based `for` loop so that a a byte counting
     //            writer can elide the `for` loop entirely and count `size`.
@@ -1535,7 +1065,6 @@ struct LinearContainerWriter {
     }
 
     writer.ExitComposite();
-    return ret;
   }
 };
 
@@ -1544,13 +1073,13 @@ struct LinearContainerWriter {
 template <typename ContainerType, typename ElementType>
 struct LinearContainerWriter<ByteCountingWriter, ContainerType, ElementType> {
  public:
-  HYDE_RT_FLATTEN HYDE_RT_INLINE static uint8_t *Write(
+  HYDE_RT_FLATTEN HYDE_RT_INLINE static void Write(
       ByteCountingWriter &writer, const ContainerType &data) {
     const auto size = static_cast<uint32_t>(data.size());
     writer.EnterVariableSizedComposite(size);
-    auto ret = writer.WriteSize(size);
+    writer.WriteSize(size);
     if (size) {
-      if (kHasTrivialFixedSizeSerialization<ElementType>) {
+      if constexpr (kHasTrivialFixedSizeSerialization<ElementType>) {
         writer.Skip(
             static_cast<uint32_t>(size * kFixedSerializationSize<ElementType>));
 
@@ -1563,7 +1092,6 @@ struct LinearContainerWriter<ByteCountingWriter, ContainerType, ElementType> {
       }
     }
     writer.ExitComposite();
-    return ret;
   }
 };
 
@@ -1585,11 +1113,6 @@ struct Serializer<Reader, Writer, std::vector<T, VectorAllocator>>
     : public LinearContainerSerializer<Reader, Writer,
                                        std::vector<T, VectorAllocator>, T> {};
 
-template <typename Reader, typename Writer>
-struct Serializer<Reader, Writer, hyde::rt::Bytes>
-    : public LinearContainerSerializer<Reader, Writer,
-                                       std::vector<uint8_t>, uint8_t> {};
-
 template <typename Reader, typename Writer, typename T, typename StringTraits,
           typename StringAllocator>
 struct Serializer<Reader, Writer,
@@ -1598,13 +1121,24 @@ struct Serializer<Reader, Writer,
           Reader, Writer, std::basic_string<T, StringTraits, StringAllocator>,
           T> {};
 
+template <typename Reader, typename Writer, typename T, typename StringTraits>
+struct Serializer<Reader, Writer, std::basic_string_view<T, StringTraits>>
+    : public LinearContainerWriter<
+          Writer, std::basic_string_view<T, StringTraits>, T> {
+  static constexpr bool kIsFixedSize = false;
+
+  static constexpr uint32_t SizeInBytes(void) noexcept {
+    return 0u;
+  }
+};
+
 // Serialize an indexed type like `std::tuple`, `std::pair`, or `std::array`.
 template <typename Reader, typename Writer, typename Val, size_t kIndex,
           size_t kMaxIndex>
 struct IndexedSerializer {
 
-  HYDE_RT_FLATTEN HYDE_RT_INLINE static uint8_t *Write(Writer &writer,
-                                                       const Val &data) {
+  HYDE_RT_FLATTEN HYDE_RT_INLINE static void Write(Writer &writer,
+                                                   const Val &data) {
     if constexpr (kIndex == 0u) {
       writer.EnterFixedSizeComposite(kMaxIndex);
     }
@@ -1612,16 +1146,13 @@ struct IndexedSerializer {
       const auto &elem = std::get<kIndex>(data);
       using ElemT =
           std::remove_const_t<std::remove_reference_t<decltype(elem)>>;
-      auto ret = Serializer<Reader, Writer, ElemT>::Write(writer, elem);
+      Serializer<Reader, Writer, ElemT>::Write(writer, elem);
       if constexpr ((kIndex + 1u) < kMaxIndex) {
         IndexedSerializer<NullReader, Writer, Val, kIndex + 1u,
                           kMaxIndex>::Write(writer, data);
       } else {
         writer.ExitComposite();
       }
-      return ret;
-    } else {
-      return nullptr;
     }
   }
 
@@ -1682,13 +1213,8 @@ struct Serializer<Reader, Writer, std::tuple<>> {
     return 0u;
   }
 
-  HYDE_RT_FLATTEN HYDE_RT_INLINE static uint8_t *Write(
-      Writer &writer, std::tuple<>) {
-    return writer.Current();
-  }
-
-  HYDE_RT_FLATTEN HYDE_RT_INLINE static void Read(
-      Reader &writer, std::tuple<> &) {}
+  HYDE_RT_FLATTEN HYDE_RT_INLINE static void Write(Writer &, std::tuple<>) {}
+  HYDE_RT_FLATTEN HYDE_RT_INLINE static void Read(Reader &, std::tuple<> &) {}
 };
 
 template <typename Reader, typename Writer, typename ElemT, size_t kSize>
@@ -1696,7 +1222,6 @@ struct Serializer<Reader, Writer, std::array<ElemT, kSize>>
     : public IndexedSerializer<Reader, Writer, std::array<ElemT, kSize>, 0,
                                kSize> {
   static constexpr bool kIsFixedSize = kHasTrivialFixedSizeSerialization<ElemT>;
-
 
   static constexpr uint32_t SizeInBytes(void) noexcept {
     if constexpr (kHasTrivialFixedSizeSerialization<ElemT>) {

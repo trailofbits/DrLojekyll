@@ -474,7 +474,6 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
           }
 
           // Create a named constant on a built-in type.
-          case Lexeme::kTypeBytes:
           case Lexeme::kTypeBoolean:
           case Lexeme::kTypeUn:
           case Lexeme::kTypeIn:
@@ -586,10 +585,6 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
           alloc_const->can_overide = true;
 
           switch (alloc_const->type.UnderlyingKind()) {
-            case TypeKind::kBytes:
-              alloc_const->lang = Language::kUnknown;
-              context->display_manager.TryReadData(tok_range, &code);
-              break;
             case TypeKind::kForeignType: {
               const auto str_id = tok.StringId();
               const auto str_len = tok.StringLength();
@@ -623,7 +618,6 @@ void ParserImpl::ParseForeignConstantDecl(ParsedModuleImpl *module) {
 
           switch (alloc_const->type.UnderlyingKind()) {
             case TypeKind::kInvalid:
-            case TypeKind::kBytes:
             case TypeKind::kBoolean:
               context->error_log.Append(scope_range, tok_range)
                   << "Cannot initialize named constant of built-in type '"

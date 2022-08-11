@@ -47,6 +47,10 @@ inline static OutputStream &Table(OutputStream &os, const DataTable table) {
   return os << "table_" << table.Id();
 }
 
+inline static OutputStream &Index(OutputStream &os, const DataIndex index) {
+  return os << "index_" << index.Id();
+}
+
 //inline static OutputStream &Table(OutputStream &os, const DataIndex index) {
 //  return Table(os, DataTable::Backing(index));
 //}

@@ -789,6 +789,16 @@ const std::vector<QueryView> DataTable::Views(void) const noexcept {
   return impl->views;
 }
 
+// Are there any views that will possibly remove entries from this table?
+bool DataTable::IsDifferential(void) const noexcept {
+  for (const QueryView &view : impl->views) {
+    if (view.CanProduceDeletions()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 VectorKind DataVector::Kind(void) const noexcept {
   return impl->kind;
 }

@@ -60,7 +60,6 @@ struct ColumnProvenance {
       case TypeKind::kUnsigned64: return 64u;
       case TypeKind::kFloat: return 32u;
       case TypeKind::kDouble: return 64u;
-      case TypeKind::kBytes: return 64u;  // It's not transparent.
 
       // TODO(pag): Maybe add a way to communicate expected size into the
       //            language?

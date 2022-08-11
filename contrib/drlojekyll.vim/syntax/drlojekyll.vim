@@ -35,8 +35,6 @@ syn match drBoolean /\<\%(true\|false\)\>/ display
 hi def link drBoolean Boolean
 
 syn keyword drType
-            \  ascii
-            \ bytes
             \ f32
             \ f64
             \ i128
@@ -49,8 +47,6 @@ syn keyword drType
             \ u32
             \ u64
             \ u8
-            \ utf8
-            \ uuid
 hi def link drType Type
 
 syn keyword drKeyword
