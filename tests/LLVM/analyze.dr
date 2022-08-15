@@ -1,10 +1,69 @@
 
 #import "llvm.dr".
 
-#message call(Function F_from, Function F_to)
-    : module(M)
-    , module_function(M, F_to)
-    , function_use(F_to, Use_of_F_to)
-    , instruction_user(I_call, Use_of_F_to)
-    , instruction_opcode(I_call, OP_Call)
-    , function_instruction(F_from, I_call).
+#local is_conditional_instruction(Instruction inst)
+	: instruction_successor(inst, succ_1)
+	, instruction_successor(inst, succ_2)
+	, succ_1 != succ_2 
+	
+#local is_function_start(Instruction inst)
+	: instruction_block(inst, block)
+	, block_function(block, func)
+	, function_start_inst(func, start_inst)
+	, start_inst = inst
+
+#message direct_function_call(Instruction inst, Function func)
+    , function_use(func, use)
+    , instruction_user(inst, use)
+    , instruction_opcode(inst, OP_Call)
+    , ! is_conditional_instruction(inst)
+
+#message indirect_function_call(Instruction inst, Function func)
+	: function_use(func, use)
+	, instruction_user(inst, use) ;
+    , instruction_opcode(inst, OP_Br)
+    , ! is_conditional_instruction(inst)
+    , is_function_start(inst)
+ 
+#message direct_branch(Instruction inst_src, Instruction inst_dst)
+	: instruction_use(func, use)
+	, instruction_user(inst_src, use) ;
+    , instruction_opcode(inst_src, OP_Br)
+    , instruction_use(inst_dst, use_dst)
+    , ! is_function_start(inst_dst) ; is not the start of a function
+    , ! is_conditional_instruction(inst_src)
+
+#message indirect_branch(Instruction inst_src, Instruction inst_dst)
+	: instruction_use(func, use)
+	, instruction_user(inst, use)
+	, instruction_opcode(inst, OP_IndirectBr)
+    , ! is_function_start(inst_dst) ;
+    , ! is_conditional_instruction(inst_src)
+    
+#message cond_direct_function_call(Instruction inst, Function func)
+    , function_use(func, use)
+    , instruction_user(inst, use)
+    , instruction_opcode(inst, OP_Call)
+    , is_conditional_instruction(inst)
+   
+#message cond_indirect_function_call(Instruction inst, Function func)
+	: function_use(func, use)
+	, instruction_user(inst, use)
+    , instruction_opcode(inst, OP_Br)
+    , is_conditional_instruction(inst)
+    , is_function_start(inst)
+    
+#message direct_branch(Instruction inst_src, Instruction inst_dst)
+	: instruction_use(func, use)
+	, instruction_user(inst_src, use)
+    , instruction_opcode(inst_src, OP_Br)
+    , !is_function_start(inst_dst) ;
+    , is_conditional_instruction(inst_src)
+
+#message indirect_branch(Instruction inst_src, Instruction inst_dst)
+	: instruction_use(func, use)
+	, instruction_user(inst, use)
+	, instruction_opcode(inst, OP_IndirectBr)
+    , !is_function_start(inst_dst) ;
+    , is_conditional_instruction(inst_src)
+    

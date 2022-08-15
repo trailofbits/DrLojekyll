@@ -10,6 +10,8 @@
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
+#include "llvm/ADT/iterator_range.h"
+
 
 ```.
 
@@ -18,13 +20,15 @@
 #foreign Instruction ```c++ llvm::Instruction *``` @transparent @nullable.
 #foreign BasicBlock ```c++ llvm::BasicBlock *``` @transparent @nullable.
 #foreign Function ```c++ llvm::Function *``` @transparent @nullable.
+#foreign IteratorRange ```c++ llvm::iterator_range``` @transparent @nullable.
 #foreign Module ```c++ llvm::Module *``` @transparent @nullable.
 #foreign Value ```c++ llvm::Value *``` @transparent @nullable.
 #foreign Variable ```c++ llvm::GlobalVariable *``` @transparent @nullable.
 #foreign Alias ```c++ llvm::GlobalAlias *``` @transparent @nullable.
 #foreign Use ```c++ llvm::Use *``` @transparent @nullable.
+#foreign User ```c++ llvm::User *``` @transparent @nullable.
+#foreign unsigned ```c++ unsigned``` @transparent.
 
-#foreign OpCode ```c++ unsigned``` @transparent.
 #constant OpCode OP_Ret ```c++ llvm::Instruction::Ret``` @unique.
 #constant OpCode OP_Br ```c++ llvm::Instruction::Br``` @unique.
 #constant OpCode OP_Switch ```c++ llvm::Instruction::Switch``` @unique.
@@ -98,77 +102,58 @@
 
 ; Access the functions of a module.
 #functor module_function(bound Module M, free Function F) @range(*).
-#functor module_function(free Module M, bound Function F) @range(.).
-#functor module_function(bound Module M, bound Function F) @range(?).
 
 ; Access the global variables of a module.
 #functor module_variable(bound Module M, free Variable V) @range(*).
-#functor module_variable(free Module M, bound Variable V) @range(.).
-#functor module_variable(bound Module M, bound Variable V) @range(?).
 
 ; Access the blocks of a function.
 #functor function_block(bound Function F, free BasicBlock B) @range(*).
-#functor function_block(free Function F, bound BasicBlock B) @range(.).
-#functor function_block(bound Function F, bound BasicBlock B) @range(?).
 
 ; Access the instructions of a function.
 #functor function_instruction(bound Function F, free Instruction I) @range(*).
-#functor function_instruction(free Function F, bound Instruction I) @range(.).
-#functor function_instruction(bound Function F, bound Instruction I) @range(?).
 
 ; Access the arguments of a function.
 #functor function_argument(bound Function F, free Argument A) @range(*).
-#functor function_argument(free Function F, bound Argument A) @range(.).
-#functor function_argument(bound Function F, bound Argument A) @range(?).
 
 ; Access the instructions of a block.
 #functor block_instruction(bound BasicBlock B, free Instruction I) @range(*).
 #functor block_instruction(free BasicBlock B, bound Instruction I) @range(.).
-#functor block_instruction(bound BasicBlock B, bound Instruction I) @range(?).
 
 ; Access the terminator instructions of a block.
 #functor block_terminator(bound BasicBlock B, free Instruction I) @range(.).
-#functor block_terminator(free BasicBlock B, bound Instruction I) @range(?).
-#functor block_terminator(bound BasicBlock B, bound Instruction I) @range(?).
 
 ; Access the successors of a block.
 #functor block_successor(bound BasicBlock B_from, free BasicBlock B_to) @range(*).
-#functor block_successor(free BasicBlock B_from, bound BasicBlock B_to) @range(*).
-#functor block_successor(bound BasicBlock B_from, bound BasicBlock B_to) @range(?).
 
-; Access the successors of an instruction.
+; Access the successor instructions of an instruction.
 #functor instruction_successor(bound Instruction I_from, free Instruction I_to) @range(*).
-#functor instruction_successor(free Instruction I_from, bound Instruction I_to) @range(*).
-#functor instruction_successor(bound Instruction I_from, bound Instruction I_to) @range(?).
+
+; Access the successor blocks of an instruction.
+#functor instruction_successor_blocks(bound Instruction inst, free Block block) @range(*).
+
+; Access the block a given instruction is in
+#functor instruction_block(free Instruction inst, bound Block block) @range(*).
 
 ; Access the uses of a function.
 #functor function_use(bound Function F, free Use U) @range(*).
-#functor function_use(free Function F, bound Use U) @range(?).
-#functor function_use(bound Function F, bound Use U) @range(?).
 
 ; Access the uses of a global variable.
 #functor variable_use(bound Variable V, free Use U) @range(*).
-#functor variable_use(free Variable V, bound Use U) @range(?).
-#functor variable_use(bound Variable V, bound Use U) @range(?).
 
 ; Access the uses of an argument.
 #functor argument_use(bound Argument A, free Use U) @range(*).
-#functor argument_use(free Argument A, bound Use U) @range(?).
-#functor argument_use(bound Argument A, bound Use U) @range(?).
 
 ; Access the uses of an instruction.
 #functor instruction_use(bound Instruction I, free Use U) @range(*).
-#functor instruction_use(free Instruction I, bound Use U) @range(?).
-#functor instruction_use(bound Instruction I, bound Use U) @range(?).
 
 ; Access the user of a use as an instruction.
-#functor instruction_user(bound Instruction I, free Use U) @range(*).
-#functor instruction_user(free Instruction I, bound Use U) @range(?).
-#functor instruction_user(bound Instruction I, bound Use U) @range(?).
+#functor instruction_user(free Instruction I, bound Use Use) @range(?).
 
-; Access the user of a use as an instruction.
+; Access the opcode of a given instruction.
 #functor instruction_opcode(bound Instruction I, free OpCode O) @range(.).
-#functor instruction_opcode(bound Instruction I, bound OpCode O) @range(?).
+
+; Access the first instruction of a given function
+#functor function_start_inst(bound Function F, free Instruction i) @range(.).
 
 #message add_from_from_file(Path FilePath).
 
