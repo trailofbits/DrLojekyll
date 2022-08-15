@@ -28,6 +28,7 @@
 #foreign Use ```c++ llvm::Use *``` @transparent @nullable.
 #foreign User ```c++ llvm::User *``` @transparent @nullable.
 #foreign unsigned ```c++ unsigned``` @transparent.
+#foreign OpCode ```c++ unsigned``` @transparent.
 
 #constant OpCode OP_Ret ```c++ llvm::Instruction::Ret``` @unique.
 #constant OpCode OP_Br ```c++ llvm::Instruction::Br``` @unique.
@@ -117,7 +118,6 @@
 
 ; Access the instructions of a block.
 #functor block_instruction(bound BasicBlock B, free Instruction I) @range(*).
-#functor block_instruction(free BasicBlock B, bound Instruction I) @range(.).
 
 ; Access the terminator instructions of a block.
 #functor block_terminator(bound BasicBlock B, free Instruction I) @range(.).
@@ -129,10 +129,10 @@
 #functor instruction_successor(bound Instruction I_from, free Instruction I_to) @range(*).
 
 ; Access the successor blocks of an instruction.
-#functor instruction_successor_blocks(bound Instruction inst, free Block block) @range(*).
+#functor instruction_successor_blocks(bound Instruction Inst, free BasicBlock Block) @range(*).
 
-; Access the block a given instruction is in
-#functor instruction_block(free Instruction inst, bound Block block) @range(*).
+; Access the block of a given instruction
+#functor instruction_block(free Instruction Inst, bound BasicBlock Block) @range(*).
 
 ; Access the uses of a function.
 #functor function_use(bound Function F, free Use U) @range(*).
@@ -147,13 +147,18 @@
 #functor instruction_use(bound Instruction I, free Use U) @range(*).
 
 ; Access the user of a use as an instruction.
-#functor instruction_user(free Instruction I, bound Use Use) @range(?).
+#functor instruction_user(free Instruction I, bound Use U) @range(?).
 
 ; Access the opcode of a given instruction.
 #functor instruction_opcode(bound Instruction I, free OpCode O) @range(.).
+#functor instruction_opcode(bound Instruction I, bound OpCode O) @range(?).
 
 ; Access the first instruction of a given function
-#functor function_start_inst(bound Function F, free Instruction i) @range(.).
+#functor function_start_inst(bound Function Func, free Instruction Inst) @range(.).
+
+; Access the function of a given block
+#functor block_function(bound BasicBlock Block, free Function Func) @range(.).
+
 
 #message add_from_from_file(Path FilePath).
 

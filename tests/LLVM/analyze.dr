@@ -1,69 +1,81 @@
 
 #import "llvm.dr".
 
-#local is_conditional_instruction(Instruction inst)
-	: instruction_successor(inst, succ_1)
-	, instruction_successor(inst, succ_2)
-	, succ_1 != succ_2 
+#message instruction(Instruction INST).
+#message block(BasicBlock BLOCK).
+#message function(Function FUNCTION).
+
+#local is_conditional_instruction(Instruction Inst).
+
+is_conditional_instruction(Inst) @product
+	: instruction_successor(Inst, Succ1)
+	, instruction_successor(Inst, Succ2)
+	, instruction(Inst)
+	, Succ1 != Succ2 .
 	
-#local is_function_start(Instruction inst)
-	: instruction_block(inst, block)
-	, block_function(block, func)
-	, function_start_inst(func, start_inst)
-	, start_inst = inst
+#local is_function_start(Instruction Inst)
+	: instruction(StartInst)
+	, block(Block)
+	, function(Func)
+	, instruction_block(Inst, Block)
+	, block_function(Block, Func)
+	, function_start_inst(Func, StartInst)
+	, StartInst = Inst.
 
-#message direct_function_call(Instruction inst, Function func)
-    , function_use(func, use)
-    , instruction_user(inst, use)
-    , instruction_opcode(inst, OP_Call)
-    , ! is_conditional_instruction(inst)
+#query direct_function_call(bound Instruction Inst, bound Function Func)
+    : function(Func)
+    , function_use(Func, F_Use)
+    , instruction_user(Inst, F_Use)
+    , instruction_opcode(Inst, OP_Call)
+    , ! is_conditional_instruction(Inst).
 
-#message indirect_function_call(Instruction inst, Function func)
-	: function_use(func, use)
-	, instruction_user(inst, use) ;
-    , instruction_opcode(inst, OP_Br)
-    , ! is_conditional_instruction(inst)
-    , is_function_start(inst)
+#query indirect_function_call(bound Instruction Inst, bound Function Func)
+	: function(Func)
+	, function_use(Func, F_Use)
+	, instruction_user(Inst, F_Use)
+    , instruction_opcode(Inst, OP_Br)
+    , ! is_conditional_instruction(Inst).
  
-#message direct_branch(Instruction inst_src, Instruction inst_dst)
-	: instruction_use(func, use)
-	, instruction_user(inst_src, use) ;
-    , instruction_opcode(inst_src, OP_Br)
-    , instruction_use(inst_dst, use_dst)
-    , ! is_function_start(inst_dst) ; is not the start of a function
-    , ! is_conditional_instruction(inst_src)
-
-#message indirect_branch(Instruction inst_src, Instruction inst_dst)
-	: instruction_use(func, use)
-	, instruction_user(inst, use)
-	, instruction_opcode(inst, OP_IndirectBr)
-    , ! is_function_start(inst_dst) ;
-    , ! is_conditional_instruction(inst_src)
+;#message direct_branch(Instruction Inst_src, Instruction Inst_dst)
+;	: instruction_opcode(Inst_src, OP_Br) both of these are bound 
+;   , instruction_use(Inst_dst, use_dst)
+;    , ! is_function_start(Inst_dst) ; is not the start of a function
+;    , ! is_conditional_instruction(Inst_src).
+;    
+;    instruction_use(func, use)
+;	, instruction_user(Inst_src, use) ;
     
-#message cond_direct_function_call(Instruction inst, Function func)
-    , function_use(func, use)
-    , instruction_user(inst, use)
-    , instruction_opcode(inst, OP_Call)
-    , is_conditional_instruction(inst)
+;#message indirect_branch(Instruction Inst_src, Instruction Inst_dst)
+;	: instruction_use(func, use)
+;	, instruction_user(Inst_src, use)
+;	, instruction_opcode(inst, OP_IndirectBr)
+;    , ! is_function_start(inst_dst) ;
+;    , ! is_conditional_instruction(inst_src).
+    
+;#message cond_direct_function_call(Instruction Inst, Function Func)
+;    , function_use(func, use)
+;    , instruction_user(inst, use)
+;    , instruction_opcode(inst, OP_Call)
+;    , is_conditional_instruction(inst).
    
-#message cond_indirect_function_call(Instruction inst, Function func)
-	: function_use(func, use)
-	, instruction_user(inst, use)
-    , instruction_opcode(inst, OP_Br)
-    , is_conditional_instruction(inst)
-    , is_function_start(inst)
+;#message cond_indirect_function_call(Instruction Inst, Function Func)
+;	: function_use(func, use)
+;	, instruction_user(Inst, use)
+;    , instruction_opcode(Inst, OP_Br)
+;    , is_conditional_instruction(inst)
+;    , is_function_start(inst).
     
-#message direct_branch(Instruction inst_src, Instruction inst_dst)
-	: instruction_use(func, use)
-	, instruction_user(inst_src, use)
-    , instruction_opcode(inst_src, OP_Br)
-    , !is_function_start(inst_dst) ;
-    , is_conditional_instruction(inst_src)
+;#message direct_branch(Instruction Inst_src, Instruction Inst_dst)
+;	: instruction_use(func, Use)
+;	, instruction_user(Inst_src, Use)
+;    , instruction_opcode(Inst_src, OP_Br)
+;    , !is_function_start(Inst_dst) ;
+;    , is_conditional_instruction(Inst_src).
 
-#message indirect_branch(Instruction inst_src, Instruction inst_dst)
-	: instruction_use(func, use)
-	, instruction_user(inst, use)
-	, instruction_opcode(inst, OP_IndirectBr)
-    , !is_function_start(inst_dst) ;
-    , is_conditional_instruction(inst_src)
+;#message indirect_branch(Instruction Inst_src, Instruction Inst_dst)
+;	: instruction_use(func, use)
+;	, instruction_user(inst, use)
+;	, instruction_opcode(inst, OP_IndirectBr)
+;    , !is_function_start(inst_dst) ;
+;    , is_conditional_instruction(inst_src).
     
