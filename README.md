@@ -158,3 +158,10 @@ transitive_closure(From, To) : transitive_closure(From, X)
  * [Coding Style](docs/CodingStyle.md) 
  * [Grammar](docs/Grammar.md)
  * [Tutorial 1: Keeping track of the family](docs/Tutorial/1_KeepingTrackOfTheFamily.md)
+
+## License
+Dr. Lojekyll is licensed according to the Apache 2.0 license.
+
+This research was developed with funding from the Defense Advanced Research Projects Agency (DARPA). The views, opinions and/or findings expressed are those of the author and should not be interpreted as representing the official views or policies of the Department of Defense or the U.S. Government.
+
+Distribution Statement A – Approved for Public Release, Distribution Unlimited
