@@ -1,0 +1,11 @@
+; The use of an aggregating functor can be paired with a predicate or an
+; inline-defined predicate. A variable that flows into an aggregate parameter
+; should not be shadowed / used in the rest of the clause body. Here, the
+; variable `X` in `input(X)` is logically unrelated to the `X` in `sum(X, Y)`.
+
+#functor sum(aggregate i32 X, summary i32 Y)
+
+#message input(i32 X)
+#message output(i32 X)
+
+output(Y) : sum(X, Y) over (i32 X) { input(X) }, input(X).

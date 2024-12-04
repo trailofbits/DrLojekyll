@@ -1,0 +1,6 @@
+; The same variable name should not appear more than once in a declaration's
+; parameter list.
+
+#functor foo_functor(bound i32 X, free i32 X)
+#message foo_message(i32 X, i32 X)
+#query foo_query(bound i32 X, free i32 X)

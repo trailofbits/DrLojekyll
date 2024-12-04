@@ -1,0 +1,3 @@
+; A local that is declared must also be defined.
+
+#local foo(X)
